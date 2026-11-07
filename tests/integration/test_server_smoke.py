@@ -53,6 +53,12 @@ class TestSecurity:
     def test_submit_is_501_placeholder(self, client: TestClient):
         assert client.post("/api/queue/submit", json={}).status_code == 501
 
+    def test_decisions_tail_clamped(self, client: TestClient):
+        assert client.get("/api/decisions?tail=0").status_code == 422  # 下界
+        assert client.get("/api/decisions?tail=-3").status_code == 422  # 负值
+        assert client.get("/api/decisions?tail=10000").status_code == 422  # 上界
+        assert client.get("/api/decisions?tail=50").status_code == 200
+
 
 class TestStatic:
     def test_index_serves_with_nr2_banner(self, client: TestClient):

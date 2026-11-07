@@ -33,9 +33,12 @@ class Fill:
     tranche_leg: str | None = None
 
 
+_EPS = 1e-9  # 浮点容差：恰 1 tick 的十进制差在二进制下可能略小于 tick
+
+
 def _tick_ok(bar_low: float, limit: float, tick: float) -> bool:
-    """tick 穿越旋钮：穿价幅度须 ≥ tick（默认 0.01）。"""
-    return (limit - bar_low) >= tick
+    """tick 穿越旋钮：穿价幅度须 ≥ tick（默认 0.01；浮点容差内视为达标）。"""
+    return (limit - bar_low) >= tick - _EPS
 
 
 def match_limit_buy(
@@ -56,7 +59,7 @@ def match_limit_sell(
     """限价卖出（镜像）：严格穿价 high > limit、价 = max(open, limit)。"""
     if not bar.high > limit:
         return None
-    if not (bar.high - limit) >= tick:
+    if not (bar.high - limit) >= tick - _EPS:
         return None
     price = max(bar.open, limit)
     return Fill(code=code, side="sell", lots=lots, price=price, date=bar.date, tranche_leg=leg)

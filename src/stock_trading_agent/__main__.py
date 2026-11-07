@@ -199,11 +199,17 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
     check_case("loop.router.table", routing_table)
 
     def no_report_window():
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Asia/Shanghai")
         ev = EventEnvelope(event_id="e", source="panel", kind="briefing_review", code="600519")
-        assert (
-            gate_report_event(dt.datetime(2026, 11, 7, 17, 45, tzinfo=dt.UTC), ev.kind) is not None
-        )
-        assert gate_report_event(dt.datetime(2026, 11, 7, 19, 0, tzinfo=dt.UTC), ev.kind) is None
+        # 窗口按市场本地钟面（Asia/Shanghai）：UTC 传入须换算（防 8 小时错位）
+        assert gate_report_event(dt.datetime(2026, 11, 7, 17, 45, tzinfo=tz), ev.kind) is not None
+        utc_in_window = dt.datetime(2026, 11, 7, 9, 45, tzinfo=dt.UTC)
+        assert gate_report_event(utc_in_window, ev.kind) is not None
+        assert gate_report_event(dt.datetime(2026, 11, 7, 19, 0, tzinfo=tz), ev.kind) is None
+        assert gate_report_event(dt.datetime(2026, 11, 7, 17, 45, tzinfo=dt.UTC), ev.kind) is None
+        assert gate_report_event(dt.datetime(2026, 11, 7, 17, 45, tzinfo=tz), "diagnose_quick")
         assert lock_precheck(fetch_lock=True, watch_lock=False) is not None
 
     check_case("loop.events.window_lock", no_report_window)

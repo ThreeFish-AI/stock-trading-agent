@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from stock_trading_agent.state.paths import StateLayout
 
@@ -45,7 +45,7 @@ def sessions(request: Request) -> dict:
 
 
 @router.get("/decisions")
-def decisions(request: Request, tail: int = 20) -> list[dict]:
+def decisions(request: Request, tail: int = Query(default=20, ge=1, le=200)) -> list[dict]:
     import json
 
     path = _layout(request).decisions_path

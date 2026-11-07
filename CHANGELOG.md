@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.2] - 2026-11-08
+
+### Fixed
+
+- **三 lens 对抗评审修复（20 条确认 findings：4 P1 + 16 P2；评审 = 方案符合性 / 红线与安全 / 测试与迁移完整性，25-agent 流水线，2 条误报被对抗复核推翻）**。P1 四条：①禁跑窗双失效——窗口改按市场本地钟面（Asia/Shanghai）换算（旧实现 UTC 钟面错位 8 小时、真实窗内保护为零），禁跑 kind 显式枚举 diagnose_full/diagnose_quick/batch_wave/briefing_review（旧 report* 前缀过滤在路由表六 kind 上全部落空）；②Position 补 07 P3 schema 钉死的 trailing_armed 字段（旧镜像 load→persist 往返静默丢该字段），docstring 改「SSOT 字段逐一对应 + 本仓扩展字段显式列举」；③NR-3 两要素落地——run_session 按 routing.yaml schema_ref 注入 draft-07 schema（意见类 kind 缺 schema 即拒，喂 CC 与本地复验同份）、断言器新增 jsonschema Draft7Validator 本地复验（旧全仓零 import）；④e2e 幂等/锁用例恒真断言改 pytest.raises(LoopReject, match=…)。P2 十六条含：免责段检查扩全部落盘 kind（§7 免责四件套）、预算外闸接入 AgentLoop（spawn 前 check + 成功后双口径记账写 budget.json + 订阅形态哨兵值）、load_table 用户覆盖只许收严（预算/轮次/工具扩集即拒）、卖出落账不再占用建仓批（tranche_ref=None、清零即 closed）、A 股佣金费率位（max(2.5bp×名义, 5 元)）、港股价位表对齐 E-55 现行口径（0.25–10 档 0.005、高价档续表）、敏感字段词族子串匹配（Quantity/avgCost/pnl 等变体可拦截）、红线扫描机器门加固（tokenize 剥注释、AST 剥全部 docstring、白名单改完整相对路径、urllib.from-import 与 importlib/__import__ 动态导入面可见、paper/ 禁动态 import 机制）、NR-3 归档次序（转录归档移至断言器放行后，违例不归档）、/api/decisions tail 夹紧 ge=1 le=200、tick 旋钮浮点容差与镜像/止损等值边界用例、卖出分支三用例（全额/部分/超持拒）、sessions 落盘回放断言、store 失败清理 tmp 与 append 直接用例、proposal §9 两处超出登记类的排版漂移复原（回到与 vibe-stock 0.0.28 原文逐字节一致，仅保留五类登记编辑）与状态行改「已获批实施」、docs/specs/README 补 0.0.1 骨架先行的预规约定性。版本 0.0.1→0.0.2（patch）。
+
 ## [0.0.1] - 2026-11-07
 
 ### Added

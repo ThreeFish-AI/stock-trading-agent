@@ -15,8 +15,12 @@ class TestAFees:
     def test_buy_no_stamp(self):
         assert fees.calc_fees("A", "buy", 10_000.0) == pytest.approx(5.10, abs=0.01)
 
-    def test_commission_floor(self):
-        assert fees.A_SHARE_FEES.commission_min == 5.0  # 费率位留用户配置
+    def test_commission_floor_and_rate(self):
+        # 佣金 = max(费率×名义, 最低 5 元)：小名义吃底、大名义吃费率（费率位留用户校准，§12）
+        assert fees.A_SHARE_FEES.commission_min == 5.0
+        assert fees.A_SHARE_FEES.commission_rate_bp == 2.5
+        # 1_000_000 元卖出：过户 0.1bp=10.0 + 印花 5bp=500 + max(250, 5)=250 → 760.00（费率生效）
+        assert fees.calc_fees("A", "sell", 1_000_000.0) == pytest.approx(760.00, abs=0.01)
 
 
 class TestHKFees:
@@ -39,9 +43,14 @@ class TestSlippage:
         assert slippage.a_share_slippage(10.0) == pytest.approx(0.01)
         assert slippage.A_SHARE_DEFAULT_BP == 10.0
 
-    def test_hk_tick_bands(self):
+    def test_hk_tick_bands_e55(self):
+        # E-55 现行口径：0.25–10 港元档 0.005（仙股 0.005/0.30≈167bp 自洽）；>10 按高价档续表
         assert slippage.hk_tick(0.30) == 0.005
-        assert slippage.hk_tick(3.00) == 0.020
+        assert slippage.hk_tick(3.00) == 0.005
+        assert slippage.hk_tick(9.99) == 0.005
+        assert slippage.hk_tick(0.10) == 0.001  # 仙股档
+        assert slippage.hk_tick(15.0) == 0.050
+        assert slippage.hk_tick(30.0) == 0.100
         assert slippage.hk_slippage(0.30) == 0.005
 
 

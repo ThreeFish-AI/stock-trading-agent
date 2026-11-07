@@ -91,3 +91,10 @@ class HeadlessCLIClient:
         raise NotImplementedError(
             "M1 完整版落地：--version + 认证态 + init.capabilities（F-10/F-31）"
         )
+
+    def archive(self, req: CCRequest) -> None:  # pragma: no cover
+        """转录归档（断言器放行后由 Loop 调用；真实转录来自官方 transcript 目录，F-38）。"""
+        _real_spawn_gate()
+        raise NotImplementedError(
+            "M1 完整版落地：stream-json 归档至 agent/audit/<date>/（方案 §11）"
+        )

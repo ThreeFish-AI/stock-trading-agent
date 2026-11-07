@@ -41,11 +41,15 @@ def atomic_write_json(path: Path, payload: dict, *, makedirs: bool = True) -> No
         path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    with tmp.open("w", encoding="utf-8") as fh:
-        fh.write(text)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    try:
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # 失败清理半写 tmp（旧文件保持完整）
+        raise
 
 
 def atomic_append_jsonl(path: Path, obj: dict, *, makedirs: bool = True) -> None:

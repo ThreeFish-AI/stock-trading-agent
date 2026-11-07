@@ -73,8 +73,34 @@ def load_default_table() -> RoutingTable:
 
 
 def load_table(path: Path) -> RoutingTable:
-    """用户路径覆盖（包内默认表的显式替换；判据只许收严）。"""
-    return parse_table(yaml.safe_load(path.read_text(encoding="utf-8")))
+    """用户路径覆盖（包内默认表的显式替换；**判据只许收严**，放宽即拒）。
+
+    收严判据：对默认表已存在的 kind，覆盖表的 budget_usd / max_turns 只许 ≤ 默认值、
+    allowed_tools 只许为默认值子集——放宽（预算↑/轮次↑/工具扩）抛 RoutingError。
+    新增 kind 允许（仍须过 NR-4 解析闸）；删除 kind 允许（收窄面）。
+    """
+    table = parse_table(yaml.safe_load(path.read_text(encoding="utf-8")))
+    baseline = load_default_table()
+    for kind, default in baseline.routes.items():
+        override = table.routes.get(kind)
+        if override is None:
+            continue
+        if override.budget_usd > default.budget_usd:
+            raise RoutingError(
+                f"路由 {kind} 放宽被拒：budget_usd {override.budget_usd}>"
+                + f"默认 {default.budget_usd}（只许收严）"
+            )
+        if override.max_turns > default.max_turns:
+            raise RoutingError(
+                f"路由 {kind} 放宽被拒：max_turns {override.max_turns}>"
+                + f"默认 {default.max_turns}（只许收严）"
+            )
+        extra_tools = set(override.allowed_tools) - set(default.allowed_tools)
+        if extra_tools:
+            raise RoutingError(
+                f"路由 {kind} 放宽被拒：allowed_tools 扩集 {sorted(extra_tools)}（只许收严）"
+            )
+    return table
 
 
 @dataclass

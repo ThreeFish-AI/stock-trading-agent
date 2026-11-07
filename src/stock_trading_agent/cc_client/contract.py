@@ -62,6 +62,10 @@ class CCClient(Protocol):
         # 续话一律 --resume 禁 --continue，旗标全量重传（D-32/D-37/D-76）
         ...
 
+    def archive(self, req: CCRequest) -> None:
+        """转录归档 agent/audit/<date>/——Loop 在断言器放行后调用（NR-3：先过门后归档）。"""
+        ...
+
     def probe(self) -> ProbeReport: ...
 
 

@@ -1,6 +1,8 @@
 """sim-portfolio.json 数据模型（vibe-stock references/07 P3 schema 的 pydantic 镜像）。
 
-字段名与 07 P3 schema 逐一对应；口径（批语义、两把尺、T1 跳空回落）见 06/07 指针，此处不复制。
+SSOT 字段逐一对应 07 P3 schema（positions 含 trailing_armed / high_since_entry 跨日持续态）；
+本仓扩展字段显式列举：Tranche.limit_price / Tranche.expires_at（GTC 窗口承载）、Operation.fees。
+口径（批语义、两把尺、T1 跳空回落）见 06/07 指针，此处不复制。
 sim-portfolio.json 留 ~/.vibe-stock 根（写者=paper 引擎 ledger，方案 §11）。
 """
 
@@ -35,6 +37,7 @@ class Position(BaseModel):
     stop: float | None = None
     entry_ref: float | None = None
     target1: float | None = None
+    trailing_armed: bool = False
     high_since_entry: float | None = None
     tranches: list[Tranche] = Field(default_factory=list)
 
