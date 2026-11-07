@@ -2,7 +2,7 @@
 
 产出三段判据可过的合成信封（exit 0 + subtype=success + result 行在场 + 最小合法
 structured_output）；合成 stream-json 行在 **断言器放行后** 经 archive() 写入
-agent/audit/<date>/（NR-3 次序；spawn 期只在内存缓存不落盘），审计归档路径骨架期即被跑通（方案 §11）。
+agent/audit/<date>/（NR-3 次序；spawn 期只在内存缓存不落盘），归档路径骨架期即跑通（§11）。
 """
 
 from __future__ import annotations
