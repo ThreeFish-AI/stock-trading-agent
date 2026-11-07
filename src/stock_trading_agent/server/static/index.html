@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Trading Agent · 面板骨架</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; padding: 32px; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+  h1 { font-size: 20px; font-weight: 600; }
+  .badge { font-size: 12px; color: #8b949e; border: 1px solid #30363d; border-radius: 999px; padding: 2px 10px; }
+  .nr2 { background: #3d1d1d; border: 1px solid #a25b5b; color: #f3b8b8; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 14px; }
+  nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .page { border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+  .page h2 { font-size: 14px; margin-bottom: 6px; }
+  .page p { font-size: 12px; color: #8b949e; }
+  .disabled { opacity: .55; }
+  .disabled h2::after { content: " · M1 待点亮"; font-size: 11px; color: #d29922; font-weight: 400; }
+  footer { margin-top: 28px; font-size: 12px; color: #8b949e; line-height: 1.8; border-top: 1px solid #21262d; padding-top: 14px; }
+  code { background: #161b22; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Stock Trading Agent · 面板骨架</h1>
+  <span class="badge">0.0.1 · dry-run 通道</span>
+  <span class="badge">127.0.0.1:8730</span>
+</header>
+
+<div class="nr2"><strong>NR-2</strong>：模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
+
+<nav>
+  <div class="page disabled"><h2>① 今日总览</h2><p>launchd 三槽状态、在册事件流、在跑 CC 会话与预算水位、待办。</p></div>
+  <div class="page disabled"><h2>② 诊股工作台</h2><p>输入码 → 五段流水线进度 → 双轨意见板 → 裁决卡 → 报告渲染。</p></div>
+  <div class="page disabled"><h2>③ 盯盘事件与 T2 复核</h2><p>事件表（复核短语列）+ T2 建议卡（必经原命令重裁决，NR-1）。</p></div>
+  <div class="page disabled"><h2>④ 模拟盘</h2><p>三批建仓持仓表、record_fill 逐笔确认队列、权益曲线（含费用与滑点）。</p></div>
+  <div class="page disabled"><h2>⑤ 建议卡库</h2><p>monitor/advice/ 建议卡档案（脱敏口径：百分比与档位词）。</p></div>
+  <div class="page disabled"><h2>⑥ 后验战绩</h2><p>decision log 画像、全样本登记含亏损、模拟绩效标注假设性。</p></div>
+  <div class="page disabled"><h2>⑦ 审计与预算</h2><p>decisions hash 链、audit 归档、token+等效美元双口径台账。</p></div>
+</nav>
+
+<footer>
+  只读态 API：<code>/api/health</code> · <code>/api/queue</code> · <code>/api/sessions</code> · <code>/api/decisions</code> · <code>/api/paper</code> · <code>/api/budget</code>（htmx 180s 轮询属 M1 接线期，§16）<br>
+  本产品输出仅供学习与研究参考，<strong>不构成投资建议</strong>；不下单、不保证收益；模拟绩效均为假设性推演（含费用与滑点）；全部产物由 AI 生成、用户复核前置。
+</footer>
+</body>
+</html>

@@ -1,0 +1,55 @@
+# 意图路由默认表（YAML 确定性查表，零 LLM；方案 §10② routing 积木 C-76）。
+# kind → 任务模板：prompt 以 /vibe-stock <code> 形态拉起 Skill（F-49）；
+# budget_usd / max_turns 每任务必填（NR-4）；allowed_tools 精确白名单（F-24）。
+# 支持用户路径覆盖（router.load_table(path)）；修改判据只许收严。
+defaults:
+  sentinel_budget_usd: 1000.0   # 订阅形态高位哨兵（D2①：旗标在场性满足 NR-4，数值闸在 budget.gate）
+  max_turns_default: 40
+
+zero_llm:                        # 零 LLM 分派（§10②：T0→本地通知、T1→diagnose prepare）
+  t0_event: local_notify
+  t1_refresh: diagnose_prepare
+
+routes:
+  - kind: diagnose_full
+    task_kind: diagnose_full
+    prompt_template: "/vibe-stock {code} --full"
+    schema_ref: opinion
+    budget_usd: 5.0
+    max_turns: 40
+    allowed_tools: [Read, Write, Edit, Glob, Grep, Bash]
+  - kind: diagnose_quick
+    task_kind: diagnose_quick
+    prompt_template: "/vibe-stock {code}"
+    schema_ref: opinion
+    budget_usd: 2.0
+    max_turns: 20
+    allowed_tools: [Read, Write, Glob, Grep, Bash]
+  - kind: monitor_review
+    task_kind: monitor_review
+    prompt_template: "盯盘复核 {code}"
+    schema_ref: advice
+    budget_usd: 1.0
+    max_turns: 12
+    allowed_tools: [Read, Glob, Grep]
+  - kind: batch_wave
+    task_kind: batch_wave
+    prompt_template: "批量波次 {code}"
+    schema_ref: opinion
+    budget_usd: 8.0
+    max_turns: 60
+    allowed_tools: [Read, Write, Edit, Glob, Grep, Bash]
+  - kind: paper_confirm
+    task_kind: paper_confirm
+    prompt_template: "模拟盘逐笔确认 {code}"
+    schema_ref: fill
+    budget_usd: 0.5
+    max_turns: 8
+    allowed_tools: [Read, Glob, Grep]
+  - kind: briefing_review
+    task_kind: briefing_review
+    prompt_template: "盘前晨报/盘后复盘 {code}"
+    schema_ref: briefing
+    budget_usd: 1.0
+    max_turns: 12
+    allowed_tools: [Read, Glob, Grep, Bash]

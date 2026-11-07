@@ -1,0 +1,49 @@
+[project]
+name = "stock-trading-agent"
+version = "0.0.1"
+description = "Stock Trading Agent——基于 vibe-stock 底座与本机 Claude Code 的单用户主 Agent（诊股·盯盘·操作策略·模拟盘；模拟盘永不接真实下单）"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "ThreeFish-AI" }]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pydantic>=2.9",
+    "jsonschema>=4.23",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+stock-trading-agent = "stock_trading_agent.__main__:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stock_trading_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF", "SIM"]
+# RUF001/002/003：中文全角标点（（ ）「」——等）在 string/docstring/comment 中属有意排版，放行
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
