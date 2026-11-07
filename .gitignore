@@ -23,3 +23,4 @@ docs/diagrams/**/*.delivery.json
 # uv
 # uv.lock 入库（可复现），此处仅排除缓存目录
 .uv-cache/
+.coverage
