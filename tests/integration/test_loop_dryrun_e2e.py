@@ -39,7 +39,7 @@ class TestHappyPath:
     def test_full_chain_persists(self, tmp_path: Path):
         layout = StateLayout(root=tmp_path / "state")
         loop = make_loop(layout)
-        queue, sessions = run_one(loop, "diagnose_quick", "600519")
+        queue, _sessions = run_one(loop, "diagnose_quick", "600519")
 
         task = queue.tasks[0]
         assert task.status == "done"
@@ -59,7 +59,7 @@ class TestHappyPath:
         persisted_s = SessionsState.from_dict(
             json.loads(layout.sessions_path.read_text(encoding="utf-8"))
         )
-        assert list(persisted_s.sessions.values())[0].task_id == task.task_id
+        assert next(iter(persisted_s.sessions.values())).task_id == task.task_id
         assert persisted_s.total_tokens() == {"input_tokens": 0, "output_tokens": 0}
         chain = DecisionLog.load(layout.decisions_path)
         assert chain.verify_chain() and chain.lines[-1].kind == "task_done"
@@ -137,7 +137,7 @@ class TestGates:
         layout.agent_dir.mkdir(parents=True, exist_ok=True)
         layout.fetch_lock.touch()
         loop = make_loop(layout)
-        with pytest.raises(LoopReject, match="fetch_state.lock"):
+        with pytest.raises(LoopReject, match=r"fetch_state\.lock"):
             loop.ingest(
                 EventEnvelope(event_id="e", source="panel", kind="diagnose_quick", code="600519"),
                 QueueState(),
