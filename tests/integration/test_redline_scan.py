@@ -54,27 +54,44 @@ def _py_files(*parts: str) -> list[Path]:
 
 
 def _code_only(source: str) -> str:
-    """剥离 docstring 与注释后的纯代码（红线陈述句只在文档里说，代码里不许出现）。"""
-    import re
+    """剥全部 docstring（AST 纯字符串表达式语句）与注释（tokenize）后的纯代码。
+
+    坑位：注释剥离走 tokenize 而非按 # 切串（字符串字面量内的 # 不受影响）；
+    已知限界：变量拼接/非常量 f-string 组装的 token 属静态扫描不可见，由 review 补位。
+    """
+    import io
+    import tokenize
 
     tree = ast.parse(source)
     lines = source.splitlines()
+    # 剥全部纯字符串表达式语句（含首节点 docstring 与任何位置的裸字符串语句）
     for node in ast.walk(tree):
-        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
-            body = getattr(node, "body", [])
-            if (
-                body
-                and isinstance(body[0], ast.Expr)
-                and isinstance(body[0].value, ast.Constant)
-                and isinstance(body[0].value.value, str)
-            ):
-                for ln in range(body[0].lineno, body[0].end_lineno + 1):
-                    lines[ln - 1] = ""
-    stripped = "\n".join(line.split("#", 1)[0] for line in lines)
-    return re.sub(r'("""|\'\'\')[\s\S]*?\1', "", stripped)  # 兜底：非首节点 docstring
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            for ln in range(node.lineno, node.end_lineno + 1):
+                lines[ln - 1] = ""
+    # 全量 tokenize 剥注释（多行字符串安全；字符串字面量保留——动态符号常在字符串里）
+    text = "\n".join(lines)
+    kept = []
+    skip = {
+        tokenize.COMMENT,
+        tokenize.NL,
+        tokenize.NEWLINE,
+        tokenize.INDENT,
+        tokenize.DEDENT,
+        tokenize.ENDMARKER,
+    }
+    for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+        if tok.type not in skip:
+            kept.append(tok.string)
+    return " ".join(kept)
 
 
 def _imports_of(path: Path) -> set[str]:
+    """静态 import 面 + 动态 import 常量调用（importlib.import_module / __import__）。"""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     mods: set[str] = set()
     for node in ast.walk(tree):
@@ -82,6 +99,20 @@ def _imports_of(path: Path) -> set[str]:
             mods.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             mods.add(node.module)
+            if node.module == "urllib":  # from urllib import request → 视同 urllib.request
+                mods.update(f"urllib.{alias.name}" for alias in node.names)
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute | ast.Name)
+            and (
+                (isinstance(node.func, ast.Attribute) and node.func.attr == "import_module")
+                or (isinstance(node.func, ast.Name) and node.func.id == "__import__")
+            )
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            mods.add(node.args[0].value)
     return mods
 
 
@@ -106,15 +137,27 @@ class TestNR2NoOrderInterface:
                     offenders.append(f"{path.relative_to(SRC)} import {mod}")
         assert not offenders, "NR-2 违例（paper/ 引网络库）：\n" + "\n".join(offenders)
 
+    def test_paper_has_no_dynamic_import_machinery(self):
+        # 动态取模块的面（importlib / __import__）在 paper/ 直接禁——静态网络禁令不可被绕过
+        offenders: list[str] = []
+        for path in _py_files("stock_trading_agent", "paper"):
+            code = _code_only(path.read_text(encoding="utf-8"))
+            for token in ("importlib", "__import__"):
+                if token in code:
+                    offenders.append(f"{path.relative_to(SRC)} 出现 {token}")
+        assert not offenders, "NR-2 违例（paper/ 出现动态 import 机制）：\n" + "\n".join(offenders)
+
 
 class TestR2SecretHygiene:
     def test_secret_env_names_only_in_sanitize(self):
-        allowed = {"cli.py"}
+        allowed = {
+            "stock_trading_agent/cc_client/cli.py"
+        }  # 完整相对路径白名单（basename 全域豁免有越界面）
         offenders: list[str] = []
         for path in _py_files("stock_trading_agent"):
             code = _code_only(path.read_text(encoding="utf-8"))
             for name in SECRET_ENV_NAMES:
-                if name in code and path.name not in allowed:
+                if name in code and str(path.relative_to(SRC)) not in allowed:
                     offenders.append(f"{path.relative_to(SRC)} 出现 {name}")
         assert not offenders, "R2 违例（密钥环境变量名越界出现）：\n" + "\n".join(offenders)
 

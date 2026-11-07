@@ -20,7 +20,8 @@ class MarketFees:
     trade_fee_bp: float  # 交易费（bp；HK 0.00565%/边 → 0.565bp/边）
     sfc_levy_bp: float  # SFC（bp；HK 0.0027% → 0.27bp）
     afrc_levy_bp: float  # AFRC（bp；HK 0.00015% → 0.015bp）
-    commission_min: float  # 佣金最低（元/港元；A 股 5 元，费率留用户配置位；HK 0）
+    commission_min: float  # 佣金最低（元/港元；A 股 5 元；HK 0）
+    commission_rate_bp: float  # 佣金费率（bp；A 股默认 2.5bp estimated，用户配置位；HK 0）
 
 
 A_SHARE_FEES = MarketFees(
@@ -31,6 +32,7 @@ A_SHARE_FEES = MarketFees(
     sfc_levy_bp=0.0,
     afrc_levy_bp=0.0,
     commission_min=5.0,
+    commission_rate_bp=2.5,
 )
 HK_FEES = MarketFees(
     market="HK",
@@ -40,6 +42,7 @@ HK_FEES = MarketFees(
     sfc_levy_bp=0.27,
     afrc_levy_bp=0.015,
     commission_min=0.0,
+    commission_rate_bp=0.0,
 )
 
 
@@ -61,7 +64,10 @@ def calc_fees(
         fees = A_SHARE_FEES.transfer_fee_bp / 10_000 * notional  # 过户费双边
         if side == "sell":
             fees += A_SHARE_FEES.stamp_duty_bp / 10_000 * notional
-        fees += A_SHARE_FEES.commission_min if notional > 0 else 0.0
+        if notional > 0:  # 佣金 = max(费率×名义, 最低 5 元)——费率位留用户校准（§12）
+            fees += max(
+                A_SHARE_FEES.commission_rate_bp / 10_000 * notional, A_SHARE_FEES.commission_min
+            )
         return round(fees, 2)
     if market == "HK":
         fees = _ceil_to(HK_FEES.stamp_duty_bp / 10_000 * notional, 1.0)  # 印花向上取整 1 港元

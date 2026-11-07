@@ -56,22 +56,43 @@ class TestRoutingTable:
 
 
 class TestWindows:
-    def test_no_report_window_bounds(self):
-        ev_kind = "briefing_review"
-        assert (
-            gate_report_event(dt.datetime(2026, 11, 7, 17, 30, tzinfo=dt.UTC), ev_kind) is not None
-        )
-        assert (
-            gate_report_event(dt.datetime(2026, 11, 7, 18, 10, tzinfo=dt.UTC), ev_kind) is not None
-        )
-        assert gate_report_event(dt.datetime(2026, 11, 7, 18, 11, tzinfo=dt.UTC), ev_kind) is None
-        assert gate_report_event(dt.datetime(2026, 11, 7, 10, 0, tzinfo=dt.UTC), ev_kind) is None
+    """禁跑窗按市场本地钟面（Asia/Shanghai）判定：UTC 传入也须正确换算（防 8 小时错位）。"""
 
-    def test_non_report_kinds_ungated(self):
+    def test_window_bounds_local_clock(self):
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo("Asia/Shanghai")
+        ev_kind = "briefing_review"
+        assert gate_report_event(dt.datetime(2026, 11, 7, 17, 30, tzinfo=tz), ev_kind) is not None
+        assert gate_report_event(dt.datetime(2026, 11, 7, 18, 10, tzinfo=tz), ev_kind) is not None
+        assert gate_report_event(dt.datetime(2026, 11, 7, 18, 11, tzinfo=tz), ev_kind) is None
+        assert gate_report_event(dt.datetime(2026, 11, 7, 10, 0, tzinfo=tz), ev_kind) is None
+
+    def test_utc_input_converted_to_market_clock(self):
+        # 北京 17:45（真实危险窗）= UTC 09:45——UTC 钟面不在窗内但换算后必须拦截
         assert (
-            gate_report_event(dt.datetime(2026, 11, 7, 17, 45, tzinfo=dt.UTC), "diagnose_quick")
+            gate_report_event(dt.datetime(2026, 11, 7, 9, 45, tzinfo=dt.UTC), "diagnose_full")
+            is not None
+        )
+        # UTC 17:45 = 北京 01:45（无槽位）——必须放行（旧实现在此误拦）
+        assert (
+            gate_report_event(dt.datetime(2026, 11, 7, 17, 45, tzinfo=dt.UTC), "diagnose_full")
             is None
         )
+
+    def test_blocking_kinds_cover_signal_writers(self):
+        # 写 signals.json 的全诊/批量类必须在禁跑窗内被拦（旧实现只拦 report* 前缀全部落空）
+        from stock_trading_agent.loop.events import REPORT_BLOCKING_KINDS
+
+        assert {"diagnose_full", "diagnose_quick", "batch_wave"} <= REPORT_BLOCKING_KINDS
+        in_window = dt.datetime(2026, 11, 7, 17, 45, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+        for kind in ("diagnose_full", "diagnose_quick", "batch_wave", "briefing_review"):
+            assert gate_report_event(in_window, kind) is not None, kind
+
+    def test_non_report_kinds_ungated(self):
+        in_window = dt.datetime(2026, 11, 7, 17, 45, tzinfo=dt.timezone(dt.timedelta(hours=8)))
+        assert gate_report_event(in_window, "monitor_review") is None
+        assert gate_report_event(in_window, "paper_confirm") is None
 
     def test_lock_precheck(self):
         assert lock_precheck(fetch_lock=True, watch_lock=False) is not None

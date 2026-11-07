@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from stock_trading_agent import __version__
 from stock_trading_agent.server import routes
 
 HOST = "127.0.0.1"
@@ -24,7 +25,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 def create_app(*, state_root: Path | None = None) -> FastAPI:
     """依赖注入工厂（测试可换 tmp state_root；缺省 StateLayout.from_env()）。"""
-    app = FastAPI(title="Stock Trading Agent", version="0.0.1", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Stock Trading Agent", version=__version__, docs_url=None, redoc_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(TRUSTED_HOSTS))
     app.state.state_root = state_root  # 注入 tmp root（测试）；None → StateLayout.from_env()
     app.include_router(routes.router)

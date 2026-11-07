@@ -7,11 +7,19 @@ from __future__ import annotations
 
 import datetime as _dt
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 SOURCES = ("panel", "launchd", "monitor")
 
-# 17:30–18:10 禁跑 report（vibe-stock 收盘评估窗；锁纪律全继承，方案 §14）
+# 17:30–18:10 禁跑 report（vibe-stock 收盘评估窗 references/05 I-005；锁纪律全继承，方案 §14）。
+# 窗口为市场本地钟面（launchd 17:35/18:05 槽位均 Asia/Shanghai），判定前须换算。
+MARKET_TZ = ZoneInfo("Asia/Shanghai")
 NO_REPORT_WINDOW = ((17, 30), (18, 10))
+
+# 禁跑窗覆盖的 kind：写 signals.json 的全诊/批量类 + report 前缀 + 晨报复盘（收严向）
+REPORT_BLOCKING_KINDS = frozenset(
+    {"diagnose_full", "diagnose_quick", "batch_wave", "briefing_review"}
+)
 
 
 @dataclass(frozen=True)
@@ -34,16 +42,19 @@ def _minutes(time: _dt.time) -> int:
 
 
 def in_no_report_window(ts: _dt.datetime) -> bool:
-    """17:30–18:10 禁跑窗判定（report 类任务窗外放行；其他 kind 不受限）。"""
+    """禁跑窗判定（按市场本地钟面 Asia/Shanghai 换算；坑位：传 UTC 会错位 8 小时）。"""
     (start_h, start_m), (end_h, end_m) = NO_REPORT_WINDOW
-    minutes = _minutes(ts.time())
+    local = ts.astimezone(MARKET_TZ)
+    minutes = _minutes(local.time())
     return _minutes(_dt.time(start_h, start_m)) <= minutes <= _minutes(_dt.time(end_h, end_m))
 
 
 def gate_report_event(ts: _dt.datetime, kind: str) -> str | None:
     """禁跑窗闸：report 类 kind 窗内返回 defer 理由，窗外/非 report 返回 None（放行）。"""
-    if (kind.startswith("report") or kind == "briefing_review") and in_no_report_window(ts):
-        return "17:30–18:10 禁跑窗内拒跑 report（收盘评估窗，§14 锁纪律）"
+    if (kind in REPORT_BLOCKING_KINDS or kind.startswith("report")) and in_no_report_window(ts):
+        return (
+            "17:30–18:10 禁跑窗内拒跑 report（收盘评估窗，§14 锁纪律；窗口按 Asia/Shanghai 钟面）"
+        )
     return None
 
 

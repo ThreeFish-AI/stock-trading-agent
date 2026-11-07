@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from stock_trading_agent.paper.batches import (
@@ -133,3 +135,79 @@ class TestLedgerApply:
         pf = apply_fill(pf, self.confirmed_req())
         with pytest.raises(LedgerError, match="待成交批"):
             apply_fill(pf, self.confirmed_req())
+
+    def test_trailing_armed_survives_roundtrip(self):
+        # 07 P3 schema positions.trailing_armed 必须在 pydantic 镜像里（load→persist 不丢字段）
+        from stock_trading_agent.paper.ledger import load, persist
+
+        pf = self.portfolio()
+        pf = pf.model_copy(
+            update={
+                "positions": [
+                    pf.positions[0].model_copy(
+                        update={"trailing_armed": True, "high_since_entry": 11.0}
+                    )
+                ]
+            }
+        )
+        import tempfile
+
+        path = pathlib.Path(tempfile.mkdtemp()) / "roundtrip.json"
+        persist(pf, path)
+        loaded = load(path)
+        pos = loaded.position("600519")
+        assert pos.trailing_armed is True and pos.high_since_entry == 11.0
+        path.unlink(missing_ok=True)
+
+    def _sell_req(self, ref: float, lots: int):
+        from dataclasses import replace
+
+        return replace(self.confirmed_req(), side="sell", ref_price=ref, lots=lots)
+
+    def test_sell_fill_credits_cash_and_reduces_lots(self):
+        pf = apply_fill(self.portfolio(), self.confirmed_req())  # 先建仓 1 手 @9.6
+        cash_before = pf.cash
+        pf = apply_fill(pf, self._sell_req(ref=10.0, lots=1))
+        pos = pf.position("600519")
+        assert pos.lots == 0
+        from stock_trading_agent.paper.fees import calc_fees
+
+        assert pf.cash == pytest.approx(
+            cash_before + 1_000 - calc_fees("A", "sell", 1_000.0), abs=0.01
+        )
+        assert pf.operations[-1].side == "sell"
+
+    def test_sell_to_zero_closes_position(self):
+        # 卖至 0 手 = 清仓（07：清仓后 closed；部分卖出保持 holding——下方部分卖出用例覆盖）
+        pf = apply_fill(self.portfolio(), self.confirmed_req())
+        pf = apply_fill(pf, self._sell_req(ref=10.0, lots=1))
+        pos = pf.position("600519")
+        assert pos.status == "closed" and pos.lots == 0
+
+    def test_partial_sell_keeps_holding(self):
+        from dataclasses import replace
+
+        from stock_trading_agent.paper.ledger import open_position as open_pos
+        from stock_trading_agent.paper.model import Tranche
+
+        pf = SimPortfolio(budget=100_000, cash=100_000)
+        pf = open_pos(
+            pf,
+            "600519",
+            "A",
+            [
+                Tranche(leg="T1_open", lots=1, ref_price=9.6),
+                Tranche(leg="T2_limit", lots=1, ref_price=9.6),
+            ],
+        )
+        pf = apply_fill(pf, self.confirmed_req())  # T2 批成交 1 手
+        t1_req = replace(self.confirmed_req(), tranche_leg="T1_open")
+        pf = apply_fill(pf, t1_req)  # T1 批成交 1 手 → 共 2 手
+        pf = apply_fill(pf, self._sell_req(ref=10.0, lots=1))  # 部分卖出 1 手
+        pos = pf.position("600519")
+        assert pos.lots == 1 and pos.status == "holding"  # 部分卖出保持 holding
+
+    def test_sell_over_holding_rejected(self):
+        pf = apply_fill(self.portfolio(), self.confirmed_req())  # 1 手
+        with pytest.raises(LedgerError, match="可卖手数不足"):
+            apply_fill(pf, self._sell_req(ref=10.0, lots=2))

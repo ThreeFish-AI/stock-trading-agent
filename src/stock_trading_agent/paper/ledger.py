@@ -36,18 +36,20 @@ def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio
     position = portfolio.position(req.code)
     if position is None:
         raise LedgerError(f"标的 {req.code} 不在账本（无仓位可落）")
-    tranche = next(
-        (t for t in position.tranches if t.leg == req.tranche_leg and t.status == "pending"), None
-    )
-    if tranche is None:
-        raise LedgerError(f"标的无待成交批：{req.code} {req.tranche_leg}")
 
     notional = req.lots * 100 * req.ref_price  # A 股 100 股/手；HK 手数面值由调用方换算后入 req
     fees = calc_fees(position.market, req.side, notional)
-    new_tranche = fill_tranche(tranche, filled_price=req.ref_price, filled_at=req.ts or _now())
-    new_tranches = [new_tranche if t is tranche else t for t in position.tranches]
 
     if req.side == "buy":
+        # 买入 = 建仓批成交：必须命中对应 pending 批（三批建仓全是买方批，06 Stage D）
+        tranche = next(
+            (t for t in position.tranches if t.leg == req.tranche_leg and t.status == "pending"),
+            None,
+        )
+        if tranche is None:
+            raise LedgerError(f"标的无待成交批：{req.code} {req.tranche_leg}")
+        new_tranche = fill_tranche(tranche, filled_price=req.ref_price, filled_at=req.ts or _now())
+        new_tranches = [new_tranche if t is tranche else t for t in position.tranches]
         total_lots = position.lots + req.lots
         new_cost = (position.avg_cost * position.lots + req.ref_price * req.lots) / total_lots
         cash = portfolio.cash - notional - fees
@@ -56,17 +58,20 @@ def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio
         new_position = position.model_copy(
             update={"tranches": new_tranches, "lots": total_lots, "avg_cost": round(new_cost, 4)}
         )
+        new_position = sync_position(new_position)
+        tranche_ref: str | None = req.tranche_leg
     else:
+        # 卖出 = 仓位级清仓/减仓：不占用建仓批（tranche_ref=None）；清零即清仓（07：清仓→closed）
         if position.lots < req.lots:
             raise LedgerError(
                 f"可卖手数不足：{position.lots} < {req.lots}（T+1 口径属 M2，先按账面截断拒）"
             )
         cash = portfolio.cash + notional - fees
-        new_position = position.model_copy(
-            update={"tranches": new_tranches, "lots": position.lots - req.lots}
-        )
+        remaining = position.lots - req.lots
+        new_position = position.model_copy(update={"lots": remaining})
+        new_position = sync_position(new_position, closed_requested=remaining == 0)
+        tranche_ref = None
 
-    new_position = sync_position(new_position)
     op = Operation(
         code=req.code,
         side=req.side,
@@ -74,7 +79,7 @@ def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio
         price=req.ref_price,
         fees=fees,
         ts=req.ts or _now(),
-        tranche_ref=req.tranche_leg,
+        tranche_ref=tranche_ref,
     )
     return portfolio.model_copy(
         update={

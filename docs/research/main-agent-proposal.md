@@ -1,6 +1,6 @@
 # Stock Trading Agent（主 Agent）产品与技术方案
 
-日期：2026-11-06 · 状态：待审批 · 本方案及全部产物仅供学习研究，不构成投资建议
+日期：2026-11-06 · 状态：已获批实施（2026-11-07 用户裁定建档与 M1 骨架，产品仓 stock-trading-agent 推进） · 本方案及全部产物仅供学习研究，不构成投资建议
 
 > **迁注（2026-11-07）**：本文原载 vibe-stock（0.0.28），0.0.29 迁至本仓 stock-trading-agent；文内「本仓」除另行声明外指迁移时点的 vibe-stock，对其机制（references/06/07 等）的引用以 [vibe-stock 仓](https://github.com/ThreeFish-AI/vibe-stock) 现行为准。前置裁定④「成果沉淀本仓」自 2026-11-07 起修正为：**产品实施成果沉淀本仓（stock-trading-agent），机制成果仍沉淀 vibe-stock**。
 

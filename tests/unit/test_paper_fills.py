@@ -36,8 +36,19 @@ class TestLimitBuy:
         assert match_limit_buy("600519", 1, 9.0, BAR) is None
 
     def test_tick_knob_requires_one_tick(self):
-        just_under = Bar(date="d", open=10.0, high=10.0, low=9.599, close=9.6)
-        assert match_limit_buy("600519", 1, 9.6, just_under) is None  # 穿价不足 1 tick
+        just_under = Bar(date="d", open=10.0, high=10.0, low=9.9901, close=9.6)
+        assert match_limit_buy("600519", 1, 10.0, just_under) is None  # 穿价 0.0099 < 1 tick
+
+    def test_tick_knob_exact_one_tick_fills(self):
+        # 恰 1 tick（limit−low = 0.01，判据 >=）：成交（浮点取整裕量内构造）
+        exact = Bar(date="d", open=10.0, high=10.0, low=9.99, close=10.0)
+        fill = match_limit_buy("600519", 1, 10.0, exact)
+        assert fill is not None and fill.price == pytest.approx(10.0)
+
+    def test_tick_knob_custom_value(self):
+        bar = Bar(date="d", open=10.0, high=10.0, low=9.97, close=10.0)
+        assert match_limit_buy("600519", 1, 10.0, bar) is not None  # 默认 0.01 下穿价 0.03 过
+        assert match_limit_buy("600519", 1, 10.0, bar, tick=0.05) is None  # 旋钮收紧到 0.05 拒
 
 
 class TestLimitSellMirror:
@@ -53,6 +64,10 @@ class TestLimitSellMirror:
     def test_no_cross_no_fill(self):
         assert match_limit_sell("600519", 1, 10.7, BAR) is None
 
+    def test_high_equal_limit_no_fill(self):
+        # 卖出镜像等值边界（与买入 low==limit 对称）：high == limit 不成交
+        assert match_limit_sell("600519", 1, 10.6, BAR) is None
+
 
 class TestStop:
     def test_intraday_break_fills_at_stop_minus_slippage(self):
@@ -67,6 +82,11 @@ class TestStop:
     def test_no_trigger_none(self):
         quiet = Bar(date="d", open=10.0, high=10.2, low=9.9, close=10.1)
         assert match_stop("600519", 1, 9.8, quiet) is None
+
+    def test_low_equal_stop_no_trigger(self):
+        # 等值边界：low == stop（且 open > stop）不触发
+        edge = Bar(date="d", open=10.0, high=10.2, low=9.7, close=9.9)
+        assert match_stop("600519", 1, 9.7, edge) is None
 
 
 class TestPessimisticOrder:

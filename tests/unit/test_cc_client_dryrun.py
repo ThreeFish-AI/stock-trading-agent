@@ -37,17 +37,19 @@ class TestDryRun:
         client, _ = make_client(audit)
         from stock_trading_agent.cc_client.contract import CCRequest
 
-        client.spawn_once(
-            CCRequest(
-                task_id="diagnose_quick:600519:2",
-                session_uuid=derive_session_uuid("d", "c", "k"),
-                prompt="p",
-                schema=None,
-                budget_usd=1.0,
-                max_turns=5,
-                allowed_tools=("Read",),
-            )
+        req = CCRequest(
+            task_id="diagnose_quick:600519:2",
+            session_uuid=derive_session_uuid("d", "c", "k"),
+            prompt="p",
+            schema=None,
+            budget_usd=1.0,
+            max_turns=5,
+            allowed_tools=("Read",),
         )
+        client.spawn_once(req)
+        files = list(audit.rglob("dryrun-*.jsonl"))
+        assert not files  # NR-3 次序：spawn 期不落盘（断言器放行前无归档）
+        client.archive(req)  # Loop 在断言器放行后调用
         files = list(audit.rglob("dryrun-*.jsonl"))
         assert files and files[0].read_text(encoding="utf-8").strip().endswith("}")
 
