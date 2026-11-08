@@ -181,9 +181,11 @@ class LoopRuntime:
             self.record_monitor_event(ev)
 
     def record_monitor_event(self, ev: MonitorEvent) -> TaskRecord | None:
-        """T0 事件登记 + T1 触发入队（每股每日一次，含失败不自动重试）。"""
+        """T0 事件登记 + T1 触发入队（每股每日一次）+ t2_pending_fill 入确认队列。"""
         date = market_today()
         task: TaskRecord | None = None
+        if ev.rule == "t2_pending_fill":
+            self._enqueue_t2_pending(ev)
         with FileLock(self.layout.queue_lock):
             queue = self.loop.load_queue()
             self._decide(
@@ -220,6 +222,29 @@ class LoopRuntime:
                         },
                     )
         return task
+
+    def _enqueue_t2_pending(self, ev: MonitorEvent) -> None:
+        """t2_pending_fill 事件 → paper 确认队列（触价只写待确认记录，07 只推演不写回）。
+
+        sim.lock 串行 pending 读-改-写；payload 零数量（NR-5：决策台账只记 code/leg/id）。
+        """
+        from stock_trading_agent.paper import pending as paper_pending
+        from stock_trading_agent.paper.engine import request_from_t2_event
+
+        ts = ev.ts or _now_iso()
+        salt = abs(hash((ev.code, ev.ts, ev.rule))) % 10_000
+        request_id = f"pf-{ev.code}-t2-{market_today()}-{salt}"
+        req = request_from_t2_event(ev.code, dict(ev.facts), ts, request_id=request_id)
+        if req is None:
+            return  # facts 缺字段（容错：不产半截请求）
+        with FileLock(self.layout.sim_lock):
+            queue = paper_pending.load(self.layout.sim_pending_fills_path)
+            queue.enqueue(req)
+            paper_pending.save(queue, self.layout.sim_pending_fills_path)
+        self._decide(
+            "paper_pending_fill",
+            {"code": ev.code, "leg": req.tranche_leg, "request_id": request_id},
+        )
 
     # --- 崩溃恢复（启动期；running 残留 → abandoned） ---
     def recover_orphans(self) -> list[TaskRecord]:

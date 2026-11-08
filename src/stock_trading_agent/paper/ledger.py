@@ -3,7 +3,8 @@
 **NR-2（无条件全局规则）**：模拟盘永不接真实下单接口——含券商 API 直连与委托报文任何形态；
 本模块（及整个 paper 包）不得 import 任何网络库 / 券商接口（红线扫描测试为机器门）。
 持久化只经 state.store.atomic_write_json 落 sim-portfolio.json（原子写，无半写态）。
-M2 留位（§3）：T+1 可卖 / 涨跌停三态 / 停牌 / 公司行动——本骨架显式不做。
+涨跌停三态与停牌闸在 paper.rules（撮合后置过滤）；T+1 卖出闸在本模块（available_lots，
+13-paper §③）；公司行动在 paper.corporate_actions。
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from stock_trading_agent.paper.batches import fill_tranche, sync_position
 from stock_trading_agent.paper.confirm import PendingFillRequest
 from stock_trading_agent.paper.fees import calc_fees
 from stock_trading_agent.paper.model import Operation, Position, SimPortfolio, Tranche
+from stock_trading_agent.paper.tplus1 import available_lots
 from stock_trading_agent.state.store import atomic_write_json
 
 
@@ -25,11 +27,15 @@ def _now() -> str:
     return _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds")
 
 
-def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio:
+def apply_fill(
+    portfolio: SimPortfolio, req: PendingFillRequest, *, pending_sell_lots: int = 0
+) -> SimPortfolio:
     """一笔 **已确认** 请求落账（不可变更新：返回新 SimPortfolio，不改入参）。
 
     做法：批 pending→filled、avg_cost 手数加权重算、cash 扣减（含费用）、operations append、
-    仓位状态机械重导；坑位：req.state 非 confirmed 即拒（无人工确认不落账）。
+    仓位状态机械重导；坑位：req.state 非 confirmed 即拒（无人工确认不落账）；
+    卖出过 T+1 闸（可卖=持仓−当日买入−在途卖出冻结，E-42/E-48，13-paper §③）——
+    pending_sell_lots 由调用方传确认队列在途冻结（排除自身请求后）。
     """
     if req.state != "confirmed":
         raise LedgerError(f"请求 {req.request_id} 未确认（state={req.state}），无人工确认不落账")
@@ -37,7 +43,7 @@ def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio
     if position is None:
         raise LedgerError(f"标的 {req.code} 不在账本（无仓位可落）")
 
-    notional = req.lots * 100 * req.ref_price  # A 股 100 股/手；HK 手数面值由调用方换算后入 req
+    notional = req.lots * position.board_lot * req.ref_price  # A 股 board_lot=100；HK 调用方注入
     fees = calc_fees(position.market, req.side, notional)
 
     if req.side == "buy":
@@ -62,9 +68,14 @@ def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio
         tranche_ref: str | None = req.tranche_leg
     else:
         # 卖出 = 仓位级清仓/减仓：不占用建仓批（tranche_ref=None）；清零即清仓（07：清仓→closed）
-        if position.lots < req.lots:
+        market_date = req.bar.date
+        sellable = available_lots(
+            portfolio, req.code, market_date, pending_sell_lots=pending_sell_lots
+        )
+        if sellable < req.lots:
             raise LedgerError(
-                f"可卖手数不足：{position.lots} < {req.lots}（T+1 口径属 M2，先按账面截断拒）"
+                f"可卖手数不足（T+1 口径：持仓 {position.lots} − 当日买入 − 在途冻结 = {sellable}"
+                f" < {req.lots}，E-42/E-48）"
             )
         cash = portfolio.cash + notional - fees
         remaining = position.lots - req.lots
@@ -80,6 +91,7 @@ def apply_fill(portfolio: SimPortfolio, req: PendingFillRequest) -> SimPortfolio
         fees=fees,
         ts=req.ts or _now(),
         tranche_ref=tranche_ref,
+        trade_date=req.bar.date,  # T+1 推导锚（确认时点≠交易日，13-paper §③）
     )
     return portfolio.model_copy(
         update={

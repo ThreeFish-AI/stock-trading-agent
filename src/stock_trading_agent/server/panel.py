@@ -179,6 +179,126 @@ def render_audit(decisions: list[dict], budget: dict) -> str:
     return table + render_budget_line(budget)
 
 
+def _tranche_badge(t: dict) -> str:
+    """建仓批徽章：T1/T2/T3 前缀 + 状态着色（filled=done、pending=queued、expired=warn）。"""
+    label = _esc(str(t.get("leg", "")).split("_")[0])
+    status = str(t.get("status", "pending"))
+    cls = {"filled": "done", "pending": "queued", "expired": "warn"}.get(status, "queued")
+    return f'<span class="st {cls}">{label}</span>'
+
+
+def _sparkline_svg(points: list[dict], *, width: int = 220, height: int = 44) -> str:
+    """权益 sparkline（服务端手搓内联 SVG，零 CDN/零前端库）。"""
+    navs = [float(p.get("nav") or 0) for p in points]
+    if len(navs) < 2:
+        return '<p class="muted">权益曲线待积累（≥2 个交易日点）。</p>'
+    lo, hi = min(navs), max(navs)
+    span = (hi - lo) or 1e-9
+    step = width / (len(navs) - 1)
+    coords = [
+        f"{i * step:.1f},{height - (v - lo) / span * (height - 6) - 3:.1f}"
+        for i, v in enumerate(navs)
+    ]
+    return (
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">'
+        f'<polyline fill="none" stroke="#58a6ff" stroke-width="1.5" points="{" ".join(coords)}"/>'
+        f"</svg>"
+    )
+
+
+def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
+    """面板④：NR-2 常驻条 + 持仓表（T1/T2/T3 徽章 + 可卖(T+1) + 市值/盈亏%）+ 确认队列 + 权益曲线。
+
+    NR-5 呈现态豁免（13-paper §⑥）：面板可显份额原值（导出/落盘卡仍降级脱敏）。
+    """
+    parts = []
+    if notice:
+        parts.append(f'<p class="ok">{_esc(notice)}</p>')
+    parts.append(
+        '<p class="warn"><strong>NR-2</strong>：模拟盘永不接真实下单接口；'
+        "全部模拟绩效为假设性推演（含费用与滑点）。</p>"
+    )
+    positions = payload.get("positions") or []
+    if positions:
+        rows = []
+        for pos in positions:
+            badges = " ".join(_tranche_badge(t) for t in pos.get("tranches", []))
+            last = pos.get("last_price") or 0.0
+            cost = pos.get("avg_cost") or 0.0
+            pnl_pct = round((last - cost) / cost * 100, 2) if cost and last else None
+            rows.append(
+                "<tr>"
+                f"<td>{_esc(pos['code'])}</td>"
+                f"<td>{_status_pill(pos['status'])}</td>"
+                f"<td>{badges}</td>"
+                f"<td>{pos.get('lots', 0)} / 可卖 {pos.get('sellable_lots', 0)}（T+1）</td>"
+                f"<td>{_esc(pos.get('avg_cost'))}</td>"
+                f"<td>{_esc(pos.get('last_price'))}</td>"
+                f"<td>{pnl_pct if pnl_pct is not None else '—'}%</td>"
+                f"<td>{_esc(round(pos.get('market_value') or 0, 2))}</td>"
+                "</tr>"
+            )
+        parts.append(
+            '<table class="grid"><thead><tr><th>code</th><th>状态</th><th>建仓批</th>'
+            "<th>手数/可卖</th><th>成本价</th><th>现价</th><th>盈亏%</th><th>市值</th>"
+            f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
+        )
+    else:
+        parts.append('<p class="muted">无模拟持仓（账本未建或全部清仓）。</p>')
+
+    pending = payload.get("pending") or []
+    parts.append("<h3>逐笔确认队列（触价只写待确认；无人工确认不落账）</h3>")
+    if pending:
+        rows = []
+        for req in pending:
+            if req.get("state") != "pending":
+                continue
+            rid = _esc(req.get("request_id", ""))
+            confirm_btn = (
+                f'<button class="mini" hx-post="/api/panel/paper/confirm" '
+                f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
+                'hx-swap="outerHTML">确认成交</button>'
+            )
+            reject_btn = (
+                f'<button class="mini" hx-post="/api/panel/paper/reject" '
+                f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
+                'hx-swap="outerHTML">驳回</button>'
+            )
+            rows.append(
+                "<tr>"
+                f"<td>{_esc(req.get('ts', ''))}</td>"
+                f"<td>{_esc(req.get('code', ''))}</td>"
+                f"<td>{_esc(req.get('tranche_leg', ''))}</td>"
+                f"<td>{_esc(req.get('side', ''))}</td>"
+                f"<td>{_esc(req.get('lots'))}</td>"
+                f"<td>{_esc(req.get('ref_price'))}</td>"
+                f"<td>{_esc(req.get('bar_date', ''))}</td>"
+                f"<td>{confirm_btn} {reject_btn}</td>"
+                "</tr>"
+            )
+        parts.append(
+            '<table class="grid"><thead><tr><th>ts</th><th>code</th><th>批</th><th>方向</th>'
+            "<th>手数</th><th>参考价</th><th>bar 日</th><th></th></tr></thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+    else:
+        parts.append('<p class="muted">队列为空。</p>')
+
+    parts.append("<h3>权益曲线（NAV = 权益 / 预算）</h3>")
+    history = payload.get("equity_history") or []
+    if history:
+        latest = history[-1]
+        parts.append(_sparkline_svg(history))
+        parts.append(
+            f'<p class="muted">最新 {latest["date"]} · NAV {latest["nav"]} · '
+            f"现金 {latest['cash']} · 市值 {latest['market_value']}（假设性 · 含费用与滑点）</p>"
+        )
+    else:
+        parts.append('<p class="muted">权益曲线待积累。</p>')
+    return "".join(parts)
+
+
 def render_advice_library(payload: dict) -> str:
     """面板⑤：建议卡库（当日卡列表）+ 拒卡/降级通报区（脱敏字段直接透出）。"""
     cards = payload.get("cards") or []

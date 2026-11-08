@@ -147,6 +147,16 @@ class StateLayout:
         return self.root / "monitor" / "watch.lock"
 
     @property
+    def sim_pending_fills_path(self) -> Path:
+        """确认队列（根级；写者=paper 引擎，13-paper §⑤；瞬态非 append-only）。"""
+        return self.root / "sim-pending-fills.json"
+
+    @property
+    def sim_lock(self) -> Path:
+        """paper 读-改-写串行闸（pending+portfolio 双文件周期，防面板线程池并发双写）。"""
+        return self.root / "sim.lock"
+
+    @property
     def advice_dir(self) -> Path:
         """T2 建议卡落位（07 P2 契约路径，agent/ 外唯一写者例外：断言器放行后原子写）。"""
         return self.root / "monitor" / "advice"
