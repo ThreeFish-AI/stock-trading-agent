@@ -251,6 +251,56 @@ def reports(request: Request) -> dict:
     return {"reports": out}
 
 
+# --- P2 端点（0.0.12：names/calendar/notifications，全 GET 只读） ---
+
+
+@router.get("/calendar")
+def calendar(request: Request) -> dict:
+    """事件日历：当日 T1 workdir + 最近全诊会话 workdir 的 evidence 三块聚合（零新拉数据）。"""
+    from stock_trading_agent.server.panel_data import aggregate_calendar, load_root_json
+
+    layout = _layout(request)
+    from stock_trading_agent.loop.monitor_events import market_today
+
+    payloads: list[dict] = []
+    t1_root = layout.runs_dir / market_today() / "t1"
+    if t1_root.exists():
+        for d in sorted(t1_root.iterdir()):
+            ev = load_root_json(d / "evidence.json")
+            if isinstance(ev, dict):
+                payloads.append(ev)
+    # 最近会话 workdir（sessions 反查，按 code 去重取最新——aggregate_calendar 内 seen 去重）
+    for sess in list((sessions(request).get("sessions") or {}).values())[-30:]:
+        uuid = sess.get("session_uuid") if isinstance(sess, dict) else None
+        if not uuid:
+            continue
+        ev = load_root_json(layout.runs_dir / str(uuid) / ".vs" / "evidence.json")
+        if isinstance(ev, dict):
+            payloads.append(ev)
+    return {"upcoming": aggregate_calendar(payloads)}
+
+
+@router.get("/notifications")
+def notifications(request: Request, tail: int = 20) -> list[dict]:
+    """已发通知历史重放（只读；产品仓永不发通知 R7）。"""
+    from stock_trading_agent.server.panel_data import (
+        load_name_map,
+        rebuild_notifications,
+    )
+
+    layout = _layout(request)
+    events = _monitor_events_payload(request, date=None, tail=500).get("events", [])
+    import contextlib
+
+    log_text = ""
+    log_path = layout.monitor_dir / "logs" / "watch.out.log"
+    with contextlib.suppress(OSError):
+        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    names = load_name_map(layout)
+    rows = rebuild_notifications(events, log_text, names)
+    return rows[-tail:]
+
+
 # --- 面板新端点（0.0.11：signals/todos/topbar/phase/报告与建议卡 fragment，全 GET） ---
 
 
@@ -278,7 +328,10 @@ def signals(request: Request) -> dict:
         if price is not None and ev.get("code"):
             price_map.setdefault(str(ev["code"]), float(price))
     snap = signals_snapshot(entries if isinstance(entries, list) else None, price_map)
+    from stock_trading_agent.server.panel_data import load_name_map
+
     snap["name_map"] = build_name_map(reports(request).get("reports", []))
+    snap["names"] = load_name_map(layout)
     return snap
 
 
@@ -326,6 +379,20 @@ def panel_signals(request: Request) -> HTMLResponse:
     from stock_trading_agent.server.panel import render_signals_table
 
     return HTMLResponse(render_signals_table(signals(request)))
+
+
+@router.get("/panel/calendar")
+def panel_calendar(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_calendar
+
+    return HTMLResponse(render_calendar(calendar(request)))
+
+
+@router.get("/panel/notifications")
+def panel_notifications(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_notifications
+
+    return HTMLResponse(render_notifications({"items": notifications(request, tail=10)}))
 
 
 @router.get("/panel/todos")

@@ -350,7 +350,7 @@ def render_diag_form() -> str:
         'hx-swap="innerHTML" style="display:flex;flex-direction:column;gap:10px">'
         '<div style="display:flex;gap:8px">'
         '<input class="inp" name="code" placeholder="600519 / 00700" '
-        'pattern="\d{5,6}" required style="flex:1">'
+        'pattern="[0-9]{5,6}" required style="flex:1">'
         f'<select class="sel" name="kind" style="flex:1.4">{options}</select>'
         '<button class="btn btn-pri" type="submit">开始</button></div>'
         '<p class="tbl-note">LLM 只产意见 · 聚合一律确定性裁决 · NR-3 断言器前置门 · '
@@ -387,12 +387,61 @@ def render_event_feed(payload: dict) -> str:
     return "".join(rows)
 
 
+def render_calendar(payload: dict) -> str:
+    """①事件日历：日期升序 kchip 条目（披露/解禁/公告）。"""
+    rows = payload.get("upcoming") or []
+    if not rows:
+        return (
+            '<p class="loadmsg">暂无日历事件（需 T1 刷新或诊股会话产出 evidence；'
+            "A 股专属块对港股不适用）。</p>"
+        )
+    items = []
+    for row in rows:
+        items.append(
+            f'<div class="kchip"><span class="code num">{_esc(row["code"])}</span>'
+            f'<span class="num">{_esc(row["date"])}</span>'
+            f'<span class="tag">{_esc(row["type"])}</span>'
+            f"<span>{_esc(row['detail'])}</span></div>"
+        )
+    return "".join(items)
+
+
+def render_notifications(payload: dict) -> str:
+    """③通知预览：已发通知历史重放（macOS 通知样式卡 + 红线 7 说明）。"""
+    rows = payload.get("items") or []
+    if not rows:
+        cards = '<p class="loadmsg">暂无已发通知（watch.py osascript 历史；产品仓永不发通知）。</p>'
+    else:
+        cards = "".join(
+            f'<div class="card" style="margin-bottom:8px"><div class="card-b" '
+            'style="display:flex;gap:10px;align-items:flex-start">'
+            '<svg width="16" height="16" viewBox="0 0 16 16" style="flex:none;margin-top:2px">'
+            '<path d="M8 1a4 4 0 0 0-4 4v3l-1.5 2.5h11L12 8V5a4 4 0 0 0-4-4z'
+            'M6.5 12.5a1.5 1.5 0 0 0 3 0" '
+            'stroke="#8792A6" stroke-width="1.3" fill="none"/></svg>'
+            f'<div style="flex:1;min-width:0">'
+            f'<div class="num" style="font-size:11px;color:var(--t4)">'
+            f"{_esc(row.get('ts', ''))} · 现在</div>"
+            f'<div style="font-size:12.5px;font-weight:600">'
+            f"{_esc(row.get('title', ''))}</div>"
+            f'<div style="font-size:12px;color:var(--t2)">'
+            f"{_esc(row.get('body', ''))}</div></div></div></div>"
+            for row in rows
+        )
+    return (
+        f"{cards}"
+        '<p class="tbl-note">仅本地 osascript（terminal 通道）· 禁第三方推送（红线 7）· '
+        "告警主通道永久留服务端（后台标签页冻结，I-48）——本卡为只读历史重放</p>"
+    )
+
+
 def render_signals_table(payload: dict) -> str:
     """①在册信号卡表 6 列（信号五词/置信/距止损/轨）。"""
     rows = payload.get("rows") or []
     if not rows:
         note = "" if payload.get("read_ok") else "（signals.json 不可读——宁拒不漏）"
         return f'<p class="loadmsg">无在册信号{note}。</p>'
+    names = payload.get("names") or {}
     trs = []
     for row in rows:
         signal = row.get("signal")
@@ -409,9 +458,11 @@ def render_signals_table(payload: dict) -> str:
             if to_stop is not None and to_stop <= 0
             else ("dist-near" if to_stop is not None and to_stop <= 3 else "")
         )
+        name = names.get(row["code"])
+        name_html = f" {_esc(name)}" if name else ""
         trs.append(
             "<tr>"
-            f'<td><span class="code num">{_esc(row["code"])}</span></td>'
+            f'<td><span class="code num">{_esc(row["code"])}</span>{name_html}</td>'
             f'<td><span class="{sig_cls}"></span> {_esc(signal or row.get("signal_raw"))}</td>'
             f'<td class="num">{_fmt(row.get("confidence"))}</td>'
             f'<td class="num {_esc(dist_cls)}">{_fmt(to_stop, "%")}</td>'

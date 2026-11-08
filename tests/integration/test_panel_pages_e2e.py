@@ -225,3 +225,76 @@ class TestSevenPageSkeleton:
             resp = client.get(frag_path)
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"], frag_path
+
+
+class TestP2Endpoints:
+    def test_calendar_seeded_from_t1(self, tmp_path: Path):
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        day = market_today()
+        wd = layout.t1_workdir(day, "600519")
+        wd.mkdir(parents=True)
+        (wd / "evidence.json").write_text(
+            json.dumps(
+                {
+                    "meta": {"code": "600519"},
+                    "blocks": {
+                        "unlock": {
+                            "upcoming": [{"date": "2099-01-01", "ratio_pct": 3.3, "type": "定增"}]
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        body = client.get("/api/calendar").json()
+        assert body["upcoming"] and body["upcoming"][0]["code"] == "600519"
+        frag = client.get("/api/panel/calendar").text
+        assert "600519" in frag
+
+    def test_notifications_from_events_and_log(self, tmp_path: Path):
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        layout.monitor_events_dir.mkdir(parents=True)
+        layout.monitor_events_file(market_today()).write_text(
+            json.dumps(
+                {
+                    "ts": "09:31",
+                    "code": "600519",
+                    "market": "cn",
+                    "kind": "real",
+                    "rule": "stop_break",
+                    "level": "T0",
+                    "notify": True,
+                    "review": "止损复核",
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        logs = layout.monitor_dir / "logs"
+        logs.mkdir(parents=True)
+        (logs / "watch.out.log").write_text(
+            "notify: [vibe-stock 盯盘] 紫金矿业 现价 27.92 ·止损复核 ·待收盘复核·非投资建议\n",
+            encoding="utf-8",
+        )
+        rows = client.get("/api/notifications").json()
+        assert any(r["source"] == "log" and "紫金矿业" in r["body"] for r in rows)
+        assert any(r["source"] == "events" for r in rows)
+        frag = client.get("/api/panel/notifications").text
+        assert "紫金矿业" in frag
+        assert "禁第三方推送（红线 7）" in frag
+
+    def test_signals_endpoint_has_names(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.root.mkdir(parents=True, exist_ok=True)
+        (layout.root / "names.json").write_text(
+            json.dumps({"cn:600519": "贵州茅台"}), encoding="utf-8"
+        )
+        body = client.get("/api/signals").json()
+        assert body["names"]["600519"] == "贵州茅台"
+        frag = client.get("/api/panel/signals").text
+        assert "贵州茅台" in frag or "无在册信号" in frag

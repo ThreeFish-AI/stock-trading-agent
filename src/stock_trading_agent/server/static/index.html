@@ -389,6 +389,8 @@ tr.open td{background:var(--warnbg)}
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm">adjudicate 产出 · 盘中以收盘复核为准 R9</span></div>
       <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+    <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm">披露/解禁/公告 · evidence 聚合</span></div>
+      <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">晨报 / 复盘行动项</span><span class="cm">briefing 投影</span></div>
       <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
@@ -416,6 +418,8 @@ tr.open td{background:var(--warnbg)}
 <div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm">T0 机械事实 · 短语措辞限定「复核」（R7）</span></div>
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+<div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm">osascript 通道 · 只读</span></div>
+  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div id="advice-detail"></div></section>
 <section class="page" id="page-paper" data-page="paper">
 <div class="hero"><div><h1>模拟盘</h1><div class="sub">paper 引擎 · 严格穿价撮合 + 静态费用栈 + 逐笔人工确认 · 撮合零 LLM</div></div>
