@@ -198,9 +198,11 @@ def render_audit(decisions: list[dict], budget: dict, *, chain_ok: bool | None =
     if chain_ok is True:
         chain_note = '<p class="ok">链校验通过 · 台账防篡改完好</p>'
     elif chain_ok is False:
+        from stock_trading_agent.state.decisions import REPAIR_HINT
+
         chain_note = (
             '<p class="warn">hash 链校验失败（seq 乱序或 hash 复算不符）——'
-            "台账可能被改写或并发写入，复核 decisions.jsonl</p>"
+            f"台账可能被改写或并发写入，{_esc(REPAIR_HINT)}</p>"
         )
     table = (
         '<table class="tbl"><colgroup><col class="w-seq"><col class="w-ts">'
@@ -697,6 +699,14 @@ def render_syscard(status: dict, sessions: dict, queue: dict) -> str:
         '<div class="sys-desc">headless 子进程唯一 LLM 通道</div></div>'
         f'<span class="sys-st">{"运行中" if cc_active else "降级只读"}</span></div>'
     )
+    chain_error = (status.get("loop") or {}).get("chain_error")
+    if chain_error:
+        rows.append(
+            '<div class="sys-row"><div class="sdot sdot-wait"></div>'
+            '<div style="flex:1;min-width:0"><span class="sys-name">决策链</span>'
+            f'<div class="sys-desc">{html.escape(str(chain_error))}</div></div>'
+            '<span class="sys-st">待修复</span></div>'
+        )
     sess_count = len(sessions.get("sessions") or {})
     latest = list((sessions.get("sessions") or {}).values())[-1:] or [{}]
     cost = latest[0].get("cost_usd_equiv", 0) if isinstance(latest[0], dict) else 0

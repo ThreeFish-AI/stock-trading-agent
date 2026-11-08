@@ -301,3 +301,81 @@ class TestSubmitAndWatch:
         finally:
             w.stop()
         assert got.is_set()
+
+
+class TestDecisionChainIntegrity:
+    """0.0.15 决策链完整性：空链直写（W1）、游标双写（W2）、重放历史（W3）防回退。"""
+
+    def _read_lines(self, rt) -> list[dict]:
+        import json as _json
+
+        path = rt.layout.decisions_path
+        if not path.exists():
+            return []
+        return [_json.loads(r) for r in path.read_text(encoding="utf-8").splitlines() if r]
+
+    def test_submit_without_start_continues_chain(self, make_runtime):
+        """W1 端到端：runtime A（未 acquire，降级态）提交后，全新 runtime B 提交不得回退 seq。"""
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        a = make_runtime()
+        a.submit(kind="diagnose_quick", code="600519")
+        b = make_runtime(root=a.layout.root)  # 新进程形态：空内存 DecisionLog
+        b.submit(kind="diagnose_quick", code="000001")
+        lines = self._read_lines(b)
+        assert [x["seq"] for x in lines] == [1, 2]  # 无 seq 回退、无双写
+        assert DecisionLog.load(b.layout.decisions_path).verify_chain()
+
+    def test_full_task_lifecycle_no_duplicate_lines(self, make_runtime):
+        """W2 端到端：submit + 消费 + 面板侧决策（l2_toggled 路径模拟）后行数恰等于决策条数。"""
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        rt = make_runtime()
+        rt.submit(kind="diagnose_quick", code="600519")
+        rt.loop.decisions.append(  # 面板旁路追加形态（l2_toggle/briefing_ack 同入口）
+            "2026-11-08T00:00:00+00:00",
+            "briefing_ack",
+            {"date": "2026-11-08", "code": "600519"},
+            path=rt.layout.decisions_path,
+        )
+        task = rt.consume_one()
+        assert task is not None and task.status == "done"
+        lines = self._read_lines(rt)
+        seqs = [x["seq"] for x in lines]
+        assert seqs == list(range(1, len(lines) + 1))  # 连续且唯一（旧 W2 会复制已落盘行）
+        assert DecisionLog.load(rt.layout.decisions_path).verify_chain()
+
+    def test_restart_acquire_no_history_replay(self, make_runtime):
+        """W3 端到端：A 消费后 B acquire_daemon 再消费，无历史块重追加。"""
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        a = make_runtime()
+        a.submit(kind="diagnose_quick", code="600519")
+        a.consume_one()
+        n_after_a = len(self._read_lines(a))
+        b = make_runtime(root=a.layout.root)
+        assert b.acquire_daemon()
+        b.submit(kind="diagnose_quick", code="000001")
+        b.consume_one()
+        lines = self._read_lines(b)
+        # B 的两段（submit+done）恰 +2 行；旧 W3 会把 A 的全部历史重追加
+        assert len(lines) == n_after_a + 2
+        assert DecisionLog.load(b.layout.decisions_path).verify_chain()
+
+    def test_acquire_daemon_on_broken_chain_degrades(self, make_runtime, tmp_path):
+        """strict load：断链文件上 acquire 返回 False 且 chain_error 可见（worker 不启动）。"""
+        import json as _json
+        from dataclasses import asdict
+
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        rt = make_runtime()
+        rt.submit(kind="diagnose_quick", code="600519")
+        orphan = DecisionLog()
+        orphan.append("t", "task_done", {"task_id": "z"})
+        with rt.layout.decisions_path.open("a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(asdict(orphan.lines[0]), ensure_ascii=False) + "\n")
+        b = make_runtime(root=rt.layout.root)
+        assert not b.acquire_daemon()
+        assert b.chain_error and "repair-decisions" in b.chain_error
+        assert b.start() is False  # worker/watcher 不启动

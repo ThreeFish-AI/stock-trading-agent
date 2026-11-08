@@ -92,8 +92,11 @@ class AgentLoop:
         self.layout = layout
         self.table = table
         self.decisions = decisions or DecisionLog()
-        self._persisted_lines = 0  # _persist_all 增量落行游标（advice 链单次 persist 多条决策）
         self.budget = budget or BudgetConfig()  # 默认关（人在环期仅记账，§13）
+
+    def _decide(self, kind: str, payload: dict) -> None:
+        """决策追加单一入口（0.0.15）：append(path=...) 锁内尾部对账后即写即落，无游标。"""
+        self.decisions.append(_now_iso(), kind, payload, path=self.layout.decisions_path)
 
     # ① ingest：事件信封入队（幂等键 + 禁跑窗 + 锁前置）
     def ingest(self, event: EventEnvelope, queue: QueueState) -> TaskRecord:
@@ -231,8 +234,7 @@ class AgentLoop:
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
             record.finished_at = _now_iso()
             record.error = "；".join(verdict.reasons)
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind=("advice_refused" if task.kind == MONITOR_REVIEW_KIND else "assert_refuse"),
                 payload={
                     "task_id": task.task_id,
@@ -271,8 +273,7 @@ class AgentLoop:
             )
         )
         self._record_budget(result)
-        self.decisions.append(
-            _now_iso(),
+        self._decide(
             kind="task_done",
             payload={
                 "task_id": task.task_id,
@@ -295,8 +296,7 @@ class AgentLoop:
         """
         structured = result.structured_output or {}
         if structured.get("outcome") != "card":
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind="advice_refused",
                 payload={
                     "task_id": task.task_id,
@@ -325,8 +325,7 @@ class AgentLoop:
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
             record.finished_at = _now_iso()
             record.error = detail
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind="advice_refused",
                 payload={
                     "task_id": task.task_id,
@@ -339,8 +338,7 @@ class AgentLoop:
             )
             self._persist_all(queue, sessions)
             return False
-        self.decisions.append(
-            _now_iso(),
+        self._decide(
             kind="advice_card_written",
             payload={
                 "task_id": task.task_id,
@@ -372,8 +370,7 @@ class AgentLoop:
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
             record.finished_at = _now_iso()
             record.error = str(exc)
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind="task_failed",
                 payload={
                     "task_id": task.task_id,
@@ -384,8 +381,7 @@ class AgentLoop:
             )
             self._persist_all(queue, sessions)
             return False
-        self.decisions.append(
-            _now_iso(),
+        self._decide(
             kind="briefing_card",
             payload={
                 "task_id": task.task_id,
@@ -412,17 +408,9 @@ class AgentLoop:
         atomic_write_json(self.layout.budget_path, updated)
 
     def _persist_all(self, queue: QueueState, sessions: SessionsState) -> None:
+        """queue/sessions 原子写（decisions 已在 _decide 即写即落，0.0.15 删增量游标）。"""
         atomic_write_json(self.layout.queue_path, queue.to_dict())
         atomic_write_json(self.layout.sessions_path, sessions.to_dict())
-        if self.layout.decisions_path.parent.exists():
-            from dataclasses import asdict
-
-            from stock_trading_agent.state.store import atomic_append_jsonl
-
-            fresh = self.decisions.lines[self._persisted_lines :]
-            for line in fresh:
-                atomic_append_jsonl(self.layout.decisions_path, asdict(line))
-            self._persisted_lines = len(self.decisions.lines)
 
     def load_queue(self) -> QueueState:
         return QueueState.from_dict(read_json(self.layout.queue_path, expect_version=1))

@@ -12,13 +12,36 @@ import sys
 def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
-    from stock_trading_agent.server.app import HOST, PORT, create_app
+    from stock_trading_agent.server.app import (
+        HOST,
+        PORT,
+        create_app,
+        listener_pid,
+        port_is_listening,
+        probe_panel,
+    )
 
+    port = args.port or PORT
+    if port_is_listening(HOST, port):  # 端口冲突预检：替代裸 errno 48
+        info = probe_panel(HOST, port)
+        pid = listener_pid(port)
+        if info is not None:  # 本面板已在跑：幂等退出（退出码不影响 KeepAlive 节流重启）
+            ver = info.get("version", "?")
+            print(f"[sta] 面板已在运行：http://{HOST}:{port}/")
+            print(f"[sta] version={ver}，pid={pid or '未知'}")
+            print("[sta] 面板在线即目标达成，本次幂等退出（exit 0）；重启面板：")
+            print("      launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent")
+            if pid:
+                print(f"      或 kill {pid}（launchd KeepAlive 30s 内自动重拉）")
+            return 0
+        print(f"[sta] 端口 {HOST}:{port} 被未知进程占用（pid={pid or '未知'}），面板无法启动。")
+        print(f"[sta] 排查：lsof -nP -iTCP:{port} -sTCP:LISTEN；停占口者或换 --port 后重试。")
+        return 1
     # enable_loop_runtime：lifespan 起 worker/watcher 线程；daemon 锁被持有时面板降级只读
     uvicorn.run(
         create_app(enable_loop_runtime=True),
         host=HOST,
-        port=args.port or PORT,
+        port=port,
         workers=1,
         log_level="info",
         timeout_graceful_shutdown=args.graceful_shutdown,
@@ -51,7 +74,10 @@ def _cmd_run_once(args: argparse.Namespace) -> int:
     )
     runtime = LoopRuntime(layout=layout, cc=cc)
     if not runtime.acquire_daemon(timeout_s=1.0):
-        print("daemon.lock 被持有（另一消费者在跑：serve 或另一 run-once），exit 3")
+        if runtime.chain_error:
+            print(f"决策链断裂，拒消费（{runtime.chain_error}），exit 3")
+        else:
+            print("daemon.lock 被持有（另一消费者在跑：serve 或另一 run-once），exit 3")
         return 3
     try:
         runtime.recover_orphans()
@@ -93,6 +119,54 @@ def _cmd_probe(_args: argparse.Namespace) -> int:
     mode = billing_mode_from_probe(report.auth_mode)
     print(f"cli_version={report.cli_version} auth_mode={report.auth_mode} capabilities={caps}")
     print(f"billing_mode={mode}（probe 联动，判不准收紧为 api；真实通道需 STA_ALLOW_REAL_CC=1）")
+    return 0
+
+
+def _cmd_repair_decisions(_args: argparse.Namespace) -> int:
+    """一次性修复 decisions.jsonl 断链（保行重链 + 备份不删行；0.0.15 runbook）。
+
+    完好链 noop exit 0；坏 JSON 行即中止人工检查（不删行纪律下无降级路径）。
+    修复后建议 launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent 重启 serve。
+    """
+    import datetime as dt
+    import hashlib
+    import json
+
+    from stock_trading_agent.state.decisions import (
+        DecisionChainError,
+        DecisionLog,
+        repair_chain_lines,
+    )
+    from stock_trading_agent.state.paths import StateLayout
+    from stock_trading_agent.state.store import FileLock, atomic_write_text
+
+    layout = StateLayout.from_env()
+    path = layout.decisions_path
+    if not path.exists():
+        print(f"decisions.jsonl 不存在（{path}），无需修复")
+        return 0
+    try:
+        log = DecisionLog.load(path)
+    except DecisionChainError as exc:
+        print(f"检测到断链：{exc}")
+    else:
+        print(f"决策链完整（{len(log.lines)} 行），无需修复")
+        return 0
+    text = path.read_text(encoding="utf-8")
+    ts = dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds")
+    old_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    rows, stats = repair_chain_lines(text.splitlines(), ts=ts, old_sha256=old_sha256)
+    stamp = dt.datetime.now(tz=dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    backup = path.with_name(f"{path.name}.bak-{stamp}")
+    with FileLock(layout.decisions_lock):
+        atomic_write_text(backup, text)
+        atomic_write_text(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    print(
+        f"修复完成：{stats.rows_before} 行保行重链 → {stats.rows_after} 行"
+        f"（含 chain_repair_started/done 两条；断点行 {stats.breaks}）"
+    )
+    print(f"备份：{backup}")
+    print(f"新链头：{stats.new_head[:12]}…（建议 launchctl kickstart 重启 serve）")
     return 0
 
 
@@ -261,6 +335,44 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         assert not log.verify_chain()
 
     check_case("state.decisions.hash_chain", hash_chain)
+
+    def tail_sync_and_repair():
+        import json
+        import tempfile
+        from dataclasses import asdict
+        from pathlib import Path
+
+        from stock_trading_agent.state.decisions import (
+            DecisionChainError,
+            repair_chain_lines,
+        )
+        from stock_trading_agent.state.store import atomic_write_text
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "decisions.jsonl"
+            a = DecisionLog()
+            a.append("2026-11-07T00:00:00Z", "task_submitted", {"task_id": "t"}, path=path)
+            b = DecisionLog()  # 重启/降级态：空内存实例
+            b.append("2026-11-07T00:00:01Z", "task_done", {"task_id": "t"}, path=path)
+            reloaded = DecisionLog.load(path)
+            assert [x.seq for x in reloaded.lines] == [1, 2]  # 空链直写不再回退 seq（W1 防回退）
+            # 构造断链样本（模拟 W1 产物：两段各自从 seq=1）→ 保行重链
+            raw = path.read_text(encoding="utf-8").splitlines()
+            c = DecisionLog()
+            c.append("2026-11-07T00:00:02Z", "task_done", {"task_id": "t2"})
+            raw.append(json.dumps(asdict(c.lines[0]), ensure_ascii=False))
+            atomic_write_text(path, "\n".join(raw) + "\n")
+            try:
+                DecisionLog.load(path)
+                raise AssertionError("断链样本应 raise")
+            except DecisionChainError:
+                pass
+            rows, stats = repair_chain_lines(raw, ts="2026-11-08T00:00:00Z", old_sha256="0" * 64)
+            assert stats.rows_after == stats.rows_before + 2
+            atomic_write_text(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+            assert DecisionLog.load(path).verify_chain()  # 修复后可载入且链完整
+
+    check_case("state.decisions.tail_sync_repair", tail_sync_and_repair)
 
     def routing_table():
         table = load_default_table()
@@ -712,6 +824,15 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("state.queue.find_any", queue_find_any)
 
+    def port_guard_probe():
+        from stock_trading_agent.server.app import _is_panel_health
+
+        assert _is_panel_health({"ok": True, "component": "stock-trading-agent-panel", "v": "x"})
+        assert not _is_panel_health({"ok": True, "component": "other-service"})
+        assert not _is_panel_health("stock-trading-agent-panel")  # 非 dict 判否
+
+    check_case("server.port_guard.probe", port_guard_probe)
+
     return results
 
 
@@ -749,12 +870,17 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--kind", default=None, help="可选：先提交再消费（六 kind 或 t1_refresh）")
     run_p.add_argument("--code", default=None, help="标的码（与 --kind 成对）")
     sub.add_parser("probe", help="CC 通道探针（骨架期即 dry-run 报告）")
+    sub.add_parser(
+        "repair-decisions",
+        help="一次性修复 decisions.jsonl 断链（保行重链+备份不删行；strict load 配套）",
+    )
     sub.add_parser("selftest", help="聚合纯函数回归（与 pytest 同源判据）")
     args = parser.parse_args(argv)
     handlers = {
         "serve": _cmd_serve,
         "run-once": _cmd_run_once,
         "probe": _cmd_probe,
+        "repair-decisions": _cmd_repair_decisions,
         "selftest": _cmd_selftest,
     }
     return handlers[args.command](args)

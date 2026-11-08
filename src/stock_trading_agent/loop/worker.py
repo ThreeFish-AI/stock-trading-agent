@@ -14,7 +14,7 @@ import contextlib
 import datetime as _dt
 import threading
 import traceback
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 from stock_trading_agent.budget.gate import BudgetConfig
 from stock_trading_agent.cc_client.contract import CCClient
@@ -42,13 +42,12 @@ from stock_trading_agent.loop.router import load_default_table
 from stock_trading_agent.loop.t1 import T1Runner
 from stock_trading_agent.loop.watcher import EventsWatcher
 from stock_trading_agent.state.agent_config import AgentConfig, load_agent_config, save_agent_config
-from stock_trading_agent.state.decisions import DecisionLog
+from stock_trading_agent.state.decisions import DecisionChainError, DecisionLog
 from stock_trading_agent.state.paths import StateLayout
 from stock_trading_agent.state.queue import TaskRecord
 from stock_trading_agent.state.store import (
     FileLock,
     LockTimeout,
-    atomic_append_jsonl,
     atomic_write_json,
 )
 
@@ -138,6 +137,7 @@ class LoopRuntime:
         )
         self.poll_interval_s = poll_interval_s
         self.watcher_enabled = watcher_enabled
+        self.chain_error: str | None = None  # strict load 断链时承载降级原因（面板可见）
         self._last_leak_scan = 0.0
         self._pgrep_runner = None  # 测试注入位（None=真跑 pgrep）
         self._stop = threading.Event()
@@ -156,7 +156,11 @@ class LoopRuntime:
         )
 
     def acquire_daemon(self, *, timeout_s: float = 3.0) -> bool:
-        """获取 daemon.lock（失败返回 False——serve 降级只读，run-once 由 CLI 转 exit 3）。"""
+        """获取 daemon.lock（失败返回 False——serve 降级只读，run-once 由 CLI 转 exit 3）。
+
+        决策链 strict 载入（0.0.15）：断链即释放锁、记 chain_error、返回 False——
+        worker/watcher 不启动（防在断链文件上续写），修复走 CLI repair-decisions。
+        """
         if self._daemon_stack is not None:
             return True
         try:
@@ -164,9 +168,14 @@ class LoopRuntime:
             stack.enter_context(FileLock(self.layout.daemon_lock, timeout_s=timeout_s))
         except LockTimeout:
             return False
+        try:
+            self.loop.decisions = DecisionLog.load(self.layout.decisions_path)
+        except DecisionChainError as exc:
+            self.chain_error = str(exc)
+            stack.close()  # 释放 daemon 锁（降级只读，不占锁）
+            return False
+        self.chain_error = None
         self._daemon_stack = stack
-        # 决策链载入即校验（单写者=本运行时，内存链与盘上链一致）
-        self.loop.decisions = DecisionLog.load(self.layout.decisions_path)
         return True
 
     def start(self) -> bool:
@@ -200,10 +209,9 @@ class LoopRuntime:
             self._daemon_stack.close()
             self._daemon_stack = None
 
-    # --- 决策追加（须在 queue.lock 持有期内调用；内存链+盘上原子追加同一行） ---
+    # --- 决策追加（须在 queue.lock 持有期内调用；append(path=...) 单一入口：锁内尾部对账+落盘） ---
     def _decide(self, kind: str, payload: dict) -> None:
-        line = self.loop.decisions.append(_now_iso(), kind, payload)
-        atomic_append_jsonl(self.layout.decisions_path, asdict(line))
+        self.loop.decisions.append(_now_iso(), kind, payload, path=self.layout.decisions_path)
 
     # --- 提交半边（面板 POST / CLI run-once --kind 入口；写者=主 Agent 进程内直调） ---
     def submit(self, *, kind: str, code: str, source: str = "panel") -> TaskRecord:

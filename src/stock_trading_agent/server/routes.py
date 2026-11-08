@@ -29,10 +29,14 @@ from stock_trading_agent.server.panel import (
     render_task_card,
 )
 from stock_trading_agent.server.schemas import REJECT_STATUS, SubmitRequest
+from stock_trading_agent.state.decisions import DecisionChainError
 from stock_trading_agent.state.paths import StateLayout
 
 router = APIRouter(prefix="/api")
 root_router = APIRouter()  # 无前缀（favicon 等根级路由）
+
+# 组件身份 SSOT：health 端点与 serve 端口预检（app.probe_panel）同源，防两处字面量漂移
+PANEL_COMPONENT = "stock-trading-agent-panel"
 
 _REPORTS_DIR_RE = re.compile(r"^\d{5,6}\.(cn|hk)$")
 
@@ -60,7 +64,7 @@ def favicon() -> FileResponse:
 
 @router.get("/health")
 def health() -> dict:
-    return {"ok": True, "component": "stock-trading-agent-panel", "version": __version__}
+    return {"ok": True, "component": PANEL_COMPONENT, "version": __version__}
 
 
 @router.get("/queue")
@@ -208,6 +212,7 @@ def monitor_status(request: Request) -> dict:
             "active": bool(runtime and runtime.is_active),
             "queued": queued,
             "running": running,
+            "chain_error": (runtime.chain_error if runtime is not None else None),
         },
     }
 
@@ -567,26 +572,27 @@ class L2ToggleRequest(BaseModel):  # L2 开关请求契约（局部）
 
 @router.post("/l2")
 def l2_toggle(payload: L2ToggleRequest, request: Request) -> dict:
-    from dataclasses import asdict
-
     from stock_trading_agent.state.agent_config import load_agent_config, save_agent_config
-    from stock_trading_agent.state.store import FileLock, atomic_append_jsonl
+    from stock_trading_agent.state.store import FileLock
 
     runtime = _runtime(request)
     if runtime is None or not runtime.is_active:
         raise HTTPException(status_code=503, detail="运行时未持锁（L2 开关需 daemon 持有者）")
     layout = _layout(request)
-    with FileLock(layout.queue_lock):  # _decide 锁内调用契约
-        cfg = load_agent_config(layout.agent_config_path)
-        cfg.l2_enabled = payload.enabled
-        save_agent_config(layout.agent_config_path, cfg)
-        cfg = runtime.apply_l2_config(probe=payload.enabled)  # 开启即探测认证态并联动预算闸
-        line = runtime.loop.decisions.append(
-            _now_iso(),
-            "l2_toggled",
-            {"enabled": payload.enabled, "by": "panel", "billing_mode": cfg.billing_mode},
-        )
-        atomic_append_jsonl(layout.decisions_path, asdict(line))
+    try:
+        with FileLock(layout.queue_lock):  # _decide 锁内调用契约
+            cfg = load_agent_config(layout.agent_config_path)
+            cfg.l2_enabled = payload.enabled
+            save_agent_config(layout.agent_config_path, cfg)
+            cfg = runtime.apply_l2_config(probe=payload.enabled)  # 开启即探测认证态并联动预算闸
+            runtime.loop.decisions.append(
+                _now_iso(),
+                "l2_toggled",
+                {"enabled": payload.enabled, "by": "panel", "billing_mode": cfg.billing_mode},
+                path=layout.decisions_path,
+            )
+    except DecisionChainError as exc:
+        raise HTTPException(status_code=503, detail=f"{exc}") from exc
     return {
         "l2_enabled": cfg.l2_enabled,
         "billing_mode": cfg.billing_mode,
@@ -674,11 +680,8 @@ def panel_briefing_ack(
     request: Request, date: str = Form(...), code: str = Form(...)
 ) -> HTMLResponse:
     """确认状态走 decision log（hash 链防篡改；降级只读态 503）。"""
-    from dataclasses import asdict
-
     from stock_trading_agent.loop.monitor_events import market_today
     from stock_trading_agent.server.panel import render_briefing_fragment
-    from stock_trading_agent.state.store import atomic_append_jsonl
 
     runtime = _runtime(request)
     if runtime is None or not runtime.is_active:
@@ -686,8 +689,12 @@ def panel_briefing_ack(
     layout = _layout(request)
     if date != market_today():
         raise HTTPException(status_code=422, detail="仅当日卡可确认")
-    line = runtime.loop.decisions.append(_now_iso(), "briefing_ack", {"date": date, "code": code})
-    atomic_append_jsonl(layout.decisions_path, asdict(line))
+    try:
+        runtime.loop.decisions.append(
+            _now_iso(), "briefing_ack", {"date": date, "code": code}, path=layout.decisions_path
+        )
+    except DecisionChainError as exc:
+        raise HTTPException(status_code=503, detail=f"{exc}") from exc
     return HTMLResponse(render_briefing_fragment(_briefing_payload(request)))
 
 
@@ -796,23 +803,21 @@ def _paper_decide(request: Request, payload: dict, *, action: str) -> dict:
                     _now_iso(),
                     "paper_fill_confirmed",
                     {"request_id": request_id, "code": req.code, "leg": req.tranche_leg},
+                    path=layout.decisions_path,
                 )
             else:
                 runtime.loop.decisions.append(
                     _now_iso(),
                     "paper_fill_rejected",
                     {"request_id": request_id, "code": queue.find(request_id).code},
+                    path=layout.decisions_path,
                 )
-            from dataclasses import asdict
-
-            from stock_trading_agent.state.store import atomic_append_jsonl
-
-            if runtime.loop.decisions.lines:
-                atomic_append_jsonl(layout.decisions_path, asdict(runtime.loop.decisions.lines[-1]))
             queue = queue.remove(request_id)
             paper_pending.save(queue, layout.sim_pending_fills_path)
     except HTTPException:
         raise
+    except DecisionChainError as exc:
+        raise HTTPException(status_code=503, detail=f"{exc}") from exc
     except KeyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:  # ConfirmError / LedgerError
@@ -981,6 +986,8 @@ def _do_submit(request: Request, kind: str, code: str) -> tuple[dict | None, int
     except LoopReject as exc:
         status = REJECT_STATUS.get(exc.reason, 500)
         return None, status, str(exc)
+    except DecisionChainError as exc:
+        return None, 503, str(exc)
     return asdict(task), 201, ""
 
 
@@ -1017,15 +1024,30 @@ def panel_events(request: Request) -> HTMLResponse:
 
 @router.get("/panel/audit")
 def panel_audit(request: Request) -> HTMLResponse:
-    """⑦审计：经 DecisionLog.load 读侧防线（断链不抛异常仍可渲染）+ verify_chain 呈现。"""
+    """⑦审计：strict 载入 + 断链降级（原始行渲染 + 警示；修复走 repair-decisions CLI）。"""
+    import json as _json
     from dataclasses import asdict
 
     from stock_trading_agent.state.decisions import DecisionLog
 
     layout = _layout(request)
-    log = DecisionLog.load(layout.decisions_path)
-    lines = [asdict(line) for line in log.lines][-20:]
-    return HTMLResponse(render_audit(lines, budget(request), chain_ok=log.verify_chain()))
+    try:
+        log = DecisionLog.load(layout.decisions_path)
+        lines = [asdict(line) for line in log.lines][-20:]
+        chain_ok: bool | None = log.verify_chain()
+    except DecisionChainError:
+        rows: list[dict] = []
+        if layout.decisions_path.exists():
+            for raw in layout.decisions_path.read_text(encoding="utf-8").splitlines():
+                if not raw.strip():
+                    continue
+                try:
+                    rows.append(_json.loads(raw))
+                except ValueError:
+                    continue  # 坏行跳过——降级投影宁可少列不可拒渲
+        lines = rows[-20:]
+        chain_ok = False
+    return HTMLResponse(render_audit(lines, budget(request), chain_ok=chain_ok))
 
 
 @router.get("/panel/task/{task_id}")
