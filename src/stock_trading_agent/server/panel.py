@@ -105,7 +105,8 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             action += (
                 f'<button class="mini" hx-post="/api/panel/submit" '
                 f'hx-vals=\'{{"kind": "monitor_review", "code": "{_esc(code)}"}}\' '
-                f'hx-target="#advice-detail" hx-swap="innerHTML">盯盘复核 {_esc(code)}</button>'
+                f'hx-target="#advice-detail" hx-swap="innerHTML" '
+                f'hx-disabled-elt="this">盯盘复核 {_esc(code)}</button>'
             )
         elif suppressed:
             action = '<span class="tag">已压制</span>'
@@ -344,7 +345,10 @@ def render_settings_fragment(state: dict) -> str:
     target = 'hx-target="#l2-settings" hx-swap="innerHTML"'
     if enabled:
         off_vals = 'hx-vals=\'{"enabled": "false"}\''
-        btn = f'<button class="mini" hx-post="/api/panel/l2" {off_vals} {target}>关闭 L2</button>'
+        btn = (
+            f'<button class="mini" hx-post="/api/panel/l2" {off_vals} {target} '
+            'hx-disabled-elt="this">关闭 L2</button>'
+        )
     else:
         on_vals = 'hx-vals=\'{"enabled": "true"}\''
         confirm = (
@@ -352,8 +356,8 @@ def render_settings_fragment(state: dict) -> str:
             "（每日 ≤5 票、预算闸联动开启）。确认？'"
         )
         btn = (
-            f'<button class="mini" hx-post="/api/panel/l2" {on_vals} {target} {confirm}>'
-            "开启 L2</button>"
+            f'<button class="mini" hx-post="/api/panel/l2" {on_vals} {target} {confirm} '
+            'hx-disabled-elt="this">开启 L2</button>'
         )
     body = head + note + btn
     return (
@@ -438,7 +442,8 @@ def render_briefing_fragment(payload: dict) -> str:
                 action = (
                     '<button class="mini" hx-post="/api/panel/briefing/ack" '
                     f"hx-vals='{vals}' "
-                    'hx-target="#ov-brief" hx-swap="innerHTML">确认复核</button>'
+                    'hx-target="#ov-brief" hx-swap="innerHTML" '
+                    'hx-disabled-elt="this">确认复核</button>'
                 )
             levels = key_levels.get(card.get("code")) or {}
             chips = "".join(
@@ -490,7 +495,7 @@ def _fmt(value, suffix: str = "") -> str:
 
 
 def render_diag_form() -> str:
-    """②页发起诊股表单：六 kind 白名单下拉 + code 输入 + 提交。"""
+    """②页发起诊股表单：行式 label（label 同行 1/12 + Tooltip 说明，全局表单规范）。"""
     options = "".join(
         f'<option value="{k}">{label}</option>'
         for k, label in [
@@ -503,16 +508,24 @@ def render_diag_form() -> str:
         ]
     )
     return (
-        '<form class="inrow" hx-post="/api/panel/submit" hx-target="#dg-result" '
-        'hx-swap="innerHTML" style="display:flex;flex-direction:column;gap:10px">'
-        '<div style="display:flex;gap:8px">'
-        '<input class="inp" name="code" placeholder="600519 / 00700" '
-        'pattern="[0-9]{5,6}" required style="flex:1">'
-        f'<select class="sel" name="kind" style="flex:1.4">{options}</select>'
-        '<button class="btn btn-pri" type="submit">开始</button></div>'
+        '<form class="frm" hx-post="/api/panel/submit" hx-target="#dg-result" '
+        'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        '<div class="frm-row">'
+        '<label for="dg-code" title="A 股 6 位 / 港股 5 位数字代码；预算与轮次由 kind 路由模板'
+        '类型层强制（NR-4），锁/禁跑窗内提交将被拒（423）">证券代码</label>'
+        '<input class="inp num" id="dg-code" name="code" placeholder="600519 / 00700" '
+        'pattern="[0-9]{5,6}" required inputmode="numeric">'
+        "</div>"
+        '<div class="frm-row">'
+        '<label for="dg-kind" title="六 kind 白名单：快速诊股 / 全量双轨 / 批量波次 / '
+        '逐笔确认 / 晨报复盘 / 盯盘复核（T2）">诊股模式</label>'
+        f'<select class="sel" id="dg-kind" name="kind">{options}</select>'
+        "</div>"
+        '<div class="frm-row">'
+        '<label></label><button class="btn btn-pri" type="submit">开始</button></div>'
         '<p class="tbl-note">LLM 只产意见 · 聚合一律确定性裁决 · NR-3 断言器前置门 · '
         "锁/禁跑窗内提交将被拒（423）</p></form>"
-        '<div id="dg-result" style="margin-top:10px"></div>'
+        '<div id="dg-result" class="dg-result"></div>'
     )
 
 
@@ -975,12 +988,12 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             confirm_btn = (
                 f'<button class="mini" hx-post="/api/panel/paper/confirm" '
                 f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
-                'hx-swap="innerHTML">确认成交</button>'
+                'hx-swap="innerHTML" hx-disabled-elt="this">确认成交</button>'
             )
             reject_btn = (
                 f'<button class="mini" hx-post="/api/panel/paper/reject" '
                 f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
-                'hx-swap="innerHTML">驳回</button>'
+                'hx-swap="innerHTML" hx-disabled-elt="this">驳回</button>'
             )
             rows.append(
                 "<tr>"

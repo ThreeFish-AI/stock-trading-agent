@@ -39,7 +39,7 @@ STA_ALLOW_REAL_CC=1 uv run stock-trading-agent probe   # 真实 CC 通道探针�
 uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI 消费一单（与 serve 抢 daemon 锁）
 ```
 
-面板①②③④⑤⑥⑦全页点亮（SSE 实时流 + 180s 轮询兜底；④模拟盘确认队列+权益曲线、⑤建议卡库、⑥后验战绩、盘前晨报/盘后复盘行动项卡）（180s htmx 轮询 + SSE，本地 vendor 零 CDN，方案 §16）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。真实 CC 通道（headless CLI 子进程：超时 SIGINT→SIGKILL 状态机、stream-json 解析、audit 归档）经 `STA_ALLOW_REAL_CC=1` 放行，默认 dry-run。
+面板①②③④⑤⑥⑦全页点亮（SSE 实时流 + load 首绘 + 180s 轮询兜底；④模拟盘确认队列+权益曲线+绩效三格、⑤建议卡库+详情四块、⑥后验战绩、盘前晨报/盘后复盘行动项卡；本地 vendor 零 CDN）；键盘可达（tablist + :focus-visible）与全局错误提示条（数据通道异常可见）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。真实 CC 通道（headless CLI 子进程：超时 SIGINT→SIGKILL 状态机、stream-json 解析、audit 归档）经 `STA_ALLOW_REAL_CC=1` 放行，默认 dry-run。
 
 ### launchd 第四槽（面板守护，可选）
 
