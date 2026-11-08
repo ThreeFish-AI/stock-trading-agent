@@ -24,6 +24,153 @@ def load_root_json(path: Path) -> list | dict | None:
         return None
 
 
+NOTIFY_TAIL = (
+    " ·待收盘复核·非投资建议"  # 与 vibe-stock watch.py NOTIFY_TAIL 对齐（只读重建用，指针非复制）
+)
+NOTIFY_TITLE_DEFAULT = "vibe-stock 盯盘"
+
+
+def load_name_map(layout) -> dict[str, str]:
+    """名称源回退链（产品仓只读；12-orchestration §⑫ 升级位落地）：
+    names.json（主，report 写穿）→ signals.json 最新 stock_name → universe rows name。
+    """
+    names: dict[str, str] = {}
+    primary = load_root_json(layout.root / "names.json")
+    if isinstance(primary, dict):
+        for key, value in primary.items():
+            if isinstance(value, str) and value:
+                _, _, code = str(key).rpartition(":")
+                if code:
+                    names[code] = value
+    signals = load_root_json(layout.root / "signals.json")
+    if isinstance(signals, list):
+        for entry in signals:
+            if not isinstance(entry, dict):
+                continue
+            code = str(entry.get("code") or "")
+            stock_name = entry.get("stock_name")
+            if code and isinstance(stock_name, str) and stock_name and code not in names:
+                names[code] = stock_name
+    universe = load_root_json(layout.monitor_dir / "universe.json")
+    if isinstance(universe, dict):
+        for row in universe.get("rows") or []:
+            if isinstance(row, dict):
+                code = str(row.get("code") or "")
+                name = row.get("name")
+                if code and isinstance(name, str) and name and code not in names:
+                    names[code] = name
+    return names
+
+
+def aggregate_calendar(evidence_payloads: list[dict]) -> list[dict]:
+    """事件日历聚合：多份 evidence payload（T1/会话 workdir 防重去重取最新）→ 日期升序 cap 15。
+
+    源块：forecast.next_disclosure.appoint_date（预约披露）/ unlock.upcoming（解禁前 3）/
+    notices.items（近 7 天公告）。A 股专属块对港股 not_supported 如实空。
+    """
+    today = dt.datetime.now(tz=MARKET_TZ).strftime("%Y-%m-%d")
+    out: list[dict] = []
+    seen: set[tuple] = set()
+    for payload in evidence_payloads:
+        blocks = (payload or {}).get("blocks") or {}
+        meta = (payload or {}).get("meta")
+        code = (meta.get("code") if isinstance(meta, dict) else None) or ""
+        if not code:
+            continue
+        forecast = blocks.get("forecast") or {}
+        nd = forecast.get("next_disclosure") or {}
+        appoint = nd.get("appoint_date")
+        if appoint and appoint >= today:
+            key = (appoint, "disclosure", code)
+            if key not in seen:
+                seen.add(key)
+                out.append(
+                    {"date": appoint, "type": "披露", "code": code, "detail": "定期报告预约披露日"}
+                )
+        unlock = blocks.get("unlock") or {}
+        for item in (unlock.get("upcoming") or [])[:3]:
+            date = item.get("date")
+            if not date or date < today:
+                continue
+            ratio = item.get("ratio_pct")
+            key = (date, "unlock", code)
+            if key not in seen:
+                seen.add(key)
+                detail = (
+                    f"解禁占流通 {ratio}%（{item.get('type', '')}）"
+                    if ratio is not None
+                    else "解禁"
+                )
+                out.append({"date": date, "type": "解禁", "code": code, "detail": detail})
+        notices = blocks.get("notices") or {}
+        for item in notices.get("items") or []:
+            date = item.get("date")
+            if not date or date < today:
+                continue
+            key = (date, str(item.get("title", ""))[:20], code)
+            if key not in seen:
+                seen.add(key)
+                out.append(
+                    {
+                        "date": date,
+                        "type": "公告",
+                        "code": code,
+                        "detail": f"{item.get('type', '')} {item.get('title', '')}".strip(),
+                    }
+                )
+    out.sort(key=lambda r: r["date"])
+    return out[:15]
+
+
+def rebuild_notifications(
+    events: list[dict], watch_log_text: str, names: dict[str, str]
+) -> list[dict]:
+    """已发通知历史重放（只读；产品仓永不发通知，R7）。
+
+    双源：events 台账 notify=true 行（构造 body）+ watch.out.log 的 notify 行（终态原文，优先）。
+    """
+    out: list[dict] = []
+    seen_keys: set[str] = set()
+    for line in (watch_log_text or "").splitlines():
+        idx = line.find("notify: ")
+        if idx < 0:
+            continue
+        raw = line[idx + len("notify: ") :]
+        title = NOTIFY_TITLE_DEFAULT
+        body = raw
+        if raw.startswith("[") and "]" in raw:
+            end = raw.index("]")
+            title = raw[1:end]
+            body = raw[end + 1 :].strip()
+        ts = line[:idx].strip() or ""
+        key = f"log:{body[:40]}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        out.append({"ts": ts, "code": "", "title": title, "body": body, "source": "log"})
+    for ev in events or []:
+        if not ev.get("notify") or ev.get("suppress_reason"):
+            continue
+        code = str(ev.get("code", ""))
+        name = names.get(code, code)
+        review = f" ·{ev['review']}" if ev.get("review") else ""
+        body = f"{name} {ev.get('rule', '')}（{ev.get('ts', '')}）{review}{NOTIFY_TAIL}"
+        key = f"ev:{code}:{ev.get('ts', '')}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        out.append(
+            {
+                "ts": ev.get("ts", ""),
+                "code": code,
+                "title": NOTIFY_TITLE_DEFAULT,
+                "body": body,
+                "source": "events",
+            }
+        )
+    return out[-20:]
+
+
 def market_phase(now: dt.datetime | None = None) -> dict:
     """盘态判定（连续窗简化：CN 09:30–15:00 / HK 09:30–16:00，午休并入盘中——登记升级位）。"""
     if now is None:

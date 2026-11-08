@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.12] - 2026-11-08
+
+### Added
+
+- **P2 专项第一 PR：名称源 + 事件日历 + 通知预览（规约 [12-orchestration.md](docs/specs/12-orchestration.md) §⑫ 升级位翻绿三项）**。①**名称源回退链**（`panel_data.load_name_map`）：names.json 主源（report 写穿可再生）→ signals.json 最新 stock_name → universe rows name 三源合并；产品仓只读（R3/R8 边界不动）；signals 信号卡表与渲染接名称列。②**事件日历**（`aggregate_calendar` + `GET /api/calendar|/api/panel/calendar`）：T1 workdir（当日 agent/runs/<date>/t1/*/evidence.json）+ 最近会话 workdir（sessions 反查）的 forecast.next_disclosure（预约披露）/unlock.upcoming（解禁前 3）/notices.items（近 7 天公告）三块聚合，按日期升序 cap 15、双源去重；A 股专属两块对港股 not_supported 如实空；①页中栏 kchip 样式接入。③**通知预览历史重放**（`rebuild_notifications` + `GET /api/notifications|/api/panel/notifications`）：watch.out.log 的 notify 行（终态原文含 NOTIFY_TAIL，优先）+ events 台账 notify=true 行（名称+规则+复核短语构造）双源合并去重；③页 macOS 通知样式卡（铃铛图标+标题+正文+「待收盘复核·非投资建议」脚注+通道标识）+红线 7 锁形说明（仅本地 osascript·禁第三方推送·告警主通道留服务端）——**产品仓永不发通知（R7），本卡只读重放**。测试 +10 例（395 passed 全绿）：名称链合并/缺席、日历三型排序与去重/过去过滤/港股空态、通知 log 行解析/event 行名称/suppress 排除、端点 e2e（T1 evidence 种子→日历、双源通知→fragment、names 注入 signals）。
+
 ## [0.0.11] - 2026-11-08
 
 ### Added

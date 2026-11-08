@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 from stock_trading_agent.loop.advice import parse_trend_table, render_advice_card
 from stock_trading_agent.server.panel_data import (
     MARKET_TZ,
+    aggregate_calendar,
     briefing_action_items,
     build_name_map,
     derive_todos,
+    load_name_map,
     market_phase,
+    rebuild_notifications,
     signals_snapshot,
 )
 from stock_trading_agent.server.stats import perf_summary, t1_review_hitrate
+from stock_trading_agent.state.paths import StateLayout
 
 CST = MARKET_TZ
 
@@ -155,3 +160,82 @@ class TestTrendTableRoundtrip:
 
     def test_no_section_empty(self):
         assert parse_trend_table("# 无关") == []
+
+
+class TestLoadNameMap:
+    def test_chain_merge(self, tmp_path):
+        layout = StateLayout(root=tmp_path)
+        layout.root.mkdir(parents=True, exist_ok=True)
+        (layout.root / "names.json").write_text(
+            json.dumps({"cn:600519": "贵州茅台", "hk:00700": "腾讯控股"}), encoding="utf-8"
+        )
+        (layout.root / "signals.json").write_text(
+            json.dumps([{"code": "601919", "stock_name": "中远海控"}]), encoding="utf-8"
+        )
+        layout.monitor_dir.mkdir(parents=True)
+        (layout.monitor_dir / "universe.json").write_text(
+            json.dumps({"rows": [{"code": "00268", "name": "金蝶国际"}]}), encoding="utf-8"
+        )
+        names = load_name_map(layout)
+        assert names["600519"] == "贵州茅台"  # 主源
+        assert names["601919"] == "中远海控"  # signals 回退
+        assert names["00268"] == "金蝶国际"  # universe 回退
+        assert names["00700"] == "腾讯控股"
+
+    def test_absent_empty(self, tmp_path):
+        assert load_name_map(StateLayout(root=tmp_path)) == {}
+
+
+class TestAggregateCalendar:
+    def _payload(self, code="600519", **blocks):
+        return {"meta": {"code": code}, "blocks": blocks}
+
+    def test_three_types_sorted(self):
+        payload = self._payload(
+            forecast={"next_disclosure": {"appoint_date": "2026-12-01"}},
+            unlock={"upcoming": [{"date": "2026-11-20", "ratio_pct": 5.2, "type": "定向增发"}]},
+            notices={"items": [{"date": "2026-11-10", "type": "公告", "title": "董事会决议"}]},
+        )
+        rows = aggregate_calendar([payload])
+        assert [r["type"] for r in rows] == ["公告", "解禁", "披露"]
+        assert rows[1]["detail"].startswith("解禁占流通 5.2%")
+
+    def test_dedupe_and_past_filtered(self):
+        payload = self._payload(
+            unlock={"upcoming": [{"date": "2020-01-01", "ratio_pct": 1, "type": "x"}]},
+            notices={"items": []},
+        )
+        assert aggregate_calendar([payload, payload]) == []
+
+
+class TestRebuildNotifications:
+    def test_log_line_parsed(self):
+        rows = rebuild_notifications(
+            [], "notify: [vibe-stock 盯盘] 紫金矿业 x ·止损复核 ·待收盘复核·非投资建议", {}
+        )
+        assert rows[0]["title"] == "vibe-stock 盯盘"
+        assert rows[0]["body"].endswith("·待收盘复核·非投资建议")
+
+    def test_event_row_with_name(self):
+        rows = rebuild_notifications(
+            [
+                {
+                    "ts": "09:31",
+                    "code": "600519",
+                    "notify": True,
+                    "rule": "stop_break",
+                    "review": "止损复核",
+                }
+            ],
+            "",
+            {"600519": "贵州茅台"},
+        )
+        assert "贵州茅台" in rows[0]["body"] and "止损复核" in rows[0]["body"]
+
+    def test_suppressed_excluded(self):
+        rows = rebuild_notifications(
+            [{"ts": "t", "code": "c", "notify": True, "rule": "r", "suppress_reason": "cap"}],
+            "",
+            {},
+        )
+        assert rows == []
