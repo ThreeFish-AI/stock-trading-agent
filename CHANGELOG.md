@@ -17,7 +17,7 @@
 
 ### Added
 
-- `GET /api/panel/paper/ca-form`（④表单外置容器，load-only）；`render_error_card`/`render_ca_form`/`_ts_short`/`_notification_group_html` 纯函数；`TestErrorSurface` e2e 8 例与 unit `TestDesignUpgrade024` 15 例、token 门禁增 `TestDesignUpgradeNorms` 8 例（30 例全组）。测试 559 passed 全绿。
+- `GET /api/panel/paper/ca-form`（④表单外置容器，load-only）；`render_error_card`/`render_ca_form`/`_ts_short`/`_notification_group_html` 纯函数；`TestErrorSurface` e2e 8 例与 unit `TestDesignUpgrade024` 15 例、token 门禁增 `TestDesignUpgradeNorms` 8 例（30 例全组）。并 main 0.0.25/0.0.26 后 609 passed 全绿（mount 挂点/已复核列/升级门禁共存）。
 ## [0.0.26] - 2026-11-08
 
 ### Added
