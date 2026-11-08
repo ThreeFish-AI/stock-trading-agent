@@ -24,14 +24,14 @@ Tranche.limit_price / expires_at、Operation.fees / trade_date（T+1 推导锚�
 
 ## ④ 公司行动（E-43，estimated）
 
-先送转后分红（同日除权除息调用方保序）：送转=Decimal 重算 lots×ratio 与 avg_cost÷ratio（tranches 价位字段与三价同步除权；不足 1 股按 avg_cost 现金找零，estimated）；分红=FIFO 持股期分档红利税（≤30 天 20%、≤365 天 10%、>365 天免；基不齐的余量按最重档保守）；**不产 Operation 行**（operations 纯交易流，公司行动单列 corporate_actions 登记）。公司行动 M2 为纯函数+面板手动馈送（自动化属 M3）。
+先送转后分红（同日除权除息调用方保序）：送转=Decimal 重算 lots×ratio 与 avg_cost÷ratio（tranches 价位字段与三价同步除权；不足 1 股按 avg_cost 现金找零，estimated）；分红=FIFO 持股期分档红利税（≤30 天 20%、≤365 天 10%、>365 天免；基不齐的余量按最重档保守）；**不产 Operation 行**（operations 纯交易流，公司行动单列 corporate_actions 登记）。~~公司行动 M2 为纯函数+面板手动馈送（自动化属 M3）~~ → **0.0.20 馈送入口落地**：POST `/api/paper/corporate-action`（+htmx 变体）——sim.lock 内 ledger load→幂等查重（同 code+kind+ex_date+口径 409）→apply→persist，写者恒为 paper 引擎进程内直调；决策 kind `paper_corporate_action`（payload 只带 code/action_kind/ex_date/ratio，每股额/税/找零禁入，NR-5）；④页馈送表单+登记表；同日除权除息先送转后分红由调用方保序（表单文案提示）；M3 自动化（公告源对接）不立项——外部公告数据源不在本仓面。
 
 ## ⑤ 确认流与台账写拓扑
 
 - `sim-pending-fills.json` 落 `~/.vibe-stock/` 根（写者=paper 引擎；瞬态可重建、非 append-only；不进 sim-portfolio.json 也不进 agent/）。
 - `sim.lock`（flock）串行 pending+portfolio 双文件读-改-写周期（面板线程池并发 POST 防双写）。
 - t2_pending_fill 台账事件 → `engine.request_from_t2_event` 容错适配（facts 缺字段不产半截请求）→ 入队 + `paper_pending_fill` 决策（payload 零数量，NR-5）。
-- 决策 kind 族：paper_pending_fill / paper_fill_confirmed / paper_fill_rejected。
+- 决策 kind 族：paper_pending_fill / paper_fill_confirmed / paper_fill_rejected / paper_corporate_action（0.0.20 增；payload 零敏感量）。
 - 日终驱动 `engine.evaluate_day`：触价产请求不写回、GTC 到期收集（expired_legs 由调用方走 batches.expire_tranche）、marks 收集 → `mark_equity`（同日重跑覆盖同日点）。
 
 ## ⑥ 面板④契约与 NR-5 边界

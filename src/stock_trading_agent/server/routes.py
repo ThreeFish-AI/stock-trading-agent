@@ -28,7 +28,11 @@ from stock_trading_agent.server.panel import (
     render_submit_result,
     render_task_card,
 )
-from stock_trading_agent.server.schemas import REJECT_STATUS, SubmitRequest
+from stock_trading_agent.server.schemas import (
+    REJECT_STATUS,
+    CorporateActionRequest,
+    SubmitRequest,
+)
 from stock_trading_agent.state.decisions import DecisionChainError
 from stock_trading_agent.state.paths import StateLayout
 
@@ -650,17 +654,27 @@ def stats(request: Request) -> dict:
     from stock_trading_agent.server.panel_data import load_root_json
     from stock_trading_agent.server.stats import (
         aggregate_decisions,
+        assertion_buckets,
         budget_curve,
+        cost_by_kind,
+        route_hit_rate,
         t1_review_hitrate,
     )
+    from stock_trading_agent.state.store import read_json
 
     layout = _layout(request)
     ledger_rows = load_root_json(layout.root / "ledger.agent.json") or {}
     lines = decisions(request, tail=200)
+    session_records = list(sessions(request).get("sessions", {}).values())
     return {
         "decisions": aggregate_decisions(lines),
-        "budget_curve": budget_curve(list(sessions(request).get("sessions", {}).values())),
+        "budget_curve": budget_curve(session_records),
         "t1_review": t1_review_hitrate(lines, ledger_rows),
+        "assertion_buckets": assertion_buckets(lines),  # §15 断言违例率分桶（0.0.22）
+        "route_hit": route_hit_rate(lines),  # §15 意图路由命中率
+        "cost_by_kind": cost_by_kind(
+            session_records, (read_json(layout.queue_path) or {}).get("tasks", [])
+        ),
     }
 
 
@@ -880,6 +894,140 @@ def _paper_decide(request: Request, payload: dict, *, action: str) -> dict:
     except ValueError as exc:  # ConfirmError / LedgerError
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True, "request_id": request_id, "action": action}
+
+
+def _corporate_action_decide(request: Request, data: dict) -> dict:
+    """公司行动手动馈送（13-paper §④ M2 承诺闭合；sim.lock 内引擎直调，写者=paper 引擎）。
+
+    幂等：corporate_actions 登记中同 code+kind+ex_date+口径（split 比率/dividend 每股额）→ 409；
+    同日除权除息先送转后分红由调用方保序（表单文案与 spec §④ 提示）；
+    决策 kind paper_corporate_action payload 零敏感量（NR-5：每股额/税/找零不进）。
+    """
+    from pydantic import ValidationError
+
+    from stock_trading_agent.paper import ledger as paper_ledger
+    from stock_trading_agent.paper.corporate_actions import (
+        DividendAction,
+        SplitAction,
+        apply_corporate_action,
+    )
+    from stock_trading_agent.state.store import FileLock
+
+    try:
+        payload = CorporateActionRequest(**data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.errors(include_url=False))) from exc
+    if payload.kind == "split":
+        if not (payload.ratio_num and payload.ratio_den and payload.ratio_num > payload.ratio_den):
+            raise HTTPException(
+                status_code=422, detail="split 需 ratio_num>ratio_den>=1（10送5 → 15/10）"
+            )
+    else:
+        if not (payload.pay_date and payload.per_share_cash):
+            raise HTTPException(status_code=422, detail="dividend 需 pay_date 与 per_share_cash>0")
+    runtime = _runtime(request)
+    if runtime is None:
+        raise HTTPException(status_code=503, detail="运行时未挂载")
+    layout = _layout(request)
+    try:
+        with FileLock(layout.sim_lock):
+            portfolio = paper_ledger.load(layout.sim_portfolio_path)
+            if portfolio is None:
+                raise HTTPException(status_code=422, detail="模拟账本未建（无公司行动可馈送）")
+            position = portfolio.position(payload.code)
+            if position is None or position.lots <= 0:
+                raise HTTPException(status_code=422, detail=f"无在持仓位：{payload.code}")
+            for rec in portfolio.corporate_actions:
+                if (
+                    rec.code == payload.code
+                    and rec.kind == payload.kind
+                    and rec.ex_date == payload.ex_date
+                    and rec.ratio_num == payload.ratio_num
+                    and rec.ratio_den == payload.ratio_den
+                    and rec.per_share_cash == payload.per_share_cash
+                ):
+                    raise HTTPException(status_code=409, detail="同口径公司行动已登记（幂等拒）")
+            action: SplitAction | DividendAction = (
+                SplitAction(
+                    code=payload.code,
+                    ratio_num=payload.ratio_num,
+                    ratio_den=payload.ratio_den,
+                    ex_date=payload.ex_date,
+                )
+                if payload.kind == "split"
+                else DividendAction(
+                    code=payload.code,
+                    per_share_cash=payload.per_share_cash,
+                    ex_date=payload.ex_date,
+                    pay_date=payload.pay_date,
+                )
+            )
+            portfolio = apply_corporate_action(portfolio, action)
+            paper_ledger.persist(portfolio, layout.sim_portfolio_path)
+            runtime.loop.decisions.append(
+                _now_iso(),
+                "paper_corporate_action",
+                {
+                    "code": payload.code,
+                    "action_kind": payload.kind,
+                    "ex_date": payload.ex_date,
+                    **(
+                        {"ratio_num": payload.ratio_num, "ratio_den": payload.ratio_den}
+                        if payload.kind == "split"
+                        else {}
+                    ),
+                },
+                path=layout.decisions_path,
+            )
+    except HTTPException:
+        raise
+    except DecisionChainError as exc:
+        raise HTTPException(status_code=503, detail=f"{exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "code": payload.code,
+        "action_kind": payload.kind,
+        "ex_date": payload.ex_date,
+    }
+
+
+@router.post("/paper/corporate-action")
+def paper_corporate_action(payload: CorporateActionRequest, request: Request) -> dict:
+    return _corporate_action_decide(request, payload.model_dump())
+
+
+@router.post("/panel/paper/corporate-action")
+def panel_paper_corporate_action(
+    request: Request,
+    kind: str = Form(...),
+    code: str = Form(...),
+    ex_date: str = Form(...),
+    pay_date: str = Form(""),
+    ratio_num: str = Form(""),
+    ratio_den: str = Form(""),
+    per_share_cash: str = Form(""),
+) -> HTMLResponse:
+    """htmx 表单变体：空串可选字段归一 None 后走同一闸，成功回④页 fragment。"""
+    from stock_trading_agent.server.panel import render_paper_fragment
+
+    data = {
+        "kind": kind,
+        "code": code,
+        "ex_date": ex_date,
+        "pay_date": pay_date or None,
+        "ratio_num": int(ratio_num) if ratio_num else None,
+        "ratio_den": int(ratio_den) if ratio_den else None,
+        "per_share_cash": float(per_share_cash) if per_share_cash else None,
+    }
+    resp = _corporate_action_decide(request, data)
+    return HTMLResponse(
+        render_paper_fragment(
+            _paper_view(request),
+            notice=(f"公司行动已入账：{resp['action_kind']} {resp['code']} @ {resp['ex_date']}"),
+        )
+    )
 
 
 @router.post("/panel/paper/confirm")
@@ -1114,6 +1262,100 @@ def panel_audit(request: Request) -> HTMLResponse:
         lines = rows[-20:]
         chain_ok = False
     return HTMLResponse(render_audit(lines, budget(request), chain_ok=chain_ok))
+
+
+# --- audit/ 归档只读（三件套互查第三腿，0.0.21；读写矩阵 §④ 面板读半边闭合） ---
+
+_AUDIT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_AUDIT_FILE_RE = re.compile(r"^[A-Za-z0-9:_-]+\.jsonl$")
+
+
+def _audit_dir_of(request: Request, date: str) -> Path | None:
+    """归档目录解析（三保险前两道：日期/文件名正则；第三道 resolve 边界在调用方）。"""
+    if not _AUDIT_DATE_RE.match(date):
+        return None
+    root = _layout(request).audit_dir / date
+    return root if root.exists() else None
+
+
+@router.get("/audit/dates")
+def audit_dates(request: Request) -> dict:
+    root = _layout(request).audit_dir
+    dates = (
+        sorted(
+            (d.name for d in root.iterdir() if d.is_dir() and _AUDIT_DATE_RE.match(d.name)),
+            reverse=True,
+        )
+        if root.exists()
+        else []
+    )
+    return {"dates": dates}
+
+
+@router.get("/audit/{date}")
+def audit_index(date: str, request: Request) -> dict:
+    import datetime as dt
+
+    day_dir = _audit_dir_of(request, date)
+    if day_dir is None:
+        raise HTTPException(status_code=404, detail=f"无归档日期：{date}")
+    files = []
+    for f in sorted(day_dir.glob("*.jsonl")):
+        if not _AUDIT_FILE_RE.match(f.name):
+            continue
+        stat = f.stat()
+        files.append(
+            {
+                "file": f.name,
+                "size_bytes": stat.st_size,
+                "mtime": dt.datetime.fromtimestamp(stat.st_mtime, tz=dt.UTC).isoformat(
+                    timespec="seconds"
+                ),
+            }
+        )
+
+    return {"date": date, "count": len(files), "files": files}
+
+
+@router.get("/audit/{date}/{name}")
+def audit_read(
+    date: str, name: str, request: Request, tail: int = Query(default=100, ge=1, le=500)
+) -> dict:
+    """转录 tail 读取（三保险：日期/文件名正则 + resolve 边界；行级原文，本地只读）。"""
+    day_dir = _audit_dir_of(request, date)
+    if day_dir is None or not _AUDIT_FILE_RE.match(name):
+        raise HTTPException(status_code=404, detail="归档不存在")
+    path = (day_dir / name).resolve()
+    if not path.is_relative_to(day_dir.resolve()) or not path.exists():
+        raise HTTPException(status_code=404, detail="归档不存在")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return {
+        "date": date,
+        "file": name,
+        "total_lines": len(lines),
+        "lines": lines[-tail:],
+    }
+
+
+@router.get("/panel/audit-archive")
+def panel_audit_archive(request: Request, date: str | None = None) -> HTMLResponse:
+    """⑦归档索引卡（缺省最新有归档日期；行级查看按钮填 #au-transcript）。"""
+    from stock_trading_agent.server.panel import render_audit_archive
+
+    dates = audit_dates(request)["dates"]
+    day = date if date and _AUDIT_DATE_RE.match(date) else (dates[0] if dates else "")
+    payload = audit_index(day, request) if day else {"date": "", "count": 0, "files": []}
+    payload["dates"] = dates
+    return HTMLResponse(render_audit_archive(payload))
+
+
+@router.get("/panel/audit-archive/{date}/{name}")
+def panel_audit_read(date: str, name: str, request: Request) -> HTMLResponse:
+    """转录 tail fragment（<pre> 原文；行数夹紧 100）。"""
+    from stock_trading_agent.server.panel import render_audit_transcript
+
+    body = audit_read(date, name, request, tail=100)
+    return HTMLResponse(render_audit_transcript(body))
 
 
 @router.get("/panel/sessions")

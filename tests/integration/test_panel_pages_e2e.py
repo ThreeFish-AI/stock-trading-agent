@@ -399,7 +399,7 @@ class TestHtmxWiring:
         )
         paper_pending.save(queue, layout.sim_pending_fills_path)
         frag = client.get("/api/panel/paper").text
-        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 2
+        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 3  # 0.0.20 +馈送表单
 
     def test_briefing_ack_target(self, tmp_path: Path):
         from stock_trading_agent.loop.monitor_events import market_today
@@ -430,8 +430,8 @@ class TestHtmxWiring:
         """0.0.16：load 首绘 / 全局错误条 / tablist a11y / :focus-visible / --t4 AA。"""
         client, _ = _make_client(tmp_path)
         html = client.get("/").text
-        # 全部轮询容器首绘（0.0.16 增⑦会话登记卡）
-        assert html.count('hx-trigger="load, every 180s') == 21
+        # 全部轮询容器首绘（0.0.16 ⑦会话卡 + 0.0.21 ⑦归档卡）
+        assert html.count('hx-trigger="load, every 180s') == 22
         assert 'id="global-err" class="riskchip" role="status" aria-live="polite" hidden' in html
         assert "htmx:responseError" in html and "htmx:sendError" in html
         assert 'role="tablist"' in html and html.count('role="tab"') == 7

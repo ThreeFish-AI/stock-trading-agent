@@ -45,6 +45,11 @@
 
 方案 §11 表为快照；现行权威布局=`state/paths.py`（代码化读写矩阵）。0.0.3 增补：`agent/queue.lock`（串行闸）、`agent/runs/<date>/t1/<code>/`（T1 工作目录）、`agent/runs/<session_uuid>/`（CC 会话 cwd，随真实通道 PR 启用）、`agent/watcher.json`（监听偏移断点）、`agent/daemon.lock`（单消费者）。vibe-stock 只读消费位：`monitor/events/<date>.jsonl`、`monitor/state.json`、`outlook/<date>.md`、`reports/`、根级 `ledger.json`（仅 mtime 探测，只读）。
 
+### audit 归档只读裁定（0.0.21 落地）
+
+- **读半边闭合（读写矩阵 §④ 面板对 audit/ 标「读」的兑现）**：`GET /api/audit/dates|/{date}|/{date}/{name}?tail=`（tail 夹紧 1..500 缺省 100）+ ⑦页归档索引卡（`/api/panel/audit-archive` 日期带 + 行级查看 → `#au-transcript` 转录 tail fragment）+ sessions 表转录列改互查链接（transcript_path 在 audit/ 下时 hx-get 直达）——三件套互查（decisions×sessions×audit）三腿全通。
+- **路径安全三保险**：日期正则 `^\d{4}-\d{2}-\d{2}$` + 文件名正则 `^[A-Za-z0-9:_-]+\.jsonl$`（覆盖真实 uuid 与 dryrun-<task_id> 含冒号形态）+ resolve is_relative_to 边界；转录内容全文本 `_esc` 转义后 `<pre>` 呈现（XSS 防线）。坑位：官方转录默认 30 天清理（F-38）——归档索引对缺席日期如实 404/空态。
+
 ### 决策链写拓扑裁定（0.0.15 落地）
 
 - **生产事故**：`decisions.jsonl` 出现 57 行仅 11 个唯一 seq、链断 7 处——三个叠加 bug：W1 serve 降级只读态（daemon 锁竞争失败不 load 文件）下面板写端点仍以空内存链从 seq=1/GENESIS 落盘（KeepAlive=true 常驻重启反复触发）；W2 面板侧追加立即落盘但不推进 `_persisted_lines` 游标，下一次 `_persist_all` 把已落盘行再追加一遍；W3 `acquire_daemon` 重载链对象但游标不重置，重启后首次 persist 重放全部历史；W4 `load()` 调 `verify_chain()` 丢弃返回值，断链静默续写。
@@ -98,6 +103,7 @@
 - **双 kind 加槽（六层）**：新 kind `briefing_morning`/`briefing_evening`（routing.yaml 双模板带槽位化 prompt 与 NR-4 字段、schema_ref=briefing 收编可选 action_items 数组；dedup_key 与 UUIDv5 会话身份天然按 kind 分槽；REPORT_BLOCKING_KINDS/提交白名单两处同步收编；②页 dgform 下拉换双 kind、legacy kind 仍可 API 提交）。
 - **自动触发**：判据纯函数 `plan_auto_briefings`（工作日 ∧ L2 总闸开 ∧ universe 可读 ∧ 槽窗内 ∧ 每股每槽当日未入队）——盘前窗 09:00–09:29、盘后窗 18:15–23:59（禁跑窗 18:10 含端点之后留余量）；worker 线程 60s 节流检查、source=monitor、universe 全码（不分 real/sim）、universe 不可读记 `briefing_auto_skipped` 决策后跳过（宁拒不漏留痕）。坑位：节假日未建模（多触发一次=一次小会话成本，宁多勿漏口径）；L2 关闭零入队（无人值守语义与 §⑩ 同源，不产决策噪音）。
 - **面板⑥**：stats 聚合（kind 分布/任务三态成功率（样本 <30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）/budget 双口径日桶曲线）；「全样本登记含亏损、模拟绩效假设性」常驻标注。
+- **§15 指标族管线（0.0.22 落地，方案 §15 承诺全量闭合）**：①**AssertVerdict typed codes**——15 桶键枚举（三段判据三类 structured_missing/result_subtype_error/mcp_server_errors/signal_enum/disclaimer/schema/sensitive/stale_data/anchor_escalation/anchor_unreadable/advice_contract…+uncategorized 兜底），`assert_refuse`/`advice_refused(assert)` 决策 payload 增 `reason_codes`（与 reasons 平行；legacy 存量无码归 uncategorized 可聚合不拒读）；新增检查必须配码（判据只收严）；②**三聚合函数**：`assertion_buckets`（分桶计数）/`route_hit_rate`（分母=task_submitted 总量、分子=route_unknown 兜底拒；坑位：server 白名单先拦使面板路径恒 100% 属预期，防线在 CLI/内部直建 TaskRecord 路径——worker UNKNOWN_KIND 拒绝带 reason_code=route_unknown）/`cost_by_kind`（sessions×queue 终态任务经 task_id join，join 不上归 unknown 不丢账）；③`/api/stats` 增三键 + ⑥页三块呈现（分桶表/命中率行/成本分布表）；④`router.fallback_count` 内存计数器维持现状（重启即失、无读取方——登记为不删的占位，指标以决策行为准）。
 
 ## ⑩ L2 无人值守裁定（0.0.9 落地）
 

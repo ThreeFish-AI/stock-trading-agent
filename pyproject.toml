@@ -13,7 +13,7 @@ dependencies = [
     "jsonschema>=4.23",
     "PyYAML>=6.0",
     "watchfiles>=0.24",
-    "python-multipart>=0.0.20",
+    "python-multipart>=0.0.22",
     "sse-starlette>=2.1",
 ]
 

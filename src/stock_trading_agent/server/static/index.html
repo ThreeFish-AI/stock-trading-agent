@@ -467,6 +467,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div id="audit" hx-get="/api/panel/audit" hx-trigger="load, every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div style="height:13px"></div>
+<div class="card"><div class="card-h"><span class="ct">归档索引</span><span class="cm">agent/audit/ · 三件套互查</span></div>
+  <div class="card-b" id="au-archive" hx-get="/api/panel/audit-archive" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+<div style="height:13px"></div>
 <div class="card"><div class="card-h"><span class="ct">会话登记</span><span class="cm">sessions.json · 三件套互查</span></div>
   <div class="card-b" id="au-sessions" hx-get="/api/panel/sessions" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div style="height:13px"></div>

@@ -404,6 +404,44 @@ def render_stats_fragment(payload: dict) -> str:
         )
     else:
         parts.append('<p class="muted">暂无会话记账。</p>')
+    buckets = payload.get("assertion_buckets") or {}
+    if buckets:
+        brows = "".join(
+            f"<tr><td>{_esc(k)}</td><td class='num'>{v}</td></tr>" for k, v in buckets.items()
+        )
+        parts.append(
+            "<h3>断言违例分桶（NR-3 拒落盘原因，§15）</h3>"
+            '<table class="tbl"><colgroup><col><col class="w-num"></colgroup>'
+            f"<thead><tr><th scope='col'>违例类型</th><th scope='col'>计数</th></tr></thead>"
+            f"<tbody>{brows}</tbody></table>"
+            '<p class="tbl-note">legacy 无码行归 uncategorized（0.0.22 前存量）</p>'
+        )
+    route = payload.get("route_hit") or {}
+    if route.get("submitted"):
+        rate = route.get("rate")
+        rate_text = f"{rate:.2%}" if rate is not None else "—"
+        parts.append(
+            "<h3>意图路由命中率（确定性查表，§15）</h3>"
+            f'<p class="muted">提交 {route.get("submitted", 0)} · 兜底拒 '
+            f"{route.get('fallback', 0)} · 命中率 {rate_text}"
+            f"（{_esc(route.get('note') or '')}）</p>"
+        )
+    cbk = payload.get("cost_by_kind") or []
+    if cbk:
+        crows = "".join(
+            "<tr>"
+            f"<td>{_esc(r['kind'])}</td><td class='num'>{r['sessions']}</td>"
+            f"<td class='num'>{r['tokens']:,}</td><td class='num'>{r['usd']}</td>"
+            "</tr>"
+            for r in cbk
+        )
+        parts.append(
+            "<h3>会话成本分布（按 kind 归因，§15）</h3>"
+            '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-num">'
+            "</colgroup><thead><tr><th scope='col'>kind</th><th scope='col'>会话</th>"
+            "<th scope='col'>token</th><th scope='col'>等效 USD</th></tr></thead>"
+            f"<tbody>{crows}</tbody></table>"
+        )
     t1 = payload.get("t1_review") or {}
     if t1:
         t1_rate = t1.get("rate")
@@ -1108,7 +1146,76 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     parts.append("<h3>权益曲线（NAV = 权益 / 预算）</h3>")
     history = payload.get("equity_history") or []
     parts.append(_axis_equity_svg(history))
+
+    # 公司行动登记表 + 手动馈送表单（13-paper §④ M2 承诺 0.0.20 闭合）
+    records = payload.get("corporate_actions") or []
+    parts.append("<h3>公司行动登记（先送转后分红；不产 Operation 行）</h3>")
+    if records:
+        rows = "".join(
+            "<tr>"
+            f'<td><span class="code num">{_esc(r.get("code", ""))}</span></td>'
+            f"<td>{'送转' if r.get('kind') == 'split' else '分红'}</td>"
+            f'<td class="num">{_esc(r.get("ex_date", ""))}</td>'
+            f'<td class="num" title="{_esc(r.get("note", ""))}">{_esc(_ca_basis(r))}</td>'
+            f'<td class="num">{_fmt(r.get("cash_delta"))}</td>'
+            "</tr>"
+            for r in records[-10:]
+        )
+        parts.append(
+            '<table class="tbl"><colgroup><col class="w-code"><col><col class="w-ts">'
+            '<col><col class="w-num"></colgroup><thead><tr><th scope="col">代码</th>'
+            '<th scope="col">类型</th><th scope="col">除权日</th><th scope="col">口径</th>'
+            f'<th scope="col">现金变动</th></tr></thead><tbody>{rows}</tbody></table>'
+        )
+    else:
+        parts.append('<p class="muted">暂无公司行动登记。</p>')
+    parts.append(
+        '<form class="frm" hx-post="/api/panel/paper/corporate-action" hx-target="#paper" '
+        'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        '<div class="frm-row">'
+        '<label for="ca-kind" title="送转=股数重算（10送5 填 15/10）；分红=每股税前现金'
+        '（FIFO 分档红利税自动计）。同日除权除息请先提交送转、再提交分红">类型</label>'
+        '<select class="sel" id="ca-kind" name="kind">'
+        '<option value="split">送转（split）</option>'
+        '<option value="dividend">分红（dividend）</option>'
+        "</select></div>"
+        '<div class="frm-row">'
+        '<label for="ca-code" title="须为在持仓位代码（无持仓 422）">代码</label>'
+        '<input class="inp num" id="ca-code" name="code" pattern="[0-9]{5,6}" required '
+        'inputmode="numeric"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-ex" title="除权除息日（YYYY-MM-DD）">除权日</label>'
+        '<input class="inp num" id="ca-ex" name="ex_date" pattern="\\d{4}-\\d{2}-\\d{2}" required '
+        'placeholder="2026-11-20"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-rn" title="送转全口径比分子（10送5 → 15）；split 必填">比率分子</label>'
+        '<input class="inp num" id="ca-rn" name="ratio_num" inputmode="numeric" '
+        'placeholder="15"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-rd" title="送转全口径比分母（10送5 → 10）；split 必填">比分母</label>'
+        '<input class="inp num" id="ca-rd" name="ratio_den" inputmode="numeric" '
+        'placeholder="10"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-pay" title="派息日（YYYY-MM-DD）；dividend 必填">派息日</label>'
+        '<input class="inp num" id="ca-pay" name="pay_date" pattern="\\d{4}-\\d{2}-\\d{2}" '
+        'placeholder="2026-11-27"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-ps" title="每股税前现金（元/股）；dividend 必填">每股派息</label>'
+        '<input class="inp num" id="ca-ps" name="per_share_cash" inputmode="decimal" '
+        'placeholder="0.35"></div>'
+        '<div class="frm-row"><label></label>'
+        '<button class="btn btn-pri" type="submit">馈送入账</button></div>'
+        '<p class="tbl-note">写者=paper 引擎（sim.lock 内直调）· 幂等：同口径重复馈送 409 · '
+        "决策 payload 零敏感量（NR-5）</p></form>"
+    )
     return "".join(parts)
+
+
+def _ca_basis(r: dict) -> str:
+    """登记表口径列：split 比率 / dividend 每股额（公开公告参数，呈现态）。"""
+    if r.get("kind") == "split":
+        return f"{r.get('ratio_num')}:{r.get('ratio_den')}"
+    return f"{r.get('per_share_cash')} 元/股"
 
 
 def _perf_grid(perf: dict) -> str:
@@ -1215,6 +1322,58 @@ def render_advice_library(payload: dict) -> str:
     return "".join(parts)
 
 
+def render_audit_archive(payload: dict) -> str:
+    """⑦归档索引卡：日期带 + 当日归档行（uuid/size/mtime + 查看按钮 → #au-transcript）。"""
+    dates = payload.get("dates") or []
+    if not dates:
+        return '<p class="muted">暂无 stream-json 归档（真实通道断言器放行后落 agent/audit/）。</p>'
+    day = payload.get("date") or dates[0]
+    chips = "".join(
+        f'<button class="mini{" on" if d == day else ""}" '
+        f'hx-get="/api/panel/audit-archive?date={_esc(d)}" hx-target="#au-archive" '
+        f'hx-swap="innerHTML">{_esc(d)}</button>'
+        for d in dates[:10]
+    )
+    files = payload.get("files") or []
+    rows = "".join(
+        "<tr>"
+        f'<td class="num" title="{_esc(f["file"])}">{_esc(f["file"][:30])}…</td>'
+        f'<td class="num">{f["size_bytes"]:,} B</td>'
+        f'<td class="num">{_esc(f.get("mtime", ""))}</td>'
+        "<td>"
+        f'<button class="mini" hx-get="/api/panel/audit-archive/{_esc(day)}/{_esc(f["file"])}" '
+        'hx-target="#au-transcript" hx-swap="innerHTML">查看</button></td>'
+        "</tr>"
+        for f in files
+    )
+    body = (
+        '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-ts">'
+        '<col class="w-op"></colgroup><thead><tr><th scope="col">转录</th>'
+        '<th scope="col">大小</th><th scope="col">mtime</th><th scope="col"></th>'
+        f"</tr></thead><tbody>{rows}</tbody></table>"
+        if files
+        else '<p class="muted">当日无归档。</p>'
+    )
+    return (
+        f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">{chips}</div>'
+        + body
+        + '<div id="au-transcript" style="margin-top:10px"></div>'
+    )
+
+
+def render_audit_transcript(body: dict) -> str:
+    """转录 tail fragment（<pre> 原文行；NR-3 已放行产物，本地只读重放）。"""
+    lines = body.get("lines") or []
+    total = body.get("total_lines", 0)
+    shown = f"（尾 {len(lines)} / 共 {total} 行）" if len(lines) < total else f"（共 {total} 行）"
+    text = _esc("\n".join(lines))
+    return (
+        f'<div class="card"><div class="card-h"><span class="ct">转录 · '
+        f'{_esc(body.get("file", ""))}</span><span class="cm">stream-json {shown}</span></div>'
+        f'<div class="card-b"><pre class="md-pre">{text}</pre></div></div>'
+    )
+
+
 def render_sessions_table(sessions: dict) -> str:
     """⑦会话登记表：uuid/task_id/tokens/等效 USD/转录路径（审计三件套的 sessions 腿呈现）。
 
@@ -1231,6 +1390,17 @@ def render_sessions_table(sessions: dict) -> str:
         uuid = str(r.get("session_uuid", ""))
         task = str(r.get("task_id", ""))
         transcript = str(r.get("transcript_path", ""))
+        link = ""
+        if "/audit/" in transcript:  # 三件套互查：sessions 行 → audit 转录查看（0.0.21）
+            tail_path = transcript.split("/audit/", 1)[1]
+            date_part, _, fname = tail_path.partition("/")
+            if date_part and fname:
+                link = (
+                    f'<a href="#" hx-get="/api/panel/audit-archive/{_esc(date_part)}/'
+                    f'{_esc(fname)}" hx-target="#au-transcript" hx-swap="innerHTML">'
+                    f"{_esc(fname[:24])}…</a>"
+                )
+        cell = link or f'<span title="{_esc(transcript)}">{_esc(transcript[:28])}…</span>'
         trs.append(
             "<tr>"
             f'<td class="num">{_esc(r.get("ts", ""))}</td>'
@@ -1238,7 +1408,7 @@ def render_sessions_table(sessions: dict) -> str:
             f'<td class="num" title="{_esc(task)}">{_esc(task[:20])}…</td>'
             f'<td class="num">{tokens:,}</td>'
             f'<td class="num">{r.get("cost_usd_equiv", 0)}</td>'
-            f'<td class="num" title="{_esc(transcript)}">{_esc(transcript[:28])}…</td>'
+            f'<td class="num">{cell}</td>'
             "</tr>"
         )
     return (
