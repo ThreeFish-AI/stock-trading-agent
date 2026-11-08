@@ -139,6 +139,7 @@ class LoopRuntime:
         self.watcher_enabled = watcher_enabled
         self.chain_error: str | None = None  # strict load 断链时承载降级原因（面板可见）
         self._last_leak_scan = 0.0
+        self._last_auto_briefing_scan = 0.0
         self._pgrep_runner = None  # 测试注入位（None=真跑 pgrep）
         self._stop = threading.Event()
         self._worker_thread: threading.Thread | None = None
@@ -559,6 +560,71 @@ class LoopRuntime:
         queue = self.loop.load_queue()
         return next((t for t in queue.tasks if t.task_id == task.task_id), task)
 
+    # --- briefing 自动触发（0.0.18 早晚分卡同批；L2 闸内、universe 全码、每股每槽每日一次） ---
+    def _maybe_auto_briefing(self, now: _dt.datetime | None = None) -> list[TaskRecord]:
+        """槽窗内为 universe 全码入队 briefing_morning/evening（判据纯函数见 briefing.py）。
+
+        L2 总闸关闭不入队（无人值守自动拉起与 §⑩ 同源）；universe 不可读记
+        briefing_auto_skipped 决策（宁拒不漏留痕）后跳过；幂等=find_any 含终态。
+        """
+        from stock_trading_agent.loop.briefing import plan_auto_briefings
+        from stock_trading_agent.loop.events import MARKET_TZ
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        local = (now or _dt.datetime.now(tz=_dt.UTC)).astimezone(MARKET_TZ)
+        date = market_today(local)
+        universe = self._universe_codes()
+        if universe is None:
+            self._decide(
+                "briefing_auto_skipped",
+                {"reason_code": "universe_unreadable", "date": date},
+            )
+            return []
+        with FileLock(self.layout.queue_lock):
+            queue = self.loop.load_queue()
+            queued = {t.dedup_key for t in queue.tasks}
+            planned = plan_auto_briefings(
+                local, l2_enabled=self._l2_on(), universe_codes=universe, already_queued=queued
+            )
+            tasks = []
+            for kind, code in planned:
+                task = TaskRecord(
+                    task_id=f"{kind}:{code}:{date}:auto",
+                    dedup_key=f"{kind}:{code}:{date}",
+                    kind=kind,
+                    code=code,
+                    enqueued_at=_now_iso(),
+                    source="monitor",
+                )
+                queue.submit(task)
+                tasks.append(task)
+                self._decide(
+                    "task_submitted",
+                    {"task_id": task.task_id, "kind": kind, "code": code, "source": "monitor"},
+                )
+            if tasks:
+                atomic_write_json(self.layout.queue_path, queue.to_dict())
+        return tasks
+
+    def _universe_codes(self) -> list[str] | None:
+        """monitor/universe.json 全码（不分 real/sim；不可读→None）。"""
+        import json
+
+        path = self.layout.universe_path
+        if not path.exists():
+            return None
+        try:
+            rows = (json.loads(path.read_text(encoding="utf-8")).get("rows")) or []
+            codes = sorted(
+                {str(r.get("code")) for r in rows if isinstance(r, dict) and r.get("code")}
+            )
+            return codes or None
+        except (json.JSONDecodeError, OSError, AttributeError):
+            return None
+
+    def _l2_on(self) -> bool:
+        return load_agent_config(self.layout.agent_config_path).l2_enabled
+
     # --- 泄漏巡检（D-08，log-only） ---
     def scan_cc_leaks(self) -> list[tuple[int, str]]:
         """扫描在管外的 claude -p 孤儿进程；发现即决策 cc_orphan_detected（不 kill）。
@@ -599,6 +665,12 @@ class LoopRuntime:
                 if _time.monotonic() - self._last_leak_scan > 3600:  # 每小时泄漏巡检
                     try:
                         self.scan_cc_leaks()
+                    except Exception:
+                        traceback.print_exc()
+                if _time.monotonic() - self._last_auto_briefing_scan > 60:  # 槽窗检查（0.0.18）
+                    self._last_auto_briefing_scan = _time.monotonic()
+                    try:
+                        self._maybe_auto_briefing()
                     except Exception:
                         traceback.print_exc()
                 self._stop.wait(self.poll_interval_s)

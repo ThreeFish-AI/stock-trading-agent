@@ -98,11 +98,13 @@ class StateLayout:
 
     @property
     def briefing_dir(self) -> Path:
-        """晨报/复盘行动项卡（agent/briefing/<date>/<code>.md；每日每股一卡）。"""
+        """晨报/复盘行动项卡（agent/briefing/<date>/；早晚分卡 0.0.18）。"""
         return self.agent_dir / "briefing"
 
-    def briefing_card_path(self, date: str, code: str) -> Path:
-        return self.briefing_dir / date / f"{code}.md"
+    def briefing_card_path(self, date: str, code: str, slot: str = "") -> Path:
+        """卡路径：slot am|pm → <code>.am.md / <code>.pm.md；""=legacy 单卡 <code>.md。"""
+        suffix = f".{slot}" if slot in ("am", "pm") else ""
+        return self.briefing_dir / date / f"{code}{suffix}.md"
 
     @property
     def agent_config_path(self) -> Path:

@@ -91,7 +91,12 @@
 - **事件桥独立**：泛型 `loop/dirwatch.py`（mtime 快照 diff，与 EventsWatcher 分立——后者承载 T1 偏移断点领域态）；不依赖 daemon 锁（只读桥）；watchfiles 事件只当触发器。
 - **轮询兜底**：面板 compound trigger `every 180s, sse:X`（逗号=OR）——SSE 挂了轮询仍在（I-23）；htmx-ext-sse 本地 vendor（2.2.4，sha256 锚入 vendor/README）。
 - **锁态快照坑位**：vibe-stock 两锁 flock 获取/释放不改 mtime（锁文件不删除）——锁态不可文件监听，SSE 侧 30s 节拍快照 diff 推 status 事件。
-- **晨报/复盘卡**：`agent/briefing/<date>/<code>.md` 每日每股一卡（同日重跑覆盖；早晚分卡留 M3）；行动项措辞限定「复核」禁指令词（R7 同源）；脱敏三层（prompt 禁读模拟台账+断言器键扫+卡面数量词负断言）；ack 走 decision log `briefing_ack`（hash 链防篡改；降级只读态 503、仅当日卡可确认）；worker 钩子=断言放行后落盘+`briefing_card` 决策（失败即 failed 杜绝 done-无卡）。
+- **晨报/复盘卡**：`agent/briefing/<date>/<code>.<am|pm>.md` 每日每股每槽一卡（0.0.18 早晚分卡；legacy `briefing_review` 仍落 `<code>.md` 兼容旧卡/旧队列任务零迁移）；行动项措辞限定「复核」禁指令词（R7 同源）；脱敏三层（prompt 禁读模拟台账+断言器键扫+卡面数量词负断言）；ack 走 decision log `briefing_ack`（payload 带 session 槽位——ack 无 session 只命中 legacy 卡、带槽只命中本槽卡；hash 链防篡改；降级只读态 503、仅当日卡可确认、session 仅允许空/am/pm）；worker 钩子=断言放行后落盘+`briefing_card` 决策（payload 带 kind+session；失败即 failed 杜绝 done-无卡）。
+
+### 早晚分卡与自动触发裁定（0.0.18 落地，§⑮ 两行翻绿）
+
+- **双 kind 加槽（六层）**：新 kind `briefing_morning`/`briefing_evening`（routing.yaml 双模板带槽位化 prompt 与 NR-4 字段、schema_ref=briefing 收编可选 action_items 数组；dedup_key 与 UUIDv5 会话身份天然按 kind 分槽；REPORT_BLOCKING_KINDS/提交白名单两处同步收编；②页 dgform 下拉换双 kind、legacy kind 仍可 API 提交）。
+- **自动触发**：判据纯函数 `plan_auto_briefings`（工作日 ∧ L2 总闸开 ∧ universe 可读 ∧ 槽窗内 ∧ 每股每槽当日未入队）——盘前窗 09:00–09:29、盘后窗 18:15–23:59（禁跑窗 18:10 含端点之后留余量）；worker 线程 60s 节流检查、source=monitor、universe 全码（不分 real/sim）、universe 不可读记 `briefing_auto_skipped` 决策后跳过（宁拒不漏留痕）。坑位：节假日未建模（多触发一次=一次小会话成本，宁多勿漏口径）；L2 关闭零入队（无人值守语义与 §⑩ 同源，不产决策噪音）。
 - **面板⑥**：stats 聚合（kind 分布/任务三态成功率（样本 <30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）/budget 双口径日桶曲线）；「全样本登记含亏损、模拟绩效假设性」常驻标注。
 
 ## ⑩ L2 无人值守裁定（0.0.9 落地）
@@ -146,8 +151,8 @@
 
 | 项 | 态 | 说明与触发条件 |
 | :--- | :--- | :--- |
-| 早晚分卡（盘前晨报 vs 盘后复盘行动项卡） | 顺延 0.0.18+ | §⑨「留 M3」但 M3（0.0.10）收口未含——六层加槽：kind 白名单/routing 双模板/dedup_key/session UUID/ack/卡路径+面板解析；briefing.py 头注同步改写 |
-| briefing 盘前/盘后自动触发 | 顺延（与早晚分卡同批） | 不引第二调度器（§⑦）；路径=agent 进程内定时或事件驱动入队（走同 dedup_key 幂等） |
+| ~~早晚分卡（盘前晨报 vs 盘后复盘行动项卡）~~ | ✅ 0.0.18 落地 | §⑨ 新增「早晚分卡与自动触发裁定」节 |
+| ~~briefing 盘前/盘后自动触发~~ | ✅ 0.0.18 落地 | 同上（plan_auto_briefings 纯函数 + worker 60s 节流钩子；未引第二调度器） |
 | §⑫ 现价源升级位 | 待裁定 | 触发：signals/facts 双源现价口径冲突实锤；方案=读 monitor/state.json watch 快照价/T1 evidence 价合并进 price_map 带 asof 陈旧标注；公开行情直取需新裁定（产品仓 src/ 现零网络面） |
 | §⑫ 午休分态升级位 | 待裁定 | panel_data.market_phase 连续窗简化（CN 11:30–13:00/HK 12:00–13:00 并入盘中）；对闸与调度零影响，纯呈现粒度；与现价源同轮裁定 |
 | 买点/MA20 key_levels 扩键 | 机制侧阻塞 | ①晨报 kchip 已按「有键才显」实现；阻塞方：vibe-stock signals.json key_levels 现仅 stop——扩键后本仓自动点亮 |

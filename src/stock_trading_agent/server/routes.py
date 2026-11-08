@@ -689,11 +689,16 @@ def _briefing_payload(request: Request) -> dict:
     if day_dir.exists():
         decision_lines = decisions(request, tail=200)
         for card_path in sorted(day_dir.glob("*.md")):
-            code = card_path.stem
+            # 槽位解析（0.0.18）：<code>.am.md / <code>.pm.md / legacy <code>.md
+            stem = card_path.stem
+            code, _, slot = stem.partition(".")
+            if slot not in ("am", "pm"):
+                code, slot = stem, ""
             cards.append(
                 {
                     "code": code,
-                    "ack": has_ack(decision_lines, date=day, code=code),
+                    "session": slot,
+                    "ack": has_ack(decision_lines, date=day, code=code, slot=slot),
                     "md": card_path.read_text(encoding="utf-8"),
                 }
             )
@@ -714,9 +719,12 @@ def _briefing_payload(request: Request) -> dict:
 
 @router.post("/panel/briefing/ack")
 def panel_briefing_ack(
-    request: Request, date: str = Form(...), code: str = Form(...)
+    request: Request,
+    date: str = Form(...),
+    code: str = Form(...),
+    session: str = Form(""),
 ) -> HTMLResponse:
-    """确认状态走 decision log（hash 链防篡改；降级只读态 503）。"""
+    """确认状态走 decision log（hash 链防篡改；降级只读态 503；session 槽位 0.0.18）。"""
     from stock_trading_agent.loop.monitor_events import market_today
     from stock_trading_agent.server.panel import render_briefing_fragment
 
@@ -726,9 +734,14 @@ def panel_briefing_ack(
     layout = _layout(request)
     if date != market_today():
         raise HTTPException(status_code=422, detail="仅当日卡可确认")
+    if session not in ("", "am", "pm"):
+        raise HTTPException(status_code=422, detail="session 仅允许空/am/pm")
     try:
         runtime.loop.decisions.append(
-            _now_iso(), "briefing_ack", {"date": date, "code": code}, path=layout.decisions_path
+            _now_iso(),
+            "briefing_ack",
+            {"date": date, "code": code, **({"session": session} if session else {})},
+            path=layout.decisions_path,
         )
     except DecisionChainError as exc:
         raise HTTPException(status_code=503, detail=f"{exc}") from exc

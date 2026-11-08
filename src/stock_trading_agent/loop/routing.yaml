@@ -63,3 +63,29 @@ routes:
     budget_usd: 1.0
     max_turns: 12
     allowed_tools: [Read, Glob, Grep, Bash]
+  - kind: briefing_morning
+    task_kind: briefing_morning
+    prompt_template: |
+      盘前晨报 {code}（briefing_morning，am 槽）。基于该股最新在册信号与关键价位、
+      近期事件台账（~/.vibe-stock/monitor/events/ 与 outlook 日表，只读），
+      生成盘前视角晨报：今日关注位与待复核事项。纪律：行动项措辞限定「复核」
+      （禁买入/卖出/加仓/减仓/清仓等指令词，R7）；禁读模拟台账（脱敏）；
+      零数量词（份额/手数禁入任何输出，NR-5）；输出按 schema（briefing 正文 +
+      action_items 字符串数组 + disclaimer）。
+    schema_ref: briefing
+    budget_usd: 1.0
+    max_turns: 12
+    allowed_tools: [Read, Glob, Grep, Bash]
+  - kind: briefing_evening
+    task_kind: briefing_evening
+    prompt_template: |
+      盘后复盘 {code}（briefing_evening，pm 槽）。基于该股当日事件台账
+      （~/.vibe-stock/monitor/events/ 当日文件，只读）、收盘复核结论（如有）与
+      最新在册信号，生成盘后视角复盘：当日触发事件回顾、降档事实核对、
+      明日待复核事项。纪律：行动项措辞限定「复核」（禁指令词，R7）；
+      禁读模拟台账（脱敏）；零数量词（NR-5）；输出按 schema
+      （briefing 正文 + action_items 字符串数组 + disclaimer）。
+    schema_ref: briefing
+    budget_usd: 1.0
+    max_turns: 12
+    allowed_tools: [Read, Glob, Grep, Bash]
