@@ -38,7 +38,7 @@ Tranche.limit_price / expires_at、Operation.fees / trade_date（T+1 推导锚�
 
 - 端点：GET /api/paper/view（持仓+可卖+市值+待确认队列+权益历史+公司行动）；GET /api/panel/paper fragment（NR-2 常驻条+持仓表 T1/T2/T3 徽章+确认/驳回按钮+权益 sparkline 内联 SVG+「假设性·含费用与滑点」标注）；POST /api/paper/confirm|reject（+htmx 变体；进程内直调引擎，写者=paper 引擎）。
 - **NR-5 呈现态豁免裁定**：面板/会话呈现态可显份额原值（方案 §11「T+1 可卖份额原值仅在面板与会话呈现态给值」）；一切落盘卡产物（advice/briefing）只落百分比与档位词；sim-portfolio.json 与 sim-pending-fills.json 为引擎自产模拟台账（合成持仓，非真实账户），不属 R2 敏感面；decisions payload 恒零数量。
-- 权益口径：equity = cash + Σ(lots×board_lot×last_price)；NAV = equity/budget；last_price 只由引擎写、停牌沿用（③）。
+- 权益口径：equity = cash + Σ(lots×board_lot×last_price)；NAV = equity/budget；last_price 只由引擎写、停牌沿用（③）。0.0.11 增：面板④新增表尾汇总条、坐标轴版权益曲线 SVG、绩效三格（Sharpe/maxDD/胜率，<30 insufficient）——均呈现态（§⑥ 豁免面），数据源 equity_history/operations 现算。
 
 ## ⑦ 口径纪律与门禁
 

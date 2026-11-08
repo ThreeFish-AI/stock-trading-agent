@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 from zoneinfo import ZoneInfo
 
 _MARKET_TZ = ZoneInfo("Asia/Shanghai")
@@ -37,6 +38,81 @@ def aggregate_decisions(lines: list[dict]) -> dict:
         "success_rate": success_rate,
         "sufficient_sample": total >= MIN_SAMPLES,
         "note": None if total >= MIN_SAMPLES else f"样本 {total} < {MIN_SAMPLES}：只观察不记分",
+    }
+
+
+def perf_summary(equity_history: list[dict], operations: list[dict]) -> dict:
+    """④绩效小卡：Sharpe（日频年化）/ 最大回撤 / 胜率（FIFO 配对）。
+
+    样本 <MIN_SAMPLES(30) 只观察不记分（win_rate=None + insufficient note，midterm 纪律同款）；
+    closed_pairs=已平仓配对数（部分卖出按卖出笔计）；Sharpe std=0 或 n<2 → None。
+    """
+    navs = [float(p.get("nav") or 0) for p in equity_history or []]
+    sharpe = None
+    if len(navs) >= 2:
+        rets = [(b / a - 1) for a, b in itertools.pairwise(navs) if a]
+        if len(rets) >= 2:
+            mean = sum(rets) / len(rets)
+            var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+            std = var**0.5
+            if std > 0:
+                sharpe = round(mean / std * (252**0.5), 2)
+    max_dd = 0.0
+    peak = 0.0
+    for nav in navs:
+        peak = max(peak, nav)
+        if peak:
+            max_dd = min(max_dd, nav / peak - 1)
+    # 胜率：FIFO 配对（同 code 卖出价 > 加权买入价计胜；卖出笔为样本单位）
+    buy_q: dict[str, list[tuple[float, float]]] = {}
+    wins = 0
+    closed = 0
+    for op in operations or []:
+        code = str(op.get("code", ""))
+        price = float(op.get("price") or 0)
+        lots = int(op.get("lots") or 0)
+        if not code or not price or not lots:
+            continue
+        if op.get("side") == "buy":
+            buy_q.setdefault(code, []).append((price, lots))
+        else:
+            remaining = lots
+            weighted_cost = 0.0
+            while remaining > 0 and buy_q.get(code):
+                bp, bl = buy_q[code][0]
+                take = min(bl, remaining)
+                weighted_cost += bp * take
+                remaining -= take
+                if bl > take:
+                    buy_q[code][0] = (bp, bl - take)
+                else:
+                    buy_q[code].pop(0)
+            closed += 1
+            if price * lots > weighted_cost:
+                wins += 1
+    sufficient = closed >= MIN_SAMPLES
+    return {
+        "sharpe": sharpe,
+        "max_drawdown": round(max_dd, 4),
+        "win_rate": round(wins / closed, 4) if closed and sufficient else None,
+        "closed_pairs": closed,
+        "sufficient": sufficient,
+        "note": None if sufficient else f"样本 {closed} < {MIN_SAMPLES}：只观察不记分",
+    }
+
+
+def t1_review_hitrate(card_lines: list[dict], ledger_rows: dict) -> dict:
+    """⑥T+1 复核命中率：advice_card_written 决策行 vs ledger.agent.json evaluated 投影对齐。"""
+    attribution = (ledger_rows or {}).get("attribution") or {}
+    wins = sum(int(v.get("wins", 0)) for v in attribution.values() if isinstance(v, dict))
+    losses = sum(int(v.get("losses", 0)) for v in attribution.values() if isinstance(v, dict))
+    scored = wins + losses
+    sufficient = scored >= MIN_SAMPLES
+    return {
+        "sampled": scored,
+        "hits": wins,
+        "rate": round(wins / scored, 4) if scored and sufficient else None,
+        "note": None if sufficient else f"样本 {scored} < {MIN_SAMPLES}：只观察不记分",
     }
 
 
