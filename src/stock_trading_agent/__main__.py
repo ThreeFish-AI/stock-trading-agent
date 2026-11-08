@@ -844,6 +844,25 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("loop.briefing.slots_auto", briefing_slots_and_auto)
 
+    def corporate_split_anchor():
+        from stock_trading_agent.paper import ledger as paper_ledger
+        from stock_trading_agent.paper.corporate_actions import SplitAction, apply_corporate_action
+        from stock_trading_agent.paper.model import SimPortfolio, Tranche
+
+        pf = SimPortfolio(budget=100_000, cash=100_000)
+        pf = paper_ledger.open_position(
+            pf, "600519", "A", [Tranche(leg="T2_limit", lots=2, ref_price=10.0)], entry_ref=10.0
+        )
+        pos = pf.position("600519")
+        pos.lots, pos.avg_cost = 2, 10.0
+        pf = apply_corporate_action(
+            pf, SplitAction(code="600519", ratio_num=15, ratio_den=10, ex_date="2026-11-20")
+        )
+        assert pf.position("600519").lots == 3  # Decimal 2×1.5 向下取整
+        assert len(pf.corporate_actions) == 1
+
+    check_case("paper.corporate.split", corporate_split_anchor)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 

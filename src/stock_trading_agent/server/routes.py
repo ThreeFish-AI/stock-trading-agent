@@ -28,7 +28,11 @@ from stock_trading_agent.server.panel import (
     render_submit_result,
     render_task_card,
 )
-from stock_trading_agent.server.schemas import REJECT_STATUS, SubmitRequest
+from stock_trading_agent.server.schemas import (
+    REJECT_STATUS,
+    CorporateActionRequest,
+    SubmitRequest,
+)
 from stock_trading_agent.state.decisions import DecisionChainError
 from stock_trading_agent.state.paths import StateLayout
 
@@ -880,6 +884,140 @@ def _paper_decide(request: Request, payload: dict, *, action: str) -> dict:
     except ValueError as exc:  # ConfirmError / LedgerError
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True, "request_id": request_id, "action": action}
+
+
+def _corporate_action_decide(request: Request, data: dict) -> dict:
+    """公司行动手动馈送（13-paper §④ M2 承诺闭合；sim.lock 内引擎直调，写者=paper 引擎）。
+
+    幂等：corporate_actions 登记中同 code+kind+ex_date+口径（split 比率/dividend 每股额）→ 409；
+    同日除权除息先送转后分红由调用方保序（表单文案与 spec §④ 提示）；
+    决策 kind paper_corporate_action payload 零敏感量（NR-5：每股额/税/找零不进）。
+    """
+    from pydantic import ValidationError
+
+    from stock_trading_agent.paper import ledger as paper_ledger
+    from stock_trading_agent.paper.corporate_actions import (
+        DividendAction,
+        SplitAction,
+        apply_corporate_action,
+    )
+    from stock_trading_agent.state.store import FileLock
+
+    try:
+        payload = CorporateActionRequest(**data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.errors(include_url=False))) from exc
+    if payload.kind == "split":
+        if not (payload.ratio_num and payload.ratio_den and payload.ratio_num > payload.ratio_den):
+            raise HTTPException(
+                status_code=422, detail="split 需 ratio_num>ratio_den>=1（10送5 → 15/10）"
+            )
+    else:
+        if not (payload.pay_date and payload.per_share_cash):
+            raise HTTPException(status_code=422, detail="dividend 需 pay_date 与 per_share_cash>0")
+    runtime = _runtime(request)
+    if runtime is None:
+        raise HTTPException(status_code=503, detail="运行时未挂载")
+    layout = _layout(request)
+    try:
+        with FileLock(layout.sim_lock):
+            portfolio = paper_ledger.load(layout.sim_portfolio_path)
+            if portfolio is None:
+                raise HTTPException(status_code=422, detail="模拟账本未建（无公司行动可馈送）")
+            position = portfolio.position(payload.code)
+            if position is None or position.lots <= 0:
+                raise HTTPException(status_code=422, detail=f"无在持仓位：{payload.code}")
+            for rec in portfolio.corporate_actions:
+                if (
+                    rec.code == payload.code
+                    and rec.kind == payload.kind
+                    and rec.ex_date == payload.ex_date
+                    and rec.ratio_num == payload.ratio_num
+                    and rec.ratio_den == payload.ratio_den
+                    and rec.per_share_cash == payload.per_share_cash
+                ):
+                    raise HTTPException(status_code=409, detail="同口径公司行动已登记（幂等拒）")
+            action: SplitAction | DividendAction = (
+                SplitAction(
+                    code=payload.code,
+                    ratio_num=payload.ratio_num,
+                    ratio_den=payload.ratio_den,
+                    ex_date=payload.ex_date,
+                )
+                if payload.kind == "split"
+                else DividendAction(
+                    code=payload.code,
+                    per_share_cash=payload.per_share_cash,
+                    ex_date=payload.ex_date,
+                    pay_date=payload.pay_date,
+                )
+            )
+            portfolio = apply_corporate_action(portfolio, action)
+            paper_ledger.persist(portfolio, layout.sim_portfolio_path)
+            runtime.loop.decisions.append(
+                _now_iso(),
+                "paper_corporate_action",
+                {
+                    "code": payload.code,
+                    "action_kind": payload.kind,
+                    "ex_date": payload.ex_date,
+                    **(
+                        {"ratio_num": payload.ratio_num, "ratio_den": payload.ratio_den}
+                        if payload.kind == "split"
+                        else {}
+                    ),
+                },
+                path=layout.decisions_path,
+            )
+    except HTTPException:
+        raise
+    except DecisionChainError as exc:
+        raise HTTPException(status_code=503, detail=f"{exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "code": payload.code,
+        "action_kind": payload.kind,
+        "ex_date": payload.ex_date,
+    }
+
+
+@router.post("/paper/corporate-action")
+def paper_corporate_action(payload: CorporateActionRequest, request: Request) -> dict:
+    return _corporate_action_decide(request, payload.model_dump())
+
+
+@router.post("/panel/paper/corporate-action")
+def panel_paper_corporate_action(
+    request: Request,
+    kind: str = Form(...),
+    code: str = Form(...),
+    ex_date: str = Form(...),
+    pay_date: str = Form(""),
+    ratio_num: str = Form(""),
+    ratio_den: str = Form(""),
+    per_share_cash: str = Form(""),
+) -> HTMLResponse:
+    """htmx 表单变体：空串可选字段归一 None 后走同一闸，成功回④页 fragment。"""
+    from stock_trading_agent.server.panel import render_paper_fragment
+
+    data = {
+        "kind": kind,
+        "code": code,
+        "ex_date": ex_date,
+        "pay_date": pay_date or None,
+        "ratio_num": int(ratio_num) if ratio_num else None,
+        "ratio_den": int(ratio_den) if ratio_den else None,
+        "per_share_cash": float(per_share_cash) if per_share_cash else None,
+    }
+    resp = _corporate_action_decide(request, data)
+    return HTMLResponse(
+        render_paper_fragment(
+            _paper_view(request),
+            notice=(f"公司行动已入账：{resp['action_kind']} {resp['code']} @ {resp['ex_date']}"),
+        )
+    )
 
 
 @router.post("/panel/paper/confirm")
