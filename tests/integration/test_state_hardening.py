@@ -66,51 +66,35 @@ class TestCursorRegression:
         runtime = _runtime(layout)
         assert runtime.acquire_daemon() is False
         assert runtime.is_active is False
-        # 降级防毒：decisions 重绑纯内存链，append 不向已有多行文件写 seq=1 毒行
-        assert runtime.loop.decisions.path is None
+        # 降级防毒（尾对账语义）：append 不带显式 path 恒为纯内存，不向已有多行文件写毒行
         before = layout.decisions_path.read_text(encoding="utf-8")
         runtime.loop.decisions.append("2026-11-08T01:00:00Z", "l2_probe", {"ok": True})
         assert layout.decisions_path.read_text(encoding="utf-8") == before
 
 
 class TestRepairCli:
-    def test_repair_dryrun_then_apply(self, tmp_path: Path, monkeypatch):
+    def test_repair_broken_and_intact_noop(self, tmp_path: Path, monkeypatch):
         from stock_trading_agent.__main__ import main
 
         monkeypatch.setenv("STA_STATE_ROOT", str(tmp_path / "state"))
         layout = StateLayout.from_env()
         log = DecisionLog()
-        log.append("2026-11-07T00:00:00Z", "task_done", {"task_id": "t1"})
-        log.append("2026-11-07T00:00:01Z", "task_done", {"task_id": "t2"})
-        _write_decisions(layout.decisions_path, log)
+        log.append(
+            "2026-11-07T00:00:00Z", "task_done", {"task_id": "t1"}, path=layout.decisions_path
+        )
         raw = layout.decisions_path.read_text(encoding="utf-8")
-        broken = raw + raw  # 全史重灌（生产 I-003 形态）
-        layout.decisions_path.write_text(broken, encoding="utf-8")
+        layout.decisions_path.write_text(raw + raw.splitlines()[0] + "\n", encoding="utf-8")
 
-        assert main(["repair-decisions"]) == 0  # dry-run 不改文件
-        assert layout.decisions_path.read_text(encoding="utf-8") == broken
-
-        assert main(["repair-decisions", "--apply"]) == 0
+        assert main(["repair-decisions"]) == 0  # 一次性修复（无 dry-run）
         chain = DecisionLog.load(layout.decisions_path)  # strict 通过
         kinds = [line.kind for line in chain.lines]
-        assert kinds == ["task_done", "task_done", "chain_repaired"]  # 留痕行在场
-        assert chain.lines[-1].payload["dropped_duplicates"] == 2
+        assert kinds[-2:] == ["chain_repair_started", "chain_repair_done"]
+        assert chain.lines[0].payload == {"task_id": "t1"}  # 保行不删
+        backups = list(layout.decisions_path.parent.glob("decisions.jsonl.bak-*"))
+        assert backups, "备份文件应在场"
 
-    def test_repair_refuses_unparseable_line(self, tmp_path: Path, monkeypatch):
-        """坏行守护：无法解析的行 → 报行号 exit 4，不写任何东西。"""
-        from stock_trading_agent.__main__ import main
-
-        monkeypatch.setenv("STA_STATE_ROOT", str(tmp_path / "state"))
-        layout = StateLayout.from_env()
-        log = DecisionLog()
-        log.append("2026-11-07T00:00:00Z", "task_done", {"t": 1})
-        _write_decisions(layout.decisions_path, log)
-        raw = layout.decisions_path.read_text(encoding="utf-8")
-        broken = raw + '{"truncated' + "\n"
-        layout.decisions_path.write_text(broken, encoding="utf-8")
-
-        assert main(["repair-decisions", "--apply"]) == 4
-        assert layout.decisions_path.read_text(encoding="utf-8") == broken  # 拒碰原文件
+        assert main(["repair-decisions"]) == 0  # 完好链 noop
+        assert DecisionLog.load(layout.decisions_path).verify_chain()
 
 
 class TestPaperOrphanPurge:

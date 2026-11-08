@@ -149,6 +149,8 @@ class TestSignalsAndTodos:
         assert body["rows"][0]["to_stop_pct"] == round(10.5 / 9.5 * 100 - 100, 2)
         todos = client.get("/api/todos").json()["todos"]
         assert any(t["source"] == "mech_risk" for t in todos)
+        frag = client.get("/api/panel/signals").text  # 0.0.14：五词点 dot 接活
+        assert 'class="sig sig-b"' in frag and '<span class="d"></span>' in frag
 
     def test_facts_passthrough(self, tmp_path: Path):
         client, layout = _make_client(tmp_path)
@@ -180,6 +182,45 @@ class TestAdviceRendered:
         body = client.get(f"/api/advice/{market_today()}/600519").json()
         assert body["rendered"] is None
 
+    def test_library_code_links_to_detail(self, tmp_path: Path):
+        """0.0.15：⑤卡表 code 列改链接接通 advice-detail（此前端点+容器双悬空）。"""
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        _seed_advice(layout)
+        day = market_today()
+        frag = client.get("/api/panel/advice").text
+        assert f'hx-get="/api/panel/advice-detail/{day}/600519"' in frag
+        assert 'hx-target="#advice-detail-2"' in frag
+
+    def test_refused_reasons_fallback(self, tmp_path: Path):
+        """0.0.15：拒卡通报 reasons 数组回退 + 市场钟面短格式 + 来源列头。"""
+        from dataclasses import asdict
+
+        from stock_trading_agent.loop.monitor_events import market_today
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        log = DecisionLog()
+        log.append(
+            "2026-11-08T02:50:29+00:00",
+            "advice_refused",
+            {
+                "code": "600519",
+                "origin": "assert",
+                "reason_code": "schema_or_redline",
+                "reasons": ["signal 枚举越界"],
+            },
+        )
+        with open(layout.decisions_path, "w", encoding="utf-8") as f:
+            for line in log.lines:
+                f.write(json.dumps(asdict(line), ensure_ascii=False) + "\n")
+        frag = client.get("/api/panel/advice?date=" + market_today()).text
+        assert "signal 枚举越界" in frag  # reasons 回退拼接进通报列
+        assert '<th scope="col">来源</th>' in frag
+        assert market_today() in frag
+
 
 class TestReportFragment:
     def test_body_and_disclaimer_check(self, tmp_path: Path):
@@ -189,6 +230,18 @@ class TestReportFragment:
         assert "诊股报告" in frag and "免责段缺失" not in frag
         listing = client.get("/api/panel/reports").text
         assert "600519" in listing
+
+    def test_index_md_served(self, tmp_path: Path):
+        """vibe-stock reports 目录含 index.md 索引页——0.0.14 前白名单外全 404。"""
+        client, layout = _make_client(tmp_path)
+        d = layout.reports_dir / "600519.cn"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "index.md").write_text(
+            "# 诊股报告索引\n\n历史报告列表。本报告不构成投资建议。\n", encoding="utf-8"
+        )
+        resp = client.get("/api/panel/report/600519.cn/index.md")
+        assert resp.status_code == 200
+        assert "诊股报告索引" in resp.text
 
     def test_path_traversal_404(self, tmp_path: Path):
         client, _ = _make_client(tmp_path)
@@ -225,6 +278,180 @@ class TestSevenPageSkeleton:
             resp = client.get(frag_path)
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"], frag_path
+
+
+class TestAuditChain:
+    """0.0.15：⑦链校验呈现（load 对断链不抛异常，读侧仍渲染 + 警示）。"""
+
+    def _write_chain(self, layout: StateLayout, tamper: bool) -> None:
+        from dataclasses import asdict
+
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        log = DecisionLog()
+        log.append("2026-11-08T08:00:00+08:00", "task_submitted", {"kind": "diagnose_quick"})
+        log.append("2026-11-08T08:01:00+08:00", "task_done", {"task_id": "t1"})
+        if tamper:
+            log.lines[-1].payload["task_id"] = "tampered"  # 落盘前改 payload → hash 复算不符
+        with open(layout.decisions_path, "w", encoding="utf-8") as f:
+            for line in log.lines:
+                f.write(json.dumps(asdict(line), ensure_ascii=False) + "\n")
+
+    def test_chain_ok_and_tampered(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        self._write_chain(layout, tamper=False)
+        frag = client.get("/api/panel/audit").text
+        assert "链校验通过" in frag and "hash 链" in frag
+        self._write_chain(layout, tamper=True)
+        resp = client.get("/api/panel/audit")
+        assert resp.status_code == 200  # 断链不拒渲（读侧防线语义）
+        assert "校验失败" in resp.text
+
+
+class TestStatsT1Review:
+    def test_t1_review_rendered(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.root.mkdir(parents=True, exist_ok=True)
+        (layout.root / "ledger.agent.json").write_text(
+            json.dumps({"attribution": {"600519": {"wins": 2, "losses": 1}}}),
+            encoding="utf-8",
+        )
+        body = client.get("/api/stats").json()
+        assert body["t1_review"]["sampled"] == 3
+        assert body["t1_review"]["rate"] is None  # <30 insufficient
+        frag = client.get("/api/panel/stats").text
+        assert "T+1 复核命中率" in frag and "只观察不记分" in frag
+        assert "任务画像" in frag and "假设性" in frag  # 钉死断言回归
+
+
+class TestPRDPolish:
+    """0.0.18：报告结构化渲染 / ⑥双 sparkline / 壳层 color-scheme 与响应式。"""
+
+    def test_report_body_structured(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        _seed_report(layout)
+        frag = client.get("/api/panel/report/600519.cn/2026-11-06.md").text
+        assert '<div class="md">' in frag and '<h1 class="md">诊股报告</h1>' in frag
+        assert "免责段缺失" not in frag
+
+    def test_stats_dual_sparkline_when_curve(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        sessions = {
+            "sessions": {
+                f"s{i}": {
+                    "ts": f"2026-11-0{i + 1}T08:00:00+08:00",
+                    "usage_tokens": {"input": 100},
+                    "cost_usd_equiv": 0.1,
+                }
+                for i in range(1, 4)
+            }
+        }
+        (layout.agent_dir / "sessions.json").write_text(json.dumps(sessions), encoding="utf-8")
+        frag = client.get("/api/panel/stats").text
+        assert frag.count("<svg") >= 2  # tokens + USD 双曲线
+        assert 'aria-label="token 日桶曲线"' in frag
+
+    def test_shell_polish_bits(self, tmp_path: Path):
+        client, _ = _make_client(tmp_path)
+        html = client.get("/").text
+        assert '<meta name="color-scheme" content="dark">' in html
+        assert "@media (max-width:1180px)" in html and "@media (max-width:880px)" in html
+        assert 'class="grid-2"' in html  # ②页 inline grid 迁类
+        assert html.count('class="htmx-indicator spin"') == 7  # ①页试点
+        assert "animation:rot" in html and "@keyframes rot{" in html  # .spin 修活
+        # 死码清除负断言
+        for dead in [".notif{", ".ghostbtn", ".dawn{", "tr.sel", ".rpt-r{"]:
+            assert dead not in html, dead
+
+
+class TestHtmxWiring:
+    """0.0.14 P0 回归：htmx 生命周期修复（swap 策略/target 落点/表格类对齐/状态色）。"""
+
+    def test_events_review_button_target(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        _seed_events(layout)
+        frag = client.get("/api/panel/events").text
+        assert 'hx-target="#advice-detail"' in frag
+        assert "盯盘复核 600519" in frag  # 按钮文案逐字保留（钉死断言）
+        assert 'class="tbl"' in frag and 'class="grid"' not in frag
+
+    def test_paper_confirm_buttons_innerhtml(self, tmp_path: Path):
+        from stock_trading_agent.paper import pending as paper_pending
+        from stock_trading_agent.paper.confirm import PendingFillRequest
+        from stock_trading_agent.paper.fills import Bar
+
+        client, layout = _make_client(tmp_path)
+        _seed_paper(layout)
+        queue = paper_pending.load(layout.sim_pending_fills_path)
+        queue.enqueue(
+            PendingFillRequest(
+                request_id="rid-1",
+                code="600519",
+                tranche_leg="T2_limit",
+                side="buy",
+                lots=1,
+                ref_price=10.0,
+                bar=Bar(date="2026-11-06", open=10.0, high=10.2, low=9.9, close=9.98),
+                ts="2026-11-06T09:31:00Z",
+            )
+        )
+        paper_pending.save(queue, layout.sim_pending_fills_path)
+        frag = client.get("/api/panel/paper").text
+        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 3  # 0.0.20 +馈送表单
+
+    def test_briefing_ack_target(self, tmp_path: Path):
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        card = layout.briefing_card_path(market_today(), "600519")
+        card.parent.mkdir(parents=True, exist_ok=True)
+        card.write_text("- [ ] 复核：止损线复核\n", encoding="utf-8")
+        frag = client.get("/api/panel/briefing").text
+        assert 'hx-target="#ov-brief"' in frag and 'hx-swap="innerHTML"' in frag
+
+    def test_l2_fragment_and_index_shell_wiring(self, tmp_path: Path):
+        client, _ = _make_client(tmp_path)
+        frag = client.get("/api/panel/l2").text
+        assert 'hx-target="#l2-settings" hx-swap="innerHTML"' in frag
+        html = client.get("/").text
+        assert (
+            'id="ov-events" hx-get="/api/panel/overview" hx-trigger="load, every 180s,'
+            ' sse:monitor, sse:multi" hx-swap="innerHTML"' in html
+        )
+        assert (
+            'id="l2-settings" hx-get="/api/panel/l2" hx-trigger="load, every 180s,'
+            ' sse:decisions, sse:multi" hx-swap="innerHTML"' in html
+        )
+        assert ".st.done" in html  # 状态 pill 色规则随壳下发
+
+    def test_shell_interaction_and_a11y(self, tmp_path: Path):
+        """0.0.16：load 首绘 / 全局错误条 / tablist a11y / :focus-visible / --t4 AA。"""
+        client, _ = _make_client(tmp_path)
+        html = client.get("/").text
+        # 全部轮询容器首绘（0.0.16 ⑦会话卡 + 0.0.21 ⑦归档卡）
+        assert html.count('hx-trigger="load, every 180s') == 22
+        assert 'id="global-err" class="riskchip" role="status" aria-live="polite" hidden' in html
+        assert "htmx:responseError" in html and "htmx:sendError" in html
+        assert 'role="tablist"' in html and html.count('role="tab"') == 7
+        assert "aria-selected" in html  # activate() 同步
+        assert ":focus-visible" in html
+        assert (
+            "--px-txt-4:#7E8AA5" in html and "--t4:var(--px-txt-4)" in html
+        )  # 三层化后钉 primitive（0.0.19）
+        assert "scrollTo(0,0)" in html
+
+    def test_dgform_row_labels(self, tmp_path: Path):
+        """0.0.16：②表单行式（label 同行 for 关联 + Tooltip + 无 inline style + 防重）。"""
+        client, _ = _make_client(tmp_path)
+        frag = client.get("/api/panel/dgform").text
+        assert '<label for="dg-code"' in frag and '<label for="dg-kind"' in frag
+        assert 'id="dg-code"' in frag and 'id="dg-kind"' in frag
+        assert "证券代码" in frag and "诊股模式" in frag
+        assert 'hx-disabled-elt="find button"' in frag
+        assert "style=" not in frag
+        assert 'pattern="[0-9]{5,6}"' in frag and "required" in frag  # POST 契约不动
 
 
 class TestP2Endpoints:

@@ -28,14 +28,38 @@ SENSITIVE_KEY_PATTERN = re.compile(
 )
 
 
+# 违例类型枚举（§15 断言违例率分桶的桶键；判据只收严——新增检查必须配码）
+VIOLATION_CODES = (
+    "exit_nonzero",  # 三段判据①：退出码非 0
+    "envelope_missing",  # 三段判据②：result 信封缺失
+    "result_line_missing",  # 三段判据③：result 行不存在
+    "structured_missing",  # subtype=success 但 structured_output 缺失
+    "result_subtype_error",  # result subtype 非 success
+    "mcp_server_errors",  # init.mcp_server_errors 非空
+    "advice_ctx_missing",  # advice kind 未注入 ctx（防漏配）
+    "signal_enum_invalid",  # signal 非五词枚举
+    "disclaimer_missing",  # 免责段缺失
+    "schema_invalid",  # draft-07 本地复验失败
+    "sensitive_field",  # 敏感字段词族命中
+    "stale_data",  # advice 保鲜门（verdict/opinion_data_date≠今日）
+    "anchor_escalation",  # 锚③只降不升违例
+    "anchor_unreadable",  # signals.json 不可解析（宁拒不漏）
+    "advice_contract",  # advice 契约族（缺字段/走私/非法 outcome）
+    "uncategorized",  # 兜底（新检查未配码时聚合于此——维持可观测）
+)
+
+
 @dataclass(frozen=True)
 class AssertVerdict:
     ok: bool
     reasons: tuple[str, ...]
+    codes: tuple[str, ...] = ()  # 与 reasons 平行（§15 分桶键；0.0.22）
 
     @classmethod
     def refuse(cls, *reasons: str) -> AssertVerdict:
-        return AssertVerdict(ok=False, reasons=tuple(reasons))
+        return AssertVerdict(
+            ok=False, reasons=tuple(reasons), codes=("uncategorized",) * len(reasons)
+        )
 
 
 ADVICE_KINDS = ("monitor_review",)  # T2 建议卡 kind：advice 断言族适用
@@ -70,22 +94,33 @@ class AdviceContext:
     signals_read_ok: bool
 
 
-def _advice_family_checks(structured: dict, ctx: AdviceContext) -> list[str]:
-    """T2 建议卡断言族（07 P2 硬前置的编排侧投影；分支必填程序化——schema 扁平无 if/then）。"""
-    reasons: list[str] = []
+def _advice_family_checks(structured: dict, ctx: AdviceContext) -> list[tuple[str, str]]:
+    """T2 建议卡断言族（返回 (code, reason) 对；分支必填程序化——schema 扁平无 if/then）。"""
+    pairs: list[tuple[str, str]] = []
     outcome = structured.get("outcome")
     if outcome == "card":
         missing = [f for f in _CARD_FIELDS if f not in structured]
         if missing:
-            reasons.append(f"outcome=card 缺必带字段：{missing}")
+            pairs.append(("advice_contract", f"outcome=card 缺必带字段：{missing}"))
         if not ctx.signals_read_ok:
-            reasons.append("signals.json 在场不可解析：锚③不可比即不出卡（宁拒不漏）")
+            pairs.append(
+                ("anchor_unreadable", "signals.json 在场不可解析：锚③不可比即不出卡（宁拒不漏）")
+            )
         if structured.get("verdict_date") != ctx.today:
-            reasons.append(f"verdict_date≠今日（{structured.get('verdict_date')!r}≠{ctx.today!r}）")
+            pairs.append(
+                (
+                    "stale_data",
+                    f"verdict_date≠今日（{structured.get('verdict_date')!r}≠{ctx.today!r}）",
+                )
+            )
         if structured.get("opinion_data_date") != ctx.today:
             stale = structured.get("opinion_data_date")
-            reasons.append(
-                f"opinion_data_date≠今日（意见保鲜机械门：数据日 {stale!r}≠{ctx.today!r}，须重产）"
+            pairs.append(
+                (
+                    "stale_data",
+                    f"opinion_data_date≠今日（意见保鲜机械门：数据日 "
+                    f"{stale!r}≠{ctx.today!r}，须重产）",
+                )
             )
         final_signal = structured.get("final_signal")
         if (
@@ -93,19 +128,27 @@ def _advice_family_checks(structured: dict, ctx: AdviceContext) -> list[str]:
             and ctx.last_signal in _SIGNAL_RANK
             and _SIGNAL_RANK[final_signal] < _SIGNAL_RANK[ctx.last_signal]
         ):
-            reasons.append(
-                f"只降不升锚③违例：盘中终版 {final_signal} 比最近登记 {ctx.last_signal} 更激进"
-                "（拒出卡降级纯事实通报）"
+            pairs.append(
+                (
+                    "anchor_escalation",
+                    f"只降不升锚③违例：盘中终版 {final_signal} 比最近登记 "
+                    f"{ctx.last_signal} 更激进（拒出卡降级纯事实通报）",
+                )
             )
     elif outcome == "facts_only":
         if "facts_note" not in structured:
-            reasons.append("outcome=facts_only 缺 facts_note")
+            pairs.append(("advice_contract", "outcome=facts_only 缺 facts_note"))
         smuggled = [f for f in _CARD_FIELDS if f in structured]
         if smuggled:
-            reasons.append(f"outcome=facts_only 出现卡面字段（降级通道走私卡面）：{smuggled}")
+            pairs.append(
+                (
+                    "advice_contract",
+                    f"outcome=facts_only 出现卡面字段（降级通道走私卡面）：{smuggled}",
+                )
+            )
     else:
-        reasons.append(f"outcome 非法：{outcome!r}（card | facts_only）")
-    return reasons
+        pairs.append(("advice_contract", f"outcome 非法：{outcome!r}（card | facts_only）"))
+    return pairs
 
 
 def assess_result(
@@ -119,45 +162,67 @@ def assess_result(
 
     advice kind 必须注入 advice_ctx（缺省即拒——防漏配，判据只收严）。
     """
-    reasons: list[str] = []
+    pairs: list[tuple[str, str]] = []
     if result.exit_code != 0:
-        reasons.append(f"退出码非 0：{result.exit_code}")
+        pairs.append(("exit_nonzero", f"退出码非 0：{result.exit_code}"))
     if result.envelope is None:
-        reasons.append("result 信封缺失（stream 截断或静默丢 result，D-05/D-06）")
+        pairs.append(
+            ("envelope_missing", "result 信封缺失（stream 截断或静默丢 result，D-05/D-06）")
+        )
     if not result.result_line_present:
-        reasons.append("result 行不存在")
+        pairs.append(("result_line_missing", "result 行不存在"))
     if (
         result.envelope is not None
         and result.envelope.get("subtype") == "success"
         and result.structured_output is None
     ):
-        reasons.append(
-            "subtype=success 但 structured_output 缺失（strict 静默回退不可自证，F-14/F-15）"
+        pairs.append(
+            (
+                "structured_missing",
+                "subtype=success 但 structured_output 缺失（strict 静默回退不可自证，F-14/F-15）",
+            )
         )
     if result.envelope is not None and result.envelope.get("subtype") != "success":
         # 收严（0.0.4）：运行内失败打印为 result（D-01，退出码不可单独判定）
-        reasons.append(f"result subtype 非 success：{result.envelope.get('subtype')!r}")
+        pairs.append(
+            (
+                "result_subtype_error",
+                f"result subtype 非 success：{result.envelope.get('subtype')!r}",
+            )
+        )
     if result.mcp_server_errors:
         # 收严（0.0.4）：坏 mcp 配置被静默跳过，以 init.mcp_server_errors 非空为门禁（F-23）
-        reasons.append(
-            "init.mcp_server_errors 非空（F-23）："
-            + str([e.get("server") for e in result.mcp_server_errors])
+        pairs.append(
+            (
+                "mcp_server_errors",
+                "init.mcp_server_errors 非空（F-23）："
+                + str([e.get("server") for e in result.mcp_server_errors]),
+            )
         )
 
     structured = result.structured_output
     if kind in ADVICE_KINDS and advice_ctx is None:
-        reasons.append("advice kind 未注入 advice_ctx（防漏配，收严）")
+        pairs.append(("advice_ctx_missing", "advice kind 未注入 advice_ctx（防漏配，收严）"))
     if structured is not None:
         if kind in OPINION_KINDS and structured.get("signal") not in VALID_SIGNALS:
-            reasons.append(f"signal 非五词枚举：{structured.get('signal')!r}")
+            pairs.append(
+                ("signal_enum_invalid", f"signal 非五词枚举：{structured.get('signal')!r}")
+            )
         if not str(structured.get("disclaimer", "")).strip():
-            reasons.append("免责段缺失（全部产物必带：AI 生成标注+复核前置，方案 §7 免责四件套）")
+            pairs.append(
+                (
+                    "disclaimer_missing",
+                    "免责段缺失（全部产物必带：AI 生成标注+复核前置，方案 §7 免责四件套）",
+                )
+            )
         if schema is not None:
-            reasons.extend(_validate_draft07(structured, schema))
-        reasons.extend(scan_sensitive_fields(structured))
+            pairs.extend(("schema_invalid", r) for r in _validate_draft07(structured, schema))
+        pairs.extend(("sensitive_field", r) for r in scan_sensitive_fields(structured))
         if kind in ADVICE_KINDS and advice_ctx is not None:
-            reasons.extend(_advice_family_checks(structured, advice_ctx))
-    return AssertVerdict(ok=not reasons, reasons=tuple(reasons))
+            pairs.extend(_advice_family_checks(structured, advice_ctx))
+    reasons = tuple(r for _, r in pairs)
+    codes = tuple(c for c, _ in pairs)
+    return AssertVerdict(ok=not reasons, reasons=reasons, codes=codes)
 
 
 def _validate_draft07(payload: dict, schema: dict[str, Any]) -> list[str]:

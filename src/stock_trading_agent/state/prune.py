@@ -251,11 +251,11 @@ def archive_state(layout: StateLayout, *, today: str, apply: bool) -> dict:
         rebuilt = _rebuild_live_decisions(keep_rows)
         text = "".join(json.dumps(asdict(line), ensure_ascii=False) + "\n" for line in rebuilt)
         atomic_write_text(layout.decisions_path, text)
-        log = DecisionLog(rebuilt, path=layout.decisions_path)
-        log.append(
+        DecisionLog(rebuilt).append(
             _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds"),
             "state_archived",
             {"decisions_archived": len(arch_rows), "note": "月度切分归档，档案 agent/archive/"},
+            path=layout.decisions_path,  # 显式 path 才走锁内尾对账落盘（唯一入口语义）
         )
 
     for day, src in audit_plan:

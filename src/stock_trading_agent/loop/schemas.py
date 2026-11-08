@@ -99,6 +99,7 @@ BRIEFING_SCHEMA: dict[str, Any] = {
     "properties": {
         "kind": {"type": "string"},
         "briefing": {"type": "string"},
+        "action_items": {"type": "array", "items": {"type": "string"}},
         "disclaimer": {"type": "string", "minLength": 1},
     },
 }

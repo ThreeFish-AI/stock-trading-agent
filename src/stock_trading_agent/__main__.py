@@ -12,13 +12,36 @@ import sys
 def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
-    from stock_trading_agent.server.app import HOST, PORT, create_app
+    from stock_trading_agent.server.app import (
+        HOST,
+        PORT,
+        create_app,
+        listener_pid,
+        port_is_listening,
+        probe_panel,
+    )
 
+    port = args.port or PORT
+    if port_is_listening(HOST, port):  # 端口冲突预检：替代裸 errno 48
+        info = probe_panel(HOST, port)
+        pid = listener_pid(port)
+        if info is not None:  # 本面板已在跑：幂等退出（退出码不影响 KeepAlive 节流重启）
+            ver = info.get("version", "?")
+            print(f"[sta] 面板已在运行：http://{HOST}:{port}/")
+            print(f"[sta] version={ver}，pid={pid or '未知'}")
+            print("[sta] 面板在线即目标达成，本次幂等退出（exit 0）；重启面板：")
+            print("      launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent")
+            if pid:
+                print(f"      或 kill {pid}（launchd KeepAlive 30s 内自动重拉）")
+            return 0
+        print(f"[sta] 端口 {HOST}:{port} 被未知进程占用（pid={pid or '未知'}），面板无法启动。")
+        print(f"[sta] 排查：lsof -nP -iTCP:{port} -sTCP:LISTEN；停占口者或换 --port 后重试。")
+        return 1
     # enable_loop_runtime：lifespan 起 worker/watcher 线程；daemon 锁被持有时面板降级只读
     uvicorn.run(
         create_app(enable_loop_runtime=True),
         host=HOST,
-        port=args.port or PORT,
+        port=port,
         workers=1,
         log_level="info",
         timeout_graceful_shutdown=args.graceful_shutdown,
@@ -51,7 +74,10 @@ def _cmd_run_once(args: argparse.Namespace) -> int:
     )
     runtime = LoopRuntime(layout=layout, cc=cc)
     if not runtime.acquire_daemon(timeout_s=1.0):
-        print("daemon.lock 被持有（另一消费者在跑：serve 或另一 run-once），exit 3")
+        if runtime.chain_error:
+            print(f"决策链断裂，拒消费（{runtime.chain_error}），exit 3")
+        else:
+            print("daemon.lock 被持有（另一消费者在跑：serve 或另一 run-once），exit 3")
         return 3
     try:
         runtime.recover_orphans()
@@ -96,66 +122,52 @@ def _cmd_probe(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_repair_decisions(args: argparse.Namespace) -> int:
-    """修复 decisions.jsonl 破链（W2，I-003）：按 seq 保首行去重 + 重排重算全链 + 留痕。
+def _cmd_repair_decisions(_args: argparse.Namespace) -> int:
+    """一次性修复 decisions.jsonl 断链（保行重链 + 备份不删行；0.0.15 runbook）。
 
-    退出码：0=完成或 dry-run · 3=daemon 在跑（单写者守卫，先停 serve/run-once）
-    · 4=存在无法解析的行（修复工具拒碰，先人工处理坏行）。
+    完好链 noop exit 0；坏 JSON 行即中止人工检查（不删行纪律下无降级路径）。
+    修复后建议 launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent 重启 serve。
     """
     import datetime as dt
+    import hashlib
     import json
-    from dataclasses import asdict
 
-    from stock_trading_agent.state.decisions import DecisionLine, DecisionLog, plan_repair
+    from stock_trading_agent.state.decisions import (
+        DecisionChainError,
+        DecisionLog,
+        repair_chain_lines,
+    )
     from stock_trading_agent.state.paths import StateLayout
-    from stock_trading_agent.state.store import FileLock, LockTimeout, atomic_write_text
+    from stock_trading_agent.state.store import FileLock, atomic_write_text
 
     layout = StateLayout.from_env()
-    if not layout.decisions_path.exists():
-        print("decisions.jsonl 不存在，无需修复")
+    path = layout.decisions_path
+    if not path.exists():
+        print(f"decisions.jsonl 不存在（{path}），无需修复")
         return 0
     try:
-        with FileLock(layout.daemon_lock, timeout_s=1.0):
-            lines: list[DecisionLine] = []
-            bad_rows: list[int] = []
-            for row_no, raw in enumerate(
-                layout.decisions_path.read_text(encoding="utf-8").splitlines(), start=1
-            ):
-                if not raw:
-                    continue
-                try:
-                    lines.append(DecisionLine(**json.loads(raw)))
-                except (ValueError, TypeError):
-                    bad_rows.append(row_no)
-            if bad_rows:
-                shown = ", ".join(str(n) for n in bad_rows[:10])
-                suffix = "…" if len(bad_rows) > 10 else ""
-                print(
-                    f"decisions.jsonl 存在无法解析的行（行号 {shown}{suffix}，"
-                    f"共 {len(bad_rows)} 行）——修复工具拒碰，先人工剔除/修复坏行，exit 4"
-                )
-                return 4
-            broken_before = not DecisionLog(lines).verify_chain()
-            rebuilt, dropped = plan_repair(lines)
-            print(
-                f"修复计划：盘上 {len(lines)} 行 → 保留 {len(rebuilt)} 行、丢弃重复 {dropped} 行；"
-                f"修复前链校验 {'失败' if broken_before else '通过'} → 修复后链校验通过"
-            )
-            if not args.apply:
-                print("dry-run 未落盘（--apply 执行修复，含 chain_repaired 留痕行）")
-                return 0
-            text = "".join(json.dumps(asdict(line), ensure_ascii=False) + "\n" for line in rebuilt)
-            atomic_write_text(layout.decisions_path, text)
-            DecisionLog(rebuilt, path=layout.decisions_path).append(
-                dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
-                "chain_repaired",
-                {"dropped_duplicates": dropped, "kept": len(rebuilt)},
-            )
-            print(f"已落盘：{len(rebuilt) + 1} 行（含留痕），verify_chain 通过")
-            return 0
-    except LockTimeout:
-        print("daemon.lock 被持有（serve/run-once 在跑）——先停守护再修复，exit 3")
-        return 3
+        log = DecisionLog.load(path)
+    except DecisionChainError as exc:
+        print(f"检测到断链：{exc}")
+    else:
+        print(f"决策链完整（{len(log.lines)} 行），无需修复")
+        return 0
+    text = path.read_text(encoding="utf-8")
+    ts = dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds")
+    old_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    rows, stats = repair_chain_lines(text.splitlines(), ts=ts, old_sha256=old_sha256)
+    stamp = dt.datetime.now(tz=dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    backup = path.with_name(f"{path.name}.bak-{stamp}")
+    with FileLock(layout.decisions_lock):
+        atomic_write_text(backup, text)
+        atomic_write_text(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+    print(
+        f"修复完成：{stats.rows_before} 行保行重链 → {stats.rows_after} 行"
+        f"（含 chain_repair_started/done 两条；断点行 {stats.breaks}）"
+    )
+    print(f"备份：{backup}")
+    print(f"新链头：{stats.new_head[:12]}…（建议 launchctl kickstart 重启 serve）")
+    return 0
 
 
 def _cmd_archive_state(args: argparse.Namespace) -> int:
@@ -350,6 +362,44 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         assert not log.verify_chain()
 
     check_case("state.decisions.hash_chain", hash_chain)
+
+    def tail_sync_and_repair():
+        import json
+        import tempfile
+        from dataclasses import asdict
+        from pathlib import Path
+
+        from stock_trading_agent.state.decisions import (
+            DecisionChainError,
+            repair_chain_lines,
+        )
+        from stock_trading_agent.state.store import atomic_write_text
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "decisions.jsonl"
+            a = DecisionLog()
+            a.append("2026-11-07T00:00:00Z", "task_submitted", {"task_id": "t"}, path=path)
+            b = DecisionLog()  # 重启/降级态：空内存实例
+            b.append("2026-11-07T00:00:01Z", "task_done", {"task_id": "t"}, path=path)
+            reloaded = DecisionLog.load(path)
+            assert [x.seq for x in reloaded.lines] == [1, 2]  # 空链直写不再回退 seq（W1 防回退）
+            # 构造断链样本（模拟 W1 产物：两段各自从 seq=1）→ 保行重链
+            raw = path.read_text(encoding="utf-8").splitlines()
+            c = DecisionLog()
+            c.append("2026-11-07T00:00:02Z", "task_done", {"task_id": "t2"})
+            raw.append(json.dumps(asdict(c.lines[0]), ensure_ascii=False))
+            atomic_write_text(path, "\n".join(raw) + "\n")
+            try:
+                DecisionLog.load(path)
+                raise AssertionError("断链样本应 raise")
+            except DecisionChainError:
+                pass
+            rows, stats = repair_chain_lines(raw, ts="2026-11-08T00:00:00Z", old_sha256="0" * 64)
+            assert stats.rows_after == stats.rows_before + 2
+            atomic_write_text(path, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+            assert DecisionLog.load(path).verify_chain()  # 修复后可载入且链完整
+
+    check_case("state.decisions.tail_sync_repair", tail_sync_and_repair)
 
     def routing_table():
         table = load_default_table()
@@ -781,6 +831,83 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("panel.phase_trend", panel_phase_and_trend)
 
+    def paper_totals_anchor():
+        from stock_trading_agent.server.stats import paper_totals
+
+        t = paper_totals([{"market_value": 1100.0}, {"market_value": 460.0}], 60_000.0, 100_000.0)
+        assert t == {"market_value": 1560.0, "cash": 60000.0, "total": 61560.0, "nav": 0.6156}
+
+    check_case("panel.paper_totals", paper_totals_anchor)
+
+    def briefing_slots_and_auto():
+        import datetime as bdt
+
+        from stock_trading_agent.loop.briefing import (
+            build_card_md,
+            has_ack,
+            plan_auto_briefings,
+            slot_of_kind,
+        )
+
+        assert slot_of_kind("briefing_morning") == "am"
+        md = build_card_md({"briefing": "x"}, date="2026-11-09", code="600519", slot="pm")
+        assert "session: pm" in md and "盘后复盘" in md
+        ack_lines = [
+            {"kind": "briefing_ack", "payload": {"date": "d", "code": "c", "session": "pm"}}
+        ]
+        assert has_ack(ack_lines, date="d", code="c", slot="pm")
+        assert not has_ack(ack_lines, date="d", code="c", slot="am")
+        monday_am = bdt.datetime(2026, 11, 9, 9, 10, tzinfo=bdt.timezone(bdt.timedelta(hours=8)))
+        planned = plan_auto_briefings(
+            monday_am, l2_enabled=True, universe_codes=["600519"], already_queued=set()
+        )
+        assert planned == [("briefing_morning", "600519")]
+        assert (
+            plan_auto_briefings(
+                monday_am, l2_enabled=False, universe_codes=["c"], already_queued=set()
+            )
+            == []
+        )
+
+    check_case("loop.briefing.slots_auto", briefing_slots_and_auto)
+
+    def corporate_split_anchor():
+        from stock_trading_agent.paper import ledger as paper_ledger
+        from stock_trading_agent.paper.corporate_actions import SplitAction, apply_corporate_action
+        from stock_trading_agent.paper.model import SimPortfolio, Tranche
+
+        pf = SimPortfolio(budget=100_000, cash=100_000)
+        pf = paper_ledger.open_position(
+            pf, "600519", "A", [Tranche(leg="T2_limit", lots=2, ref_price=10.0)], entry_ref=10.0
+        )
+        pos = pf.position("600519")
+        pos.lots, pos.avg_cost = 2, 10.0
+        pf = apply_corporate_action(
+            pf, SplitAction(code="600519", ratio_num=15, ratio_den=10, ex_date="2026-11-20")
+        )
+        assert pf.position("600519").lots == 3  # Decimal 2×1.5 向下取整
+        assert len(pf.corporate_actions) == 1
+
+    check_case("paper.corporate.split", corporate_split_anchor)
+
+    def metrics_pipeline_anchor():
+        from stock_trading_agent.server.stats import assertion_buckets, route_hit_rate
+
+        lines = [
+            {"kind": "task_submitted", "payload": {}},
+            {"kind": "assert_refuse", "payload": {"reason_codes": ["exit_nonzero"]}},
+            {"kind": "assert_refuse", "payload": {"reasons": ["legacy"]}},
+            {
+                "kind": "task_failed",
+                "payload": {"reason_code": "route_unknown"},
+            },
+        ]
+        assert assertion_buckets(lines) == {"exit_nonzero": 1, "uncategorized": 1}
+        r = route_hit_rate(lines)
+        assert r["submitted"] == 1 and r["fallback"] == 1 and r["rate"] == 0.0
+
+    check_case("server.metrics.pipeline", metrics_pipeline_anchor)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 
@@ -801,6 +928,16 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("state.queue.find_any", queue_find_any)
 
+    def port_guard_probe():
+        from stock_trading_agent.server.app import _is_panel_health
+
+        assert _is_panel_health({"ok": True, "component": "stock-trading-agent-panel", "v": "x"})
+        assert not _is_panel_health({"ok": True, "component": "other-service"})
+        assert not _is_panel_health("stock-trading-agent-panel")  # 非 dict 判否
+
+    check_case("server.port_guard.probe", port_guard_probe)
+
+    # --- 0.0.15 修复轮独有 case（merge 自修复线；API 已对齐尾对账版） ---
     def decisions_repair_plan():
         from stock_trading_agent.state.decisions import DecisionLog, plan_repair
 
@@ -816,45 +953,6 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         assert [x.payload["task_id"] for x in rebuilt] == ["t1", "t2"]  # 保首行、payload 不动
 
     check_case("state.decisions.repair_plan", decisions_repair_plan)
-
-    def decisions_strict_load():
-        import json
-        import tempfile
-        from pathlib import Path
-
-        from stock_trading_agent.state.decisions import ChainBroken, DecisionLog
-
-        d = Path(tempfile.mkdtemp()) / "decisions.jsonl"
-        log = DecisionLog()
-        log.append("2026-11-07T00:00:00Z", "task_done", {"t": 1})
-        log.append("2026-11-07T00:00:01Z", "task_done", {"t": 2})
-        rows = [
-            json.dumps(
-                {
-                    "seq": line.seq,
-                    "ts": line.ts,
-                    "prefix": line.prefix,
-                    "kind": line.kind,
-                    "payload": line.payload,
-                    "prev_hash": line.prev_hash,
-                    "hash": line.hash,
-                },
-                ensure_ascii=False,
-            )
-            for line in log.lines
-        ]
-        text = "\n".join(rows)
-        d.parent.mkdir(parents=True, exist_ok=True)
-        d.write_text(text + "\n" + text.splitlines()[0] + "\n", encoding="utf-8")  # 重复 seq 破链
-        try:
-            DecisionLog.load(d)
-            raise AssertionError("W3 未拦截破链载入")
-        except ChainBroken:
-            pass
-        tolerant = DecisionLog.load(d, strict=False)
-        assert len(tolerant.lines) == 3  # 容错载入（修复工具口）
-
-    check_case("state.decisions.strict_load", decisions_strict_load)
 
     def store_append_lines_and_cache():
         import tempfile
@@ -1017,30 +1115,6 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("loop.watcher.conditional_save", watcher_conditional_save)
 
-    def sse_snapshot_events():
-        from stock_trading_agent.server.sse import INITIAL_SNAPSHOT_EVENTS
-
-        assert (
-            frozenset(
-                {
-                    "queue",
-                    "decisions",
-                    "budget",
-                    "briefing",
-                    "monitor",
-                    "advice",
-                    "status",
-                    "outlook",
-                    "paper",
-                    "signals",
-                    "reports",
-                }
-            )
-            == INITIAL_SNAPSHOT_EVENTS
-        )
-
-    check_case("server.sse.snapshot_events", sse_snapshot_events)
-
     def state_probe_report():
         import sys as _sys
         from pathlib import Path as _Path
@@ -1108,10 +1182,10 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--kind", default=None, help="可选：先提交再消费（六 kind 或 t1_refresh）")
     run_p.add_argument("--code", default=None, help="标的码（与 --kind 成对）")
     sub.add_parser("probe", help="CC 通道探针（骨架期即 dry-run 报告）")
-    repair_p = sub.add_parser(
-        "repair-decisions", help="修复 decisions.jsonl 破链（去重+重算链；默认 dry-run）"
+    sub.add_parser(
+        "repair-decisions",
+        help="一次性修复 decisions.jsonl 断链（保行重链+备份不删行；strict load 配套）",
     )
-    repair_p.add_argument("--apply", action="store_true", help="执行修复（默认只打印计划）")
     archive_p = sub.add_parser(
         "archive-state",
         help="六桶状态归档（queue/sessions/audit/runs/budget/decisions；默认 dry-run）",

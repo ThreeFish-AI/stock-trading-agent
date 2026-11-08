@@ -10,6 +10,10 @@ on_event 已 deprecated，统一 lifespan 上下文（I-33）。
 from __future__ import annotations
 
 import contextlib
+import http.client
+import json
+import socket
+import urllib.request
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -34,6 +38,63 @@ PORT = 8730
 TRUSTED_HOSTS = ("localhost", "127.0.0.1", "testserver")
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def port_is_listening(host: str, port: int, timeout_s: float = 0.5) -> bool:
+    """connect_ex 探测端口是否有活 LISTEN（0=被占）；异常视同空闲，交 uvicorn bind 兜底。
+
+    不采用试 bind：探测结果依赖探测者自身 socket 选项栈（SO_REUSEADDR×TIME_WAIT 交互），
+    与 uvicorn 选项栈对不齐即漂移，且探测 bind-close 自造残留态。
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout_s)
+            return sock.connect_ex((host, port)) == 0
+    except OSError:  # 构造期（EMFILE 等 fd 耗尽）与带超时 connect 阶段一律视同空闲
+        return False
+
+
+def _is_panel_health(payload: object) -> bool:
+    """占口者身份判据（component 名与 health 端点同源 routes.PANEL_COMPONENT）。"""
+    return isinstance(payload, dict) and payload.get("component") == routes.PANEL_COMPONENT
+
+
+def probe_panel(host: str, port: int, timeout_s: float = 1.5) -> dict | None:
+    """GET /api/health 探占口者身份：本面板返回 health dict，其余一律 None（宁拒不误认）。
+
+    HTTPError/URLError/Timeout ⊂ OSError、JSONDecode ⊂ ValueError、getresponse 阶段
+    BadStatusLine 等 ⊂ HTTPException（非 HTTP 占口者触发，stdlib 不包装原样穿透）
+    ——一族 except 兜底。
+    """
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=timeout_s) as resp:
+            payload = json.loads(resp.read(65536))
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    return payload if _is_panel_health(payload) else None
+
+
+def listener_pid(port: int, timeout_s: float = 3.0) -> str | None:
+    """lsof 查占口 PID（best-effort：缺二进制/超时/无输出一律 None，不阻塞主流程）。
+
+    坑位：-Fp 输出混 f<fd> 行（本机实测），必须按 p 前缀过滤；多 PID 双栈取首个。
+    """
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fp"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    for line in proc.stdout.splitlines():
+        if line.startswith("p"):
+            return line[1:]
+    return None
 
 
 def create_app(
@@ -88,11 +149,15 @@ def _make_lifespan(enable: bool, runtime: LoopRuntime | None, layout: StateLayou
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         rt = app.state.loop_runtime
-        if enable and not rt.start():  # daemon 锁失败：降级只读（面板照常服务）
-            print(f"[sta] daemon.lock 被持有，降级只读（root={layout.root}）")
+        if enable and not rt.start():  # daemon 锁失败/决策链断链：降级只读（面板照常服务）
+            reason = getattr(rt, "chain_error", None) or "daemon.lock 被持有"
+            print(f"[sta] 降级只读：{reason}（root={layout.root}）")
         import asyncio
 
-        rt.apply_l2_config(probe=True)  # L2 开启时探测认证态联动预算闸（决策 l2_probe）
+        try:
+            rt.apply_l2_config(probe=True)  # L2 开启时探测认证态联动预算闸（决策 l2_probe）
+        except Exception as exc:  # 断链文件上 l2_probe 决策落盘会再抛：不炸面板（0.0.15）
+            print(f"[sta] apply_l2_config 降级跳过：{exc}")
         app.state.stream_hub.bind_loop(asyncio.get_running_loop())
         app.state.dir_watcher.start()
         yield

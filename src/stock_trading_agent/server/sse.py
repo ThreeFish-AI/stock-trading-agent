@@ -20,23 +20,6 @@ router = APIRouter(prefix="/api")
 PING_S = 15  # sse-starlette 默认保活（I-27）
 STATUS_TICK_S = 30  # 锁态/三槽快照节拍（flock 不可文件监听坑位）
 
-# R1''：建连初始快照——首屏与断线重连不待 180s 轮询/下一变更（多命名事件全集一发）
-INITIAL_SNAPSHOT_EVENTS = frozenset(
-    {
-        "queue",
-        "decisions",
-        "budget",
-        "briefing",
-        "monitor",
-        "advice",
-        "status",
-        "outlook",
-        "paper",
-        "signals",
-        "reports",
-    }
-)
-
 
 def _status_fingerprint(layout: StateLayout) -> str:
     watch_state = layout.monitor_state_path
@@ -56,9 +39,9 @@ async def stream(request: Request) -> EventSourceResponse:
         q = hub.subscribe()
         last_status = _status_fingerprint(layout)
         try:
-            yield {"event": "retry", "data": "3000"}
-            # R1'' 建连即推初始快照（multi 一发驱动全部 sse:multi fragment 立即 GET）
-            yield {"event": "multi", "data": ",".join(sorted(INITIAL_SNAPSHOT_EVENTS))}
+            from sse_starlette.sse import ServerSentEvent
+
+            yield ServerSentEvent(data="", retry=3000)  # 真 retry: 字段（改 EventSource 重连间隔）
             while True:
                 if await request.is_disconnected():
                     break

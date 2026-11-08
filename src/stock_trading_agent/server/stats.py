@@ -133,3 +133,71 @@ def budget_curve(session_records: list[dict]) -> list[dict]:
         bucket["cost_usd_equiv"] += float(record.get("cost_usd_equiv") or 0.0)
         bucket["sessions"] += 1
     return [buckets[d] for d in sorted(buckets)]
+
+
+def paper_totals(positions: list[dict], cash: float, budget: float) -> dict:
+    """④表尾汇总条（原型 paper.html）：总市值/现金/总资产/净值（呈现态原值，13-paper §⑥）。"""
+    market_value = sum(float(p.get("market_value") or 0) for p in positions or [])
+    total = market_value + float(cash or 0)
+    return {
+        "market_value": round(market_value, 2),
+        "cash": round(float(cash or 0), 2),
+        "total": round(total, 2),
+        "nav": round(total / budget, 4) if budget else None,
+    }
+
+
+def assertion_buckets(lines: list[dict]) -> dict:
+    """§15 断言违例率分桶：assert_refuse/advice_refused 行按 reason_codes 计数。
+
+    legacy 行（无 reason_codes，0.0.22 前）归 uncategorized——存量可聚合不拒读。
+    """
+    buckets: dict[str, int] = {}
+    for line in lines or []:
+        if line.get("kind") not in ("assert_refuse", "advice_refused"):
+            continue
+        codes = (line.get("payload") or {}).get("reason_codes")
+        if not codes:
+            buckets["uncategorized"] = buckets.get("uncategorized", 0) + 1
+            continue
+        for code in codes:
+            buckets[str(code)] = buckets.get(str(code), 0) + 1
+    return dict(sorted(buckets.items(), key=lambda kv: -kv[1]))
+
+
+def route_hit_rate(lines: list[dict]) -> dict:
+    """§15 意图路由命中率：分母=task_submitted 总量、分子=route_unknown 兜底拒。
+
+    口径坑位：server 层 kind 白名单先拦——面板路径兜底几乎不可触达（恒 100% 属预期，
+    命中率防线在 CLI/内部直建 TaskRecord 路径）。
+    """
+    submitted = sum(1 for line in lines or [] if line.get("kind") == "task_submitted")
+    fallback = sum(
+        1
+        for line in lines or []
+        if line.get("kind") == "task_failed"
+        and (line.get("payload") or {}).get("reason_code") == "route_unknown"
+    )
+    rate = round((submitted - fallback) / submitted, 4) if submitted else None
+    return {
+        "submitted": submitted,
+        "fallback": fallback,
+        "rate": rate,
+        "note": "server 白名单先拦：面板路径兜底不可触达（防线在 CLI/内部直建路径）",
+    }
+
+
+def cost_by_kind(session_records: list[dict], queue_tasks: list[dict]) -> list[dict]:
+    """§15 会话成本分布（按 kind 归因）：sessions × queue 终态任务经 task_id join。
+
+    join 不上的会话（任务记录已被清理等）归 unknown——不静默丢账。
+    """
+    kind_of = {str(t.get("task_id")): str(t.get("kind")) for t in queue_tasks or []}
+    agg: dict[str, dict] = {}
+    for rec in session_records or []:
+        kind = kind_of.get(str(rec.get("task_id")), "unknown")
+        slot = agg.setdefault(kind, {"kind": kind, "sessions": 0, "tokens": 0, "usd": 0.0})
+        slot["sessions"] += 1
+        slot["tokens"] += int(((rec.get("usage_tokens") or {}).get("total")) or 0)
+        slot["usd"] = round(slot["usd"] + float(rec.get("cost_usd_equiv") or 0), 4)
+    return sorted(agg.values(), key=lambda r: -r["usd"])

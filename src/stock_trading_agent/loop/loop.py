@@ -28,10 +28,11 @@ from stock_trading_agent.loop.advice import (
 )
 from stock_trading_agent.loop.assertor import OPINION_KINDS, assess_result
 from stock_trading_agent.loop.briefing import (
-    BRIEFING_KIND,
+    BRIEFING_KINDS,
     build_card_md,
     persist_card,
     scan_briefing_text,
+    slot_of_kind,
 )
 from stock_trading_agent.loop.events import (
     EventEnvelope,
@@ -91,11 +92,12 @@ class AgentLoop:
         self.cc = cc
         self.layout = layout
         self.table = table
-        # W1 唯一入口：缺省绑定落盘路径（显式注入的裸 log 仅内存态，纯函数测试用）
-        self.decisions = (
-            decisions if decisions is not None else DecisionLog(path=layout.decisions_path)
-        )
+        self.decisions = decisions or DecisionLog()
         self.budget = budget or BudgetConfig()  # 默认关（人在环期仅记账，§13）
+
+    def _decide(self, kind: str, payload: dict) -> None:
+        """决策追加单一入口（0.0.15）：append(path=...) 锁内尾部对账后即写即落，无游标。"""
+        self.decisions.append(_now_iso(), kind, payload, path=self.layout.decisions_path)
 
     # ① ingest：事件信封入队（幂等键 + 禁跑窗 + 锁前置）
     def ingest(self, event: EventEnvelope, queue: QueueState) -> TaskRecord:
@@ -233,13 +235,13 @@ class AgentLoop:
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
             record.finished_at = _now_iso()
             record.error = "；".join(verdict.reasons)
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind=("advice_refused" if task.kind == MONITOR_REVIEW_KIND else "assert_refuse"),
                 payload={
                     "task_id": task.task_id,
                     "kind": task.kind,
                     "code": task.code,
+                    "reason_codes": list(verdict.codes),  # §15 断言违例率分桶键（0.0.22）
                     **(
                         {"origin": "assert", "reason_code": "schema_or_redline"}
                         if task.kind == MONITOR_REVIEW_KIND
@@ -254,7 +256,7 @@ class AgentLoop:
             declined = self._advice_card_or_refuse(task, result, queue, sessions, ctx)
             if declined is not None:
                 return declined  # 写卡链失败 → task=failed + advice_refused，杜绝 done-无卡
-        if task.kind == BRIEFING_KIND:
+        if task.kind in BRIEFING_KINDS:
             declined = self._briefing_card_or_fail(task, result, queue, sessions)
             if declined is not None:
                 return declined
@@ -273,8 +275,7 @@ class AgentLoop:
             )
         )
         self._record_budget(result)
-        self.decisions.append(
-            _now_iso(),
+        self._decide(
             kind="task_done",
             payload={
                 "task_id": task.task_id,
@@ -297,8 +298,7 @@ class AgentLoop:
         """
         structured = result.structured_output or {}
         if structured.get("outcome") != "card":
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind="advice_refused",
                 payload={
                     "task_id": task.task_id,
@@ -327,8 +327,7 @@ class AgentLoop:
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
             record.finished_at = _now_iso()
             record.error = detail
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind="advice_refused",
                 payload={
                     "task_id": task.task_id,
@@ -341,8 +340,7 @@ class AgentLoop:
             )
             self._persist_all(queue, sessions)
             return False
-        self.decisions.append(
-            _now_iso(),
+        self._decide(
             kind="advice_card_written",
             payload={
                 "task_id": task.task_id,
@@ -363,19 +361,19 @@ class AgentLoop:
 
         structured = result.structured_output or {}
         date = market_today()
+        slot = slot_of_kind(task.kind)
         try:
-            md = build_card_md(structured, date=date, code=task.code)
+            md = build_card_md(structured, date=date, code=task.code, slot=slot)
             problems = scan_briefing_text(md)
             if problems:
                 raise ValueError("；".join(problems))
-            card_path = persist_card(self.layout, date, task.code, md)
+            card_path = persist_card(self.layout, date, task.code, md, slot=slot)
         except (OSError, ValueError) as exc:
             queue.transition(task.task_id, "failed")
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
             record.finished_at = _now_iso()
             record.error = str(exc)
-            self.decisions.append(
-                _now_iso(),
+            self._decide(
                 kind="task_failed",
                 payload={
                     "task_id": task.task_id,
@@ -386,13 +384,14 @@ class AgentLoop:
             )
             self._persist_all(queue, sessions)
             return False
-        self.decisions.append(
-            _now_iso(),
+        self._decide(
             kind="briefing_card",
             payload={
                 "task_id": task.task_id,
+                "kind": task.kind,
                 "code": task.code,
                 "date": date,
+                **({"session": slot} if slot else {}),
                 "path": str(card_path),
             },
         )
@@ -416,7 +415,7 @@ class AgentLoop:
     def _persist_all(self, queue: QueueState, sessions: SessionsState) -> None:
         """从属账先落、queue 终态最后落（W5 写序：崩溃残留 running 由启动期 recover_orphans 自愈）。
 
-        决策行不再在此落盘——W1 唯一入口化后 decisions.append 经绑定 path 即时原子追加。
+        decisions 已在 _decide 即写即落（append(path=...) 单一入口，0.0.15 删增量游标）。
         """
         atomic_write_json(self.layout.sessions_path, sessions.to_dict())
         atomic_write_json(self.layout.queue_path, queue.to_dict())

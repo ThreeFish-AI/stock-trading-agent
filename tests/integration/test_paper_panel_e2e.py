@@ -112,6 +112,11 @@ class TestConfirmChain:
             assert pos["code"] == "600519" and "sellable_lots" in pos
             frag = client.get("/api/panel/paper").text
             assert "600519" in frag and "NR-2" in frag and "假设性" in frag
+            # 0.0.15：绩效三格 + 盈亏红涨绿跌 + 中文列头 + colgroup
+            assert "Sharpe" in frag and "最大回撤" in frag and "胜率" in frag
+            assert 'class="pf' in frag or 'class="nf' in frag or "—" in frag
+            assert '<th scope="col">建仓批</th>' in frag
+            assert "<colgroup>" in frag
 
     def test_confirm_unknown_404_and_bad_request_422(self, tmp_path: Path):
         app, _ = make_app(tmp_path)

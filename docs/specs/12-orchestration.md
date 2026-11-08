@@ -45,15 +45,28 @@
 
 方案 §11 表为快照；现行权威布局=`state/paths.py`（代码化读写矩阵）。0.0.3 增补：`agent/queue.lock`（串行闸）、`agent/runs/<date>/t1/<code>/`（T1 工作目录）、`agent/runs/<session_uuid>/`（CC 会话 cwd，随真实通道 PR 启用）、`agent/watcher.json`（监听偏移断点）、`agent/daemon.lock`（单消费者）。vibe-stock 只读消费位：`monitor/events/<date>.jsonl`、`monitor/state.json`、`outlook/<date>.md`、`reports/`、根级 `ledger.json`（仅 mtime 探测，只读）。
 
+### audit 归档只读裁定（0.0.21 落地）
+
+- **读半边闭合（读写矩阵 §④ 面板对 audit/ 标「读」的兑现）**：`GET /api/audit/dates|/{date}|/{date}/{name}?tail=`（tail 夹紧 1..500 缺省 100）+ ⑦页归档索引卡（`/api/panel/audit-archive` 日期带 + 行级查看 → `#au-transcript` 转录 tail fragment）+ sessions 表转录列改互查链接（transcript_path 在 audit/ 下时 hx-get 直达）——三件套互查（decisions×sessions×audit）三腿全通。
+- **路径安全三保险**：日期正则 `^\d{4}-\d{2}-\d{2}$` + 文件名正则 `^[A-Za-z0-9:_-]+\.jsonl$`（覆盖真实 uuid 与 dryrun-<task_id> 含冒号形态）+ resolve is_relative_to 边界；转录内容全文本 `_esc` 转义后 `<pre>` 呈现（XSS 防线）。坑位：官方转录默认 30 天清理（F-38）——归档索引对缺席日期如实 404/空态。
+
+### 决策链写拓扑裁定（0.0.15 落地）
+
+- **生产事故**：`decisions.jsonl` 出现 57 行仅 11 个唯一 seq、链断 7 处——三个叠加 bug：W1 serve 降级只读态（daemon 锁竞争失败不 load 文件）下面板写端点仍以空内存链从 seq=1/GENESIS 落盘（KeepAlive=true 常驻重启反复触发）；W2 面板侧追加立即落盘但不推进 `_persisted_lines` 游标，下一次 `_persist_all` 把已落盘行再追加一遍；W3 `acquire_daemon` 重载链对象但游标不重置，重启后首次 persist 重放全部历史；W4 `load()` 调 `verify_chain()` 丢弃返回值，断链静默续写。
+- **写者侧单一入口（无条件全局规则：文件是 SSOT、内存是缓存）**：一切落盘追加必经 `DecisionLog.append(path=...)`——`agent/decisions.lock`（最内层锁；调用序恒 queue→decisions / sim→decisions）内尾部对账：内存空/落后即采纳文件态续链；内存超前于文件即 `DecisionChainError`（fail-closed，疑似回滚/篡改）；等长但尾行不一致即拒。`_persist_all` 的 decisions 段与 `_persisted_lines` 游标删除（W2/W3 随之消失）；全部 10 处落盘调用点（loop 7 + worker 1 + routes 3）收敛到该入口。
+- **读侧 strict（判据只收严）**：`load()` 断链/坏行 raise `DecisionChainError`（含首个断点行号与修复指引）；坑位：只收严不上修复工具 = 生产断链文件让 serve 永久降级——修复 CLI 与 strict load 必须同 PR。
+- **降级配套三件**：`acquire_daemon` 捕获断链→释放 daemon 锁、记 `chain_error`、返回 False（worker/watcher 不启动）；app lifespan 把 `apply_l2_config` 包 try/except（断链上 l2_probe 决策落盘会再抛，不炸面板）；全部写端点（submit/l2/briefing_ack/paper confirm/reject）`DecisionChainError`→503 附修复命令文案；`/api/monitor/status.loop.chain_error` 与①页 syscard「决策链·待修复」行呈现。
+- **一次性修复 CLI `repair-decisions`**：纯函数 `repair_chain_lines` 保行重链（按原序保 ts/prefix/kind/payload，重算 seq/prev/hash），链尾追加 `chain_repair_started`（rows_before/old_sha256/breaks/tool）+`chain_repair_done`（rows_after）两条决策（payload 零敏感量，NR-5）；IO 壳先备份 `decisions.jsonl.bak-<ts>` 再原子写；坏 JSON 行即中止人工检查（不删行纪律下无降级路径）；完好链 noop。runbook：修复后 `launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent` 重启 serve。
+
 ## ⑤ 预算闸与降级
 
 - 预算闸默认关（人在环期仅记账，§13）；外闸在 `run_session` 前置预检（日/月 USD 信封+硬次数闸 50/日）；订阅轨 token+等效美元双口径记账写 `agent/budget.json`。
-- 降级形态（设计内非故障）：daemon 锁被持有→面板降级只读（提交仍可入队，消费由锁持有者完成；`/api/monitor/status.loop.active` 可见）；锁在场/禁跑窗→提交 423 / 消费 defer；断言违例→拒落盘+`assert_refuse`；T1 失败→终态 failed 当日不重试。
+- 降级形态（设计内非故障）：daemon 锁被持有→面板降级只读（提交仍可入队，消费由锁持有者完成；`/api/monitor/status.loop.active` 可见）；锁在场/禁跑窗→提交 423 / 消费 defer；断言违例→拒落盘+`assert_refuse`；T1 失败→终态 failed 当日不重试；决策链断裂→serve 降级只读、写端点 503 附 repair-decisions 指引（0.0.15，§④ 裁定）。
 - CLI `run-once` 退出码契约：0=done · 1=failed/被拒 · 2=队空或全部 defer · 3=daemon 锁被持有。
 
 ## ⑥ 门禁预案
 
-- `agent/` 编排件 selftest 与 pytest 同源判据（判据只收严）：现有 16 case 含 T1 触发判据、解析容错、RejectReason→HTTP 映射、消费期资格矩阵、`queue.find_any` 每股每日；新增行为必须先扩 selftest 再合入。
+- `agent/` 编排件 selftest 与 pytest 同源判据（判据只收严）：现有 16 case 含 T1 触发判据、解析容错、RejectReason→HTTP 映射、消费期资格矩阵、`queue.find_any` 每股每日；新增行为必须先扩 selftest 再合入。0.0.15 增 `state.decisions.tail_sync_repair`（空链直写续链+断链重链）；pytest 防回退族：尾部对账五象限（空链续链/双实例交替/落后重载/超前拒/等长分叉拒）、strict load 断链行号、repair 保行与备份、W1/W2/W3 端到端（未 start 提交续链、全生命周期 seq 连续、重启无历史重放）、断链降级 503+chain_error+syscard 行、CLI repair 黑盒 noop。
 - 红线扫描机器门（`tests/integration/test_redline_scan.py`）：NR-2 下单符号族、paper 禁网络库、R2 密钥变量名只许 `cc_client/cli.py`、`state/` 禁 signals/ledger 字面量。
 - HTTP 提交契约（面板半边）：kind 白名单=路由表六 kind、code=5/6 位数字（pydantic extra=forbid）；`RejectReason→HTTP`：DUPLICATE→409、LOCK/WINDOW→423、UNKNOWN_KIND→422（`server/schemas.py` 机器闸）。
 
@@ -83,8 +96,14 @@
 - **事件桥独立**：泛型 `loop/dirwatch.py`（mtime 快照 diff，与 EventsWatcher 分立——后者承载 T1 偏移断点领域态）；不依赖 daemon 锁（只读桥）；watchfiles 事件只当触发器。
 - **轮询兜底**：面板 compound trigger `every 180s, sse:X`（逗号=OR）——SSE 挂了轮询仍在（I-23）；htmx-ext-sse 本地 vendor（2.2.4，sha256 锚入 vendor/README）。
 - **锁态快照坑位**：vibe-stock 两锁 flock 获取/释放不改 mtime（锁文件不删除）——锁态不可文件监听，SSE 侧 30s 节拍快照 diff 推 status 事件。
-- **晨报/复盘卡**：`agent/briefing/<date>/<code>.md` 每日每股一卡（同日重跑覆盖；早晚分卡留 M3）；行动项措辞限定「复核」禁指令词（R7 同源）；脱敏三层（prompt 禁读模拟台账+断言器键扫+卡面数量词负断言）；ack 走 decision log `briefing_ack`（hash 链防篡改；降级只读态 503、仅当日卡可确认）；worker 钩子=断言放行后落盘+`briefing_card` 决策（失败即 failed 杜绝 done-无卡）。
+- **晨报/复盘卡**：`agent/briefing/<date>/<code>.<am|pm>.md` 每日每股每槽一卡（0.0.19 早晚分卡；legacy `briefing_review` 仍落 `<code>.md` 兼容旧卡/旧队列任务零迁移）；行动项措辞限定「复核」禁指令词（R7 同源）；脱敏三层（prompt 禁读模拟台账+断言器键扫+卡面数量词负断言）；ack 走 decision log `briefing_ack`（payload 带 session 槽位——ack 无 session 只命中 legacy 卡、带槽只命中本槽卡；hash 链防篡改；降级只读态 503、仅当日卡可确认、session 仅允许空/am/pm）；worker 钩子=断言放行后落盘+`briefing_card` 决策（payload 带 kind+session；失败即 failed 杜绝 done-无卡）。
+
+### 早晚分卡与自动触发裁定（0.0.19 落地，§⑮ 两行翻绿）
+
+- **双 kind 加槽（六层）**：新 kind `briefing_morning`/`briefing_evening`（routing.yaml 双模板带槽位化 prompt 与 NR-4 字段、schema_ref=briefing 收编可选 action_items 数组；dedup_key 与 UUIDv5 会话身份天然按 kind 分槽；REPORT_BLOCKING_KINDS/提交白名单两处同步收编；②页 dgform 下拉换双 kind、legacy kind 仍可 API 提交）。
+- **自动触发**：判据纯函数 `plan_auto_briefings`（工作日 ∧ L2 总闸开 ∧ universe 可读 ∧ 槽窗内 ∧ 每股每槽当日未入队）——盘前窗 09:00–09:29、盘后窗 18:15–23:59（禁跑窗 18:10 含端点之后留余量）；worker 线程 60s 节流检查、source=monitor、universe 全码（不分 real/sim）、universe 不可读记 `briefing_auto_skipped` 决策后跳过（宁拒不漏留痕）。坑位：节假日未建模（多触发一次=一次小会话成本，宁多勿漏口径）；L2 关闭零入队（无人值守语义与 §⑩ 同源，不产决策噪音）。
 - **面板⑥**：stats 聚合（kind 分布/任务三态成功率（样本 <30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）/budget 双口径日桶曲线）；「全样本登记含亏损、模拟绩效假设性」常驻标注。
+- **§15 指标族管线（0.0.22 落地，方案 §15 承诺全量闭合）**：①**AssertVerdict typed codes**——15 桶键枚举（三段判据三类 structured_missing/result_subtype_error/mcp_server_errors/signal_enum/disclaimer/schema/sensitive/stale_data/anchor_escalation/anchor_unreadable/advice_contract…+uncategorized 兜底），`assert_refuse`/`advice_refused(assert)` 决策 payload 增 `reason_codes`（与 reasons 平行；legacy 存量无码归 uncategorized 可聚合不拒读）；新增检查必须配码（判据只收严）；②**三聚合函数**：`assertion_buckets`（分桶计数）/`route_hit_rate`（分母=task_submitted 总量、分子=route_unknown 兜底拒；坑位：server 白名单先拦使面板路径恒 100% 属预期，防线在 CLI/内部直建 TaskRecord 路径——worker UNKNOWN_KIND 拒绝带 reason_code=route_unknown）/`cost_by_kind`（sessions×queue 终态任务经 task_id join，join 不上归 unknown 不丢账）；③`/api/stats` 增三键 + ⑥页三块呈现（分桶表/命中率行/成本分布表）；④`router.fallback_count` 内存计数器维持现状（重启即失、无读取方——登记为不删的占位，指标以决策行为准）。
 
 ## ⑩ L2 无人值守裁定（0.0.9 落地）
 
@@ -106,12 +125,13 @@
 ## ⑫ 面板七页重构裁定（0.0.11 落地）
 
 - **信息架构**：七页 hash 路由（`#/overview|diagnosis|monitor|paper|advice|stats|audit`，纯 CSS/JS ~20 行无构建链；七 section 常驻 DOM——隐藏页 fragment 照常 180s+SSE compound trigger 轮询，本机单用户成本可忽略）；每页 hero 元信息带（①刷新+盘态/②会话+预算/③心跳+零 LLM/④台账注/⑤脱敏口径/⑥样本纪律/⑦hash 链头）。
-- **视觉 token SSOT = index.html**：`:root` 18 组变量（bg/line/t/四语义色三态/字体栈）自原型提炼；**A 股红涨绿跌唯一语义色**（--up 红=涨/命中、--dn 绿=跌）；`.num` 等宽 tabular-nums；组件类（tbl/lv/riskchip/metachip/ev 时间轴/sig 五词点/leg/phase/todo/kchip/stat）自原型直取——panel.py 类名同 PR 原子切换。
+- **视觉 token SSOT = index.html**：`:root` 三层 token 架构（0.0.19：Primitive 48 / Semantic 30 兼容名双不动 / Component 8，规范见 [14-design-system.md](14-design-system.md)）；**A 股红涨绿跌唯一语义色**（--up 红=涨/命中、--dn 绿=跌）；`.num` 等宽 tabular-nums；组件类（tbl/lv/riskchip/metachip/ev 时间轴/sig 五词点/leg/phase/todo/kchip/stat）自原型直取——panel.py 类名同 PR 原子切换。
 - **呈现态原值三处**（用户裁定；落盘产物脱敏零改动重申 NR-5/R2）：events `facts` 透出（现价/机械事实）、`/api/advice/{date}/{code}` 响应 `rendered` 字段（运行时 sim-portfolio+tplus1+frozen 现算 t1_sell_shares；无持仓→null；`scan_advice_text` 负断言照过）、④表尾汇总条。诊断报告正文 md 直读（自带免责段，缺失时警示）。
 - **新端点契约**（全 GET 零 CSRF 新面）：`/api/signals`（signals.json 只读+last_price→facts.price 现价序）、`/api/todos`（三源：pending fills→mech_risk→briefing 未 ack）、`/api/panel/{phase,topbar,signals,todos,navcard,syscard,overview(事件流),mometa,dgmeta,aumeta,tasks,reports,report/{dir}/{file},advice-detail/{date}/{code},dgform}`；report fragment 三保险路径安全（目录正则+日期文件名正则+resolve.is_relative_to）。
 - **纯函数落点**：`server/panel_data.py`（market_phase 连续窗简化午休并入盘中——升级位/build_name_map 无名称源硬缺省 mono code——升级位/signals_snapshot 非法词呈现降级/derive_todos/briefing_action_items/薄读取器）；`stats.perf_summary`（Sharpe 日频年化/maxDD/胜率 FIFO，<30 insufficient）与 `t1_review_hitrate`（vs ledger.agent.json）；`loop/advice.parse_trend_table`（σ√h 表 round-trip 反解，与 render 同模块）；`stream_hub` 增 signals/reports 事件名。
 - **轻量版过渡清单**（升级位）：②五段流水线/双轨意见板/裁决卡（P2 会话中间产物架构，另轮）、③通知预览（P2 通知台账）、①事件日历预告（c 类数据源）、股票名称源、现价源、午休分态。
 - **0.0.12 翻绿三项**：①名称源回退链落地（`panel_data.load_name_map`：names.json 主源→signals stock_name→universe name 三源合并；产品仓只读，signals 表接名称列）；②事件日历（`aggregate_calendar`：T1 workdir+会话 workdir 的 evidence forecast.next_disclosure/unlock.upcoming/notices.items 聚合，`/api/calendar` 端点，①页中栏 kchip 渲染）；③通知预览历史重放（`rebuild_notifications`：watch.out.log notify 行（终态原文优先）+events notify=true 行双源，`/api/notifications` 端点，③页 macOS 通知样式卡+红线 7 说明——产品仓永不发通知）。港股 forecast/unlock 块 not_supported 如实空。
+- **勘误（0.0.16）**：0.0.13 CHANGELOG「§⑫ 升级位全部翻绿收官」不实——**午休分态与现价源两项未翻绿、仍为升级位**（§⑫ L112-113 原文为准）；0.0.13 实际翻绿的仅 §⑫ 清单中的②五段流水线/双轨意见板/裁决卡一项。0.0.16 另补落地 0.0.11 虚报件：③事件表 facts 消费（现价/距线/mech_risk/名称列+breach/near 判据）、③⑤建议卡详情联动（advice-detail 渲染器接 hx-get 入口）、④表尾汇总条（`stats.paper_totals`）+坐标轴版权益曲线（`_axis_equity_svg`）+持仓名称列+盈亏红涨绿跌+建仓中高亮+状态 pill（st-open/st-hold/st-close 中文标签）、①hero 计数带 oob 接线（ov-sub/ov-ev-count/ov-todo-count）+晨报关键价位 kchip（signals key_levels 透传：止损恒显、买点/MA20 有键才显）+CC 行探针时刻、⑥T+1 复核命中率小卡（数据链 0.0.11 已通）、⑦会话登记表（`/api/panel/sessions`+render_sessions_table，三件套互查 sessions 腿）、③通知卡「锁屏不保证送达」边界句（方案 §1）；删除死码 render_overview（零调用）。
 
 ## ⑬ 会话观测裁定（0.0.13 落地，P2 §⑫ 升级位翻绿收官）
 
@@ -120,12 +140,44 @@
 - **观测反查键**：worker `build_request` 后把 `request.session_uuid` 回写 TaskRecord 并落盘（queue.json 终态保留）——`GET /api/session/{task_id}|/api/panel/session/{task_id}` 反查 `.vs/` 产物；②页「会话观测」区由任务卡同源 5s 轮询双写驱动（running 态进度条随 workdir 文件逐步落地自然点亮，非严格流式）。
 - **渲染件**：五段进度条（done/cur/pend）+ 双轨意见板（default 逐卡 source/signal/confidence/weight、position 折叠计数）+ 裁决卡（initial→RiskGuard log→final、置信、分歧三桶计数、R3/R5 尾注）——组件自原型 diagnosis.html 语义对齐；dry-run 通道无 workdir 时如实空态（「待真实会话产物」）。
 
-## ⑭ 状态层健壮性与读侧修复裁定（0.0.15 落地，[存储选型决策记录](../research/storage-db-decision.md) §3/§6 执行轮）
+## ⑭ 面板 UI/UX 审计修复裁定（0.0.14 起分四 PR 落地）
 
-- **决策落盘唯一入口（W1，I-003 根治）**：`DecisionLog` 绑定 `path` 后 `append` 自动原子追加（内存链与盘上链同一行；append 整体持进程内 `_append_lock`——worker/watcher 线程与线程池 handler 并发追加不产重复 seq）；`AgentLoop`/`LoopRuntime` 缺省绑定 `layout.decisions_path`，`_persisted_lines` 增量游标整体删除，`worker._decide` 与 `routes` 三处旁路（l2_toggle/briefing_ack/paper 确认）全部收编——重灌 bug 类结构性消灭（回归钉：跨 daemon 双代重启后盘上无重复 seq 且 `verify_chain()` 通过）。
-- **载入 fail-loud（W3）+ 降级防毒**：`DecisionLog.load(strict=True)` 校验失败抛 `ChainBroken`（与 SchemaVersionMismatch 同纪律：显式报错不静默），`acquire_daemon` 捕获后拒载入→serve 降级只读（`/api/monitor/status.loop.active=false` 可见）；`strict=False` 仅修复工具用。坑位（0.0.16）：acquire 失败路径（LockTimeout/ChainBroken）必须把 `loop.decisions` 重绑纯内存链——否则降级期任一 append（§⑤ 提交入队/paper 确认/l2_probe）会向已有多行文件写 `seq=1/GENESIS` 毒行，repair 后再毒化。
-- **修复与归档子命令（W2/G1）**：`repair-decisions [--apply]`（按 seq 保首行去重+重排重算全链+`chain_repaired` 留痕；daemon.lock 守卫被持有 exit 3；存在无法解析的行时报行号 exit 4 拒碰，先人工处理坏行）；`archive-state [--apply]`（六桶归档非删除：queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分重建热链+`state_archived` 留痕；档案落 `agent/archive/<桶>-YYYYMM.jsonl`；dry-run 同样统计六桶全量——audit/runs 两迁移桶不得漏报）。decisions 月度切分带 14 天尾随保底窗：外仓 [agent_postmortem.py](https://github.com/ThreeFish-AI/vibe-stock/blob/main/scripts/agent_postmortem.py) 硬编码单文件+键控 last-wins+T+5 回看（最长 5 交易日），纯月前缀比较月初跨月界会裁掉回看窗内的上一月行；不可解析行随归档迁出（留 keep 会让热链重建在 apply 中途崩溃）。
-- **写序收敛与孤儿自愈（W5）**：任务终态落账序固定为 budget→decisions→sessions→**queue 最后**（状态机权威崩残由 `recover_orphans` 兜底）；paper 确认流 `confirmed` 残留（崩溃窗口脏态）启动期 `purge_confirmed_orphans` 清出+`paper_orphan_purged` 逐笔留痕（Operation 无 request_id 锚不重放落账，人工补账）。
-- **写纪律补洞（W6/W7）**：`watcher.json` 偏移零变化不重写（消 ~4.3 万次/日无效 fsync+rename；坑位（0.0.16）：条件比较的快照须对 offsets 浅拷贝——直嵌引用会与 `_last_saved` 别名同一 dict，原地推进后比较恒等、偏移自此永不落盘，重启即重放当日事件）；audit 转录归档收编 `store.atomic_append_lines`（flock+单次 fsync，原 cli.py/dryrun.py 裸 `open("a")` 写点清零）；档案追加按月聚合单次批量写（坑位：逐行 append 的中断-重跑窗口随行数放大，重跑档案双份）。
-- **读侧（R1'-R5'）**：面板 21 处 fragment `hx-trigger` 前缀 `load,`（htmx every=setTimeout 首延 180s 空转一行修掉）；SSE 建连即推 `multi` 初始快照（断线重连同覆盖，事件全集 11 名）；`store` 增 mtime+size 短路缓存（`read_json_cached`/`read_jsonl_lines_cached`/`read_text_cached`——SSE 扇出 decisions×6/queue×4 重复读消除；坑位：缓存对象共享只读，写者 os.replace 必变 mtime 即失效）；DirWatcher roots 收敛单根（原 4 根互相包含）+skip 谓词出 `monitor/ticks` 子树（O(总文件数) 与外仓最大增长源解耦）；`/api/signals` 单请求 signals 单读注入 `load_name_map`。
-- **巡检（G2）**：`ops/state_probe.py` stdlib 只读巡检（三源分列体量/台账行数+T1/T3 判据状态；阈值与决策记录 §4 同源，判据只收严）。触发后形态（queryindex 只读索引投影）维持蓝图不入库，判据 T1-T5 门禁不变。
+- **审计取证（0.0.14 前置）**：七页逐页实走 + 三路实现/文档/测试侦察 + 9 路对抗核验（80 findings / 58 声明核验）——发现集中在 htmx 生命周期断链、两代渲染器并存（0.0.11 前旧 fragment 类名与壳 CSS 失配）、表格规范缺口三类。
+- **htmx swap 契约（0.0.14 落地）**：**交换策略统一 innerHTML、挂点常驻壳层为 SSOT**——fragment 根不自带挂点 id；唯一安全例外是自轮询任务卡（outerHTML 自替换且根带 id，0.0.13）。提交类按钮 target 必须指向壳层既有容器（③复核→`#advice-detail`、briefing ack→`#ov-brief`、L2/paper→自身容器 innerHTML）。
+- **报告文件名白名单（0.0.14 落地）**：`(?:\d{4}-\d{2}-\d{2}|index)\.md`——index 为固定字面量不扩大攻击面，目录正则与 resolve 边界两道保险不动。
+- **后续三 PR 升级位**：0.0.15（列头全中文裁定：术语/机器值保留英文原词 + colgroup 固定列宽/跨表同宽/单行省略+title Tooltip/空值 — 占位 + ④绩效三格与⑥T+1 命中率已算未渲补齐 + ⑦链校验呈现 + ⑤卡详情链接接通）；0.0.16（首屏 load 触发——**裁定不动 sse.py multi init**（SSE 单流+180s 兜底契约钉死，load 触发零契约变更同效）+ 全局错误条 + hx-disabled-elt 防重 + ②表单行式（label 同行 1/12 + Tooltip）+ a11y 基线（tablist/aria-selected/:focus-visible）+ `--t4` 提亮过 AA）；0.0.17（CSS 去重与死码清理——**必须终态后重盘发射面**，坑位：`.op/.opins/.op-src/.verd/.sc/.sl/.ss/.stats/.stat/.ghostbtn` 为活码勿按原型残留误删 + 响应式两档 + md-lite 结构化渲染 + `_sparkline_svg` 泛化双曲线 + SSE retry 真化）。
+- **0.0.16 并轨裁定（与 0.0.15 P1 内容补全同日合流）**：③事件表在其列头/表格三规范之上并入 facts 消费（现价/距线 breach|near/mech_risk riskchip/名称列）；④绩效三格复用其 `_perf_grid` 单一渲染件（本 PR 另补表尾汇总条/坐标轴曲线/名称列/状态 pill/tr.open）；⑤卡详情取其 code 链接形态；⑥t1_review 取其文案。
+- **0.0.15 落地（P1 内容补全）**：列头全中文（机器值保留英文原词）；表格三规范（colgroup 固定列宽 + 列宽 SSOT 类跨表同宽 + scope/title Tooltip/空值 —）；④绩效三格与盈亏红涨绿跌、⑥T+1 命中率两处「已算未渲」补齐；⑦链校验呈现（DecisionLog.load 断链不抛仍渲染 + verify_chain 状态行）；⑤卡详情链接接通 + 拒卡 reasons 回退/五源图例/钟面短格式；oob 计数兑现三处死位；fragment 语义类（.muted/.ok/.warn/.task-card/h3）与 .mini 按钮类归位。
+- **0.0.17 落地（P1 交互与壳层）**：全部轮询容器 load 首绘（裁定不动 sse.py multi init——SSE 契约钉死，load 同效零变更）；全局错误条（#global-err + responseError/sendError/afterSwap 三监听）；六按钮+表单 hx-disabled-elt 防重；②表单行式（label 同行 1/12 + Tooltip + for/id 关联，全局表单规范）；a11y 基线（tablist/tab/aria-selected/:focus-visible/scrollTo）；--t4 提亮 #7E8AA5 过 AA。
+- **0.0.18 落地（P2 打磨收官，§⑭ 升级位清零）**：CSS 去重 + 死码 95 块清除（发射面重盘先行；活码保留清单 .op/.verd/.sc/.sl/.ss/.stats/.stat 为审计证伪项）；报告 _md_lite 结构化渲染（全文本先转义，免责段检测对原始 md）；_sparkline_svg 泛化 + ⑥预算双曲线 + 三处硬编码色归 token；briefing 行动项 chip 接线；响应式 @media 1180/880 + color-scheme dark；htmx-indicator ①页试点；④ NR-2 行类化字样保留；SSE retry 真化（ServerSentEvent retry 字段）；删三死函数。
+
+
+## ⑮ 悬空项登记表（0.0.16 建；消灭「既未落地也未登记」态）
+
+> 规约句三属性：适用条件 / 做法 / 坑位。三态分类：**顺延**（本仓排期）/ **待裁定**（登记触发条件）/ **机制侧阻塞**（vibe-stock 仓为机制 SSOT，本仓不可独立推进）。本表为唯一悬空项索引，后续 PR 落地或裁撤即更新本表。
+
+| 项 | 态 | 说明与触发条件 |
+| :--- | :--- | :--- |
+| ~~早晚分卡（盘前晨报 vs 盘后复盘行动项卡）~~ | ✅ 0.0.19 落地 | §⑨ 新增「早晚分卡与自动触发裁定」节 |
+| ~~briefing 盘前/盘后自动触发~~ | ✅ 0.0.19 落地 | 同上（plan_auto_briefings 纯函数 + worker 60s 节流钩子；未引第二调度器） |
+| §⑫ 现价源升级位 | 待裁定 | 触发：signals/facts 双源现价口径冲突实锤；方案=读 monitor/state.json watch 快照价/T1 evidence 价合并进 price_map 带 asof 陈旧标注；公开行情直取需新裁定（产品仓 src/ 现零网络面） |
+| §⑫ 午休分态升级位 | 待裁定 | panel_data.market_phase 连续窗简化（CN 11:30–13:00/HK 12:00–13:00 并入盘中）；对闸与调度零影响，纯呈现粒度；与现价源同轮裁定 |
+| 买点/MA20 key_levels 扩键 | 机制侧阻塞 | ①晨报 kchip 已按「有键才显」实现；阻塞方：vibe-stock signals.json key_levels 现仅 stop——扩键后本仓自动点亮 |
+| F-57 paper_confirm defer 链（-p 第四决策值挂起等人工） | 机制侧阻塞+待裁定 | §13 承诺；现状 paper_confirm kind 用户可达但 CC 链 defer/resume 通道零存在（build_argv 无 --permission-prompt-tool）；触发：paper_confirm 真实使用面出现再裁（先裁定该 kind 是否裁撤或改语义） |
+| 升级门禁三件套+versions/ 回滚（§14、R-03 缓解主体） | 顺延低优 | --version 探针+--help 旗标快照 diff+init.capabilities 探测+CHANGELOG 扫描；已落半边（DISABLE_AUTOUPDATER/probe/--system-prompt-snapshot off）；触发：首次主动升级 CLI 版本前必做 |
+| caffeinate -i 交易时段防睡死（I-50） | 待裁定 | launchd 日历槽不唤醒睡死 Mac；触发：出现「槽错过+机器睡眠」实锤再上（面板守护 KeepAlive 已覆盖自愈面） |
+| agent/budget.json 面板写半边（§11 读写矩阵） | 待裁定 | 现仅 GET 只读；enabled 联动经 POST /api/l2 达成——「读写」宣称要么补写端点要么勘误矩阵（倾向后者：写面收敛 L2 端点更安全） |
+| sim 台账逐笔 hash 链（方案 §12 纪律） | 待裁定 | 13-paper §① 已降格为 append-only（无排除裁定）；decisions 链 0.0.15 修复后 sim 链是否补齐待裁；触发：sim 台账作为审计证据被实际消费时 |
+| §15「预测 vs 实际」校准分桶表 | 机制侧阻塞 | 披露形态复用 outlook calibration——阻塞方：outlook 侧形态定义（vibe-stock）；本仓 stats.py 待其对齐 |
+| ③页「导出脱敏卡片/标记已复核」按钮（原型对账项） | 待裁定 | 「标记已复核」需新决策 kind（现仅 briefing_ack）；原型承诺件非 CHANGELOG 明文——裁：立项或登记原型差异 |
+| D5 watch.py exit 2 接管时点 | 机制侧阻塞 | 07 坑位④协调评审未发生（§⑩ 已采 events 台账驱动替代路线）；触发：vibe-stock 侧 exit 2 实施重启评审 |
+| D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | docs/ops/trading-day-verify.md 承载（D8 周一 2026-11-10、T2 盘后唤起、D6 用户触发）；不属代码悬空项 |
+| 流式 stdout 改造 | 不立项 | §⑬ 超远期不立项（案 a 已满足观测诉求） |
+| D-72 waitingFor 轮询 / F-56 PreToolUse hook deny | 条件触发 | §⑩ 升级位原文（触发条件已登记，不重复） |
+
+## ⑯ 状态归档与巡检裁定（0.0.24 落地；决策链写拓扑见 §④ 0.0.15，两线同源以彼为准）
+
+- **六桶归档 `archive-state [--apply]`（G1，[存储选型决策记录](../research/storage-db-decision.md) §5/§6）**：归档非删除，档案 `agent/archive/<桶>-YYYYMM.jsonl`（queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分）；默认 dry-run，--apply 才落盘且要求 daemon 空闲（daemon.lock 守卫）。坑位三条：①decisions 月度切分带 **14 天尾随保底窗**——外仓 [agent_postmortem.py](https://github.com/ThreeFish-AI/vibe-stock/blob/main/scripts/agent_postmortem.py) 硬编码单文件+键控 last-wins+T+5 回看，纯月前缀比较月初跨界会裁掉回看窗内的上一月行；②不可解析行随归档迁出（留 keep 会让热链重建在 apply 中途崩溃）；③档案追加按月聚合单次批量写（逐行 append 的中断-重跑窗口随行数放大，重跑档案双份）。热文件重建链用 `plan_repair`（保 payload 重排序号重算 hash）+ `state_archived` 留痕。
+- **巡检 `ops/state_probe.py`（G2）**：stdlib 只读巡检——三源分列体量（reports md / reports _scans / monitor ticks / audit）+ 台账行数 + 触发判据 T1/T3 状态（阈值与决策记录 §4 同源，判据只收严）；`--json` 机读形态。适用条件：存储选型触发判据的唯一自动采集口（T2/T4/T5 需端到端计时/实测报告/检索端点计数，另途采集）。
+- **写序收敛（W5）**：任务终态落账序固定为 budget→decisions→sessions→**queue 最后**（`_persist_all` sessions 先落、queue 终态最后落）——状态机权威崩残由启动期 `recover_orphans` 兜底自愈，脏态窗口从「永久残留」收敛为「毫秒级+下次启动自愈」；paper 确认流 `confirmed` 残留启动期 `purge_confirmed_orphans` 清出+`paper_orphan_purged` 逐笔留痕（Operation 无 request_id 锚不重放落账，人工补账）。
+- **DirWatcher skip 谓词（R5'）**：roots 收敛单根（原 4 根互相包含白扫 3 遍）+ skip 谓词出 `monitor/ticks` 子树——快照扫描 O(总文件数) 与外仓最大增长源解耦；坑位：watchfiles 变更集仍会唤醒 poll_once（skip 只出扫描面，被跳过子树变更经快照 diff 自然无事件）。

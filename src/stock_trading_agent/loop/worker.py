@@ -31,7 +31,7 @@ from stock_trading_agent.loop.events import (
     lock_is_held,
     lock_precheck,
 )
-from stock_trading_agent.loop.loop import AgentLoop, LoopReject
+from stock_trading_agent.loop.loop import AgentLoop, LoopReject, RejectReason
 from stock_trading_agent.loop.monitor_events import (
     MonitorEvent,
     market_today,
@@ -42,7 +42,7 @@ from stock_trading_agent.loop.router import load_default_table
 from stock_trading_agent.loop.t1 import T1Runner
 from stock_trading_agent.loop.watcher import EventsWatcher
 from stock_trading_agent.state.agent_config import AgentConfig, load_agent_config, save_agent_config
-from stock_trading_agent.state.decisions import ChainBroken, DecisionLog
+from stock_trading_agent.state.decisions import DecisionChainError, DecisionLog
 from stock_trading_agent.state.paths import StateLayout
 from stock_trading_agent.state.queue import TaskRecord
 from stock_trading_agent.state.store import (
@@ -137,7 +137,9 @@ class LoopRuntime:
         )
         self.poll_interval_s = poll_interval_s
         self.watcher_enabled = watcher_enabled
+        self.chain_error: str | None = None  # strict load 断链时承载降级原因（面板可见）
         self._last_leak_scan = 0.0
+        self._last_auto_briefing_scan = 0.0
         self._pgrep_runner = None  # 测试注入位（None=真跑 pgrep）
         self._stop = threading.Event()
         self._worker_thread: threading.Thread | None = None
@@ -157,9 +159,10 @@ class LoopRuntime:
     def acquire_daemon(self, *, timeout_s: float = 3.0) -> bool:
         """获取 daemon.lock（失败返回 False——serve 降级只读，run-once 由 CLI 转 exit 3）。
 
-        坑位：失败路径必须把 decisions 重绑为纯内存链——构造缺省绑定 decisions_path 的空链，
-        降级期任一 append（§⑤ 提交入队 / paper 确认 / l2_probe）都会向已有多行文件写
-        seq=1/GENESIS 毒行，repair 后再毒化、下次启动再次 ChainBroken。
+        决策链 strict 载入（0.0.15）：断链即释放锁、记 chain_error、返回 False——
+        worker/watcher 不启动（防在断链文件上续写），修复走 CLI repair-decisions；
+        坑位：失败路径 decisions 重绑纯内存链（降级防毒）——降级期任一 append 不得向
+        已有多行文件写 seq=1/GENESIS 毒行（repair 后再毒化、下次启动再次拒载）。
         """
         if self._daemon_stack is not None:
             return True
@@ -169,13 +172,14 @@ class LoopRuntime:
         except LockTimeout:
             self.loop.decisions = DecisionLog()  # 降级防毒：内存链，append 不落盘
             return False
-        # 决策链载入即校验（W3 fail-loud）：破链拒载入——serve 降级只读，修复走 repair-decisions
+        # strict 载入：断链拒载入（fail-closed），修复走 CLI repair-decisions
         try:
             self.loop.decisions = DecisionLog.load(self.layout.decisions_path)
-        except ChainBroken as exc:
-            print(f"[sta] 决策链拒载入（降级只读）：{exc}")
-            self.loop.decisions = DecisionLog()  # 降级防毒：内存链，append 不落盘
+        except DecisionChainError as exc:
+            self.chain_error = str(exc)
+            stack.close()  # 释放 daemon 锁（降级只读，不占锁）
             return False
+        self.chain_error = None
         self._daemon_stack = stack
         return True
 
@@ -211,9 +215,9 @@ class LoopRuntime:
             self._daemon_stack.close()
             self._daemon_stack = None
 
-    # --- 决策追加（须在 queue.lock 持有期内调用；W1 唯一入口：经绑定 path 落盘） ---
+    # --- 决策追加（须在 queue.lock 持有期内调用；append(path=...) 单一入口：锁内尾部对账+落盘） ---
     def _decide(self, kind: str, payload: dict) -> None:
-        self.loop.decisions.append(_now_iso(), kind, payload)
+        self.loop.decisions.append(_now_iso(), kind, payload, path=self.layout.decisions_path)
 
     # --- 提交半边（面板 POST / CLI run-once --kind 入口；写者=主 Agent 进程内直调） ---
     def submit(self, *, kind: str, code: str, source: str = "panel") -> TaskRecord:
@@ -537,6 +541,11 @@ class LoopRuntime:
                             "task_id": picked.task_id,
                             "kind": picked.kind,
                             "code": picked.code,
+                            **(
+                                {"reason_code": "route_unknown"}
+                                if exc.reason == RejectReason.UNKNOWN_KIND
+                                else {}
+                            ),  # §15 意图路由命中率的兜底计数（0.0.22）
                             "reasons": [str(exc)],
                         },
                     )
@@ -594,6 +603,71 @@ class LoopRuntime:
         queue = self.loop.load_queue()
         return next((t for t in queue.tasks if t.task_id == task.task_id), task)
 
+    # --- briefing 自动触发（0.0.18 早晚分卡同批；L2 闸内、universe 全码、每股每槽每日一次） ---
+    def _maybe_auto_briefing(self, now: _dt.datetime | None = None) -> list[TaskRecord]:
+        """槽窗内为 universe 全码入队 briefing_morning/evening（判据纯函数见 briefing.py）。
+
+        L2 总闸关闭不入队（无人值守自动拉起与 §⑩ 同源）；universe 不可读记
+        briefing_auto_skipped 决策（宁拒不漏留痕）后跳过；幂等=find_any 含终态。
+        """
+        from stock_trading_agent.loop.briefing import plan_auto_briefings
+        from stock_trading_agent.loop.events import MARKET_TZ
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        local = (now or _dt.datetime.now(tz=_dt.UTC)).astimezone(MARKET_TZ)
+        date = market_today(local)
+        universe = self._universe_codes()
+        if universe is None:
+            self._decide(
+                "briefing_auto_skipped",
+                {"reason_code": "universe_unreadable", "date": date},
+            )
+            return []
+        with FileLock(self.layout.queue_lock):
+            queue = self.loop.load_queue()
+            queued = {t.dedup_key for t in queue.tasks}
+            planned = plan_auto_briefings(
+                local, l2_enabled=self._l2_on(), universe_codes=universe, already_queued=queued
+            )
+            tasks = []
+            for kind, code in planned:
+                task = TaskRecord(
+                    task_id=f"{kind}:{code}:{date}:auto",
+                    dedup_key=f"{kind}:{code}:{date}",
+                    kind=kind,
+                    code=code,
+                    enqueued_at=_now_iso(),
+                    source="monitor",
+                )
+                queue.submit(task)
+                tasks.append(task)
+                self._decide(
+                    "task_submitted",
+                    {"task_id": task.task_id, "kind": kind, "code": code, "source": "monitor"},
+                )
+            if tasks:
+                atomic_write_json(self.layout.queue_path, queue.to_dict())
+        return tasks
+
+    def _universe_codes(self) -> list[str] | None:
+        """monitor/universe.json 全码（不分 real/sim；不可读→None）。"""
+        import json
+
+        path = self.layout.universe_path
+        if not path.exists():
+            return None
+        try:
+            rows = (json.loads(path.read_text(encoding="utf-8")).get("rows")) or []
+            codes = sorted(
+                {str(r.get("code")) for r in rows if isinstance(r, dict) and r.get("code")}
+            )
+            return codes or None
+        except (json.JSONDecodeError, OSError, AttributeError):
+            return None
+
+    def _l2_on(self) -> bool:
+        return load_agent_config(self.layout.agent_config_path).l2_enabled
+
     # --- 泄漏巡检（D-08，log-only） ---
     def scan_cc_leaks(self) -> list[tuple[int, str]]:
         """扫描在管外的 claude -p 孤儿进程；发现即决策 cc_orphan_detected（不 kill）。
@@ -634,6 +708,12 @@ class LoopRuntime:
                 if _time.monotonic() - self._last_leak_scan > 3600:  # 每小时泄漏巡检
                     try:
                         self.scan_cc_leaks()
+                    except Exception:
+                        traceback.print_exc()
+                if _time.monotonic() - self._last_auto_briefing_scan > 60:  # 槽窗检查（0.0.18）
+                    self._last_auto_briefing_scan = _time.monotonic()
+                    try:
+                        self._maybe_auto_briefing()
                     except Exception:
                         traceback.print_exc()
                 self._stop.wait(self.poll_interval_s)

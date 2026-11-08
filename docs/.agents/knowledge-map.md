@@ -12,7 +12,7 @@
 | [docs/research/storage-db-decision.md](../research/storage-db-decision.md) | 存储选型决策记录：不引入 SQLite/PostgreSQL/seekdb（重申 §13）、触发判据 T1-T5 与 queryindex 只读索引投影蓝图、四痛点修法映射 | 贡献者 / Agent |
 | [docs/diagrams/main-agent/](../diagrams/main-agent/) | 四张架构图 archify A 档四件套（总览/Loop 时序/状态数据流/模拟盘生命周期） | 贡献者 / Agent |
 | [docs/prototypes/main-agent/](../prototypes/main-agent/) | 四页产品原型（自包含 HTML + 整页 PNG，全合成数据，方案上篇 §2 借图展开） | 贡献者 |
-| [docs/specs/](../specs/) | 实施规约：[12-orchestration.md](../specs/12-orchestration.md)（0.0.5 增⑧、0.0.7 增⑨）、[13-paper.md](../specs/13-paper.md)（0.0.6 建） | 贡献者 / Agent |
+| [docs/specs/](../specs/) | 实施规约：[12-orchestration.md](../specs/12-orchestration.md)（编排，随实施 PR 增节，现 §①–⑮）、[13-paper.md](../specs/13-paper.md)（paper，0.0.6 建）、[14-design-system.md](../specs/14-design-system.md)（设计系统，0.0.19 建） | 贡献者 / Agent |
 | [docs/ops/launchd.md](../ops/launchd.md) | launchd 第四槽安装与运维（面板守护；三槽并存收编不替代） | 贡献者 |
 | [docs/ops/trading-day-verify.md](../ops/trading-day-verify.md) | 交易日验证运维：D8 定谳流程与 T2 出卡真跑手册 | 贡献者 / Agent |
 | [docs/ops/tauri-gate-review.md](../ops/tauri-gate-review.md) | Tauri 桌面壳门口评审记录（结论：不做） | 贡献者 |

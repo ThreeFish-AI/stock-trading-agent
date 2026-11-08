@@ -24,7 +24,7 @@
 - 四张架构图（archify A 档四件套）：[总览](docs/diagrams/main-agent/main-architecture/main-architecture.svg) · [Loop 时序](docs/diagrams/main-agent/agent-loop-sequence/agent-loop-sequence.svg) · [状态数据流](docs/diagrams/main-agent/state-extension-dataflow/state-extension-dataflow.svg) · [模拟盘生命周期](docs/diagrams/main-agent/paper-trading-lifecycle/paper-trading-lifecycle.svg)
 - 四页产品原型（合成数据）：[今日总览](docs/prototypes/main-agent/overview.png) · [诊股工作台](docs/prototypes/main-agent/diagnosis.png) · [盯盘与 T2 复核](docs/prototypes/main-agent/monitor-advice.png) · [模拟盘](docs/prototypes/main-agent/paper.png)
 
-## 安装与运行（M1，0.0.3）
+## 安装与运行
 
 前置：[uv](https://docs.astral.sh/uv/)、macOS、可选本机 `claude` CLI（无则跑 dry-run 通道）。
 
@@ -39,7 +39,7 @@ STA_ALLOW_REAL_CC=1 uv run stock-trading-agent probe   # 真实 CC 通道探针�
 uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI 消费一单（与 serve 抢 daemon 锁）
 ```
 
-面板①②③④⑤⑥⑦全页点亮（SSE 实时流 + 180s 轮询兜底；④模拟盘确认队列+权益曲线、⑤建议卡库、⑥后验战绩、盘前晨报/盘后复盘行动项卡）（180s htmx 轮询，本地 vendor 零 CDN）；④⑤⑥随 M2 点亮（方案 §16）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。真实 CC 通道（headless CLI 子进程：超时 SIGINT→SIGKILL 状态机、stream-json 解析、audit 归档）经 `STA_ALLOW_REAL_CC=1` 放行，默认 dry-run。
+面板①②③④⑤⑥⑦全页点亮（SSE 实时流 + load 首绘 + 180s 轮询兜底；④模拟盘确认队列+权益曲线+绩效三格、⑤建议卡库+详情四块、⑥后验战绩、盘前晨报/盘后复盘行动项卡；本地 vendor 零 CDN）；键盘可达（tablist + :focus-visible）与全局错误提示条（数据通道异常可见）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。真实 CC 通道（headless CLI 子进程：超时 SIGINT→SIGKILL 状态机、stream-json 解析、audit 归档）经 `STA_ALLOW_REAL_CC=1` 放行，默认 dry-run。
 
 ### launchd 第四槽（面板守护，可选）
 
@@ -61,7 +61,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktradi
 │   ├── research/           # 调研报告与产品技术方案（自 vibe-stock 0.0.28 迁入）
 │   ├── diagrams/main-agent/  # 四张架构图 archify A 档四件套
 │   ├── prototypes/main-agent/  # 四页产品原型（自包含 HTML + 整页 PNG，全合成数据）
-│   ├── specs/              # 实施规约：12-orchestration.md（已建）；13-paper 随 M2 建
+│   ├── specs/              # 实施规约：12-orchestration.md + 13-paper.md（随实施 PR 增节）
 │   ├── ops/launchd/        # 第四槽 LaunchAgent 模板（面板守护）
 │   └── .agents/            # knowledge-map（文档统一入口）+ issue.md
 ├── src/stock_trading_agent/
