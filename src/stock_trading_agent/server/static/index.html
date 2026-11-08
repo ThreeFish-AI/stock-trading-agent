@@ -64,7 +64,8 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:var(--sans);background:var(--bg0);color:var(--t1);display:flex;flex-direction:column;min-height:100vh}
-a{color:var(--acc);text-decoration:none}
+a{color:var(--acc);text-decoration:none;transition:color var(--dur-fast) var(--ease-std)}
+a:hover{color:var(--acc2)}
 button{cursor:pointer}
 h1{font-size:var(--fs-19);font-weight:700;letter-spacing:.3px}
 table{border-collapse:collapse;width:100%}
@@ -77,6 +78,9 @@ table{border-collapse:collapse;width:100%}
 .brand{display:flex;align-items:center;gap:9px;font-size:var(--fs-14);font-weight:600;letter-spacing:.2px;white-space:nowrap;color:var(--t1)}
 .tabs{display:flex;gap:2px;flex:1;min-width:0}
 .tab{padding:6px 11px;border-radius:var(--r-sm);font-size:var(--fs-13);color:var(--t3);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.tab{transition:color var(--dur-fast) var(--ease-std),background-color var(--dur-fast) var(--ease-std),box-shadow var(--dur-fast) var(--ease-std)}
+.tab:not(.on):hover{color:var(--t2);background:var(--bg2)}
+.tab:not(.on):active{color:var(--t1);background:var(--bg3)}
 .tab.on{color:var(--t1);background:var(--bg2);box-shadow:inset 0 0 0 1px var(--line)}
 .top-r{display:flex;align-items:center;gap:10px;white-space:nowrap}
 .phase{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-12);font-weight:600;padding:3px 11px;border-radius:var(--r-full)}
@@ -175,12 +179,18 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 /* ── 页脚 ── */
 .card{background:var(--bg1);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-1);min-width:0}
 /* ── 输入区 ── */
-.inp{width:132px;height:34px;background:var(--bg3);border:1px solid var(--line2);border-radius:var(--r-md);color:var(--t1);
+.inp{width:132px;height:34px;background:var(--inp-bg);border:1px solid var(--inp-bd);border-radius:var(--r-md);color:var(--t1);
   font:600 var(--fs-13)None var(--mono);padding:0 11px;outline:none}
-.sel{position:relative;width:max-content;min-width:150px;height:34px;background:var(--bg3);border:1px solid var(--line2);border-radius:var(--r-md);
+.inp:hover,.sel:hover{border-color:var(--accln)}
+.inp:disabled,.sel:disabled{opacity:.5;cursor:not-allowed;background:var(--bg2)}
+.inp,.sel{transition:border-color var(--dur-fast) var(--ease-std),box-shadow var(--dur-fast) var(--ease-std)}
+.sel{position:relative;width:max-content;min-width:150px;height:34px;background:var(--inp-bg);border:1px solid var(--inp-bd);border-radius:var(--r-md);
   display:flex;align-items:center;white-space:nowrap;padding:0 28px 0 11px;font-size:var(--fs-13);color:var(--t1)}
 .btn{height:34px;padding:0 18px;border-radius:var(--r-md);border:none;cursor:default;font-size:var(--fs-13);font-weight:600;white-space:nowrap}
 .btn-pri{background:var(--btn-grad);color:var(--btn-fg);box-shadow:var(--sh-2)}
+.btn-pri{transition:filter var(--dur-fast) var(--ease-std),box-shadow var(--dur-fast) var(--ease-std)}
+.btn-pri:hover{filter:brightness(1.07)}
+.btn-pri:active{filter:brightness(.93)}
 /* ── 流水线 ── */
 .pipe{display:flex;padding:16px 26px 13px}
 .step{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;text-align:center}
@@ -228,7 +238,9 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .bignum .u{font-size:var(--fs-12);font-weight:500;color:var(--t3);letter-spacing:0}
 .mini{font:600 var(--fs-12)None var(--sans);padding:4px 12px;border-radius:var(--r-sm);
   border:1px solid var(--line2);background:var(--bg3);color:var(--t2);white-space:nowrap;width:auto;cursor:pointer}
+.mini{transition:color var(--dur-fast) var(--ease-std),border-color var(--dur-fast) var(--ease-std),background-color var(--dur-fast) var(--ease-std)}
 .mini:hover{border-color:var(--accln);color:var(--acc2)}
+.mini:active{background:var(--bg2);color:var(--t1)}
 .adv-foot{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--px-white) 1.5%,transparent)}
 .adv-foot .warn-tx{font-size:var(--fs-12);color:var(--warn)}
 .adv-foot .fx{margin-left:auto;display:flex;gap:8px}
@@ -299,7 +311,7 @@ main h3{font-size:var(--fs-13);font-weight:600;color:var(--t1);margin:14px 0 6px
 
 /* ── 0.0.16 交互与可达性 ── */
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-button:disabled{opacity:.55;cursor:not-allowed}
+button:disabled{opacity:.5;cursor:not-allowed}
 .inp:focus{box-shadow:var(--sh-3);border-color:var(--accln)}
 .frm{display:flex;flex-direction:column;gap:12px}
 .frm-row{display:flex;align-items:center;gap:10px;min-width:0}
@@ -327,7 +339,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
   font:500 var(--fs-12)None var(--mono);color:var(--t2);white-space:pre-wrap;margin:8px 0}
 .md .tbl td{font-size:var(--fs-12)}
 /* htmx 重载指示（①页试点：卡片请求期 .spin 显形） */
-.htmx-indicator{opacity:0;transition:opacity .15s;flex:none}
+.htmx-indicator{opacity:0;transition:opacity var(--dur-fast) var(--ease-std);flex:none}
 .card:has(.card-b.htmx-request) .htmx-indicator{opacity:1}
 /* 响应式（桌面优先；1180 双列、880 单列） */
 @media (max-width:1180px){
@@ -344,6 +356,12 @@ button:disabled{opacity:.55;cursor:not-allowed}
   .foot code{word-break:break-all}
 }
 
+
+/* 动效尊重：reduced-motion 下关脉冲与过渡 */
+@media (prefers-reduced-motion:reduce){
+  .pd-live,.sdot-ok,.spin{animation:none}
+  .tab,.btn-pri,.mini,.inp,.sel,a,.htmx-indicator{transition:none}
+}
 </style>
 </head>
 <body hx-ext="sse" sse-connect="/api/stream">
