@@ -31,7 +31,7 @@ from stock_trading_agent.loop.events import (
     lock_is_held,
     lock_precheck,
 )
-from stock_trading_agent.loop.loop import AgentLoop, LoopReject
+from stock_trading_agent.loop.loop import AgentLoop, LoopReject, RejectReason
 from stock_trading_agent.loop.monitor_events import (
     MonitorEvent,
     market_today,
@@ -503,6 +503,11 @@ class LoopRuntime:
                             "task_id": picked.task_id,
                             "kind": picked.kind,
                             "code": picked.code,
+                            **(
+                                {"reason_code": "route_unknown"}
+                                if exc.reason == RejectReason.UNKNOWN_KIND
+                                else {}
+                            ),  # §15 意图路由命中率的兜底计数（0.0.22）
                             "reasons": [str(exc)],
                         },
                     )

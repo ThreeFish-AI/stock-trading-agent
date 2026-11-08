@@ -124,6 +124,56 @@ def test_broken_chain_degrades_readonly_with_503_hint(tmp_path: Path):
         assert "决策链" in frag and "待修复" in frag  # syscard 断链行呈现
 
 
+def test_assert_refuse_carries_reason_codes(tmp_path: Path):
+    """0.0.22：断言拒绝决策行带 typed reason_codes（§15 分桶数据源）。"""
+    from stock_trading_agent.cc_client.contract import CCRequest
+    from stock_trading_agent.state.queue import QueueState, TaskRecord
+
+    app, rt, layout = _make_app(tmp_path)
+    queue = QueueState()
+    task = TaskRecord(
+        task_id="diagnose_quick:600519:2026-11-08:100000",
+        dedup_key="diagnose_quick:600519:2026-11-08",
+        kind="diagnose_quick",
+        code="600519",
+        enqueued_at="2026-11-08T02:00:00+00:00",
+    )
+    queue.submit(task)
+    queue.transition(task.task_id, "running")  # assert_and_persist 守卫要求 running 态
+    from stock_trading_agent.cc_client.contract import CCResult
+
+    bad = CCResult(
+        exit_code=0,
+        envelope={"subtype": "success"},
+        structured_output=None,  # → structured_missing
+        result_line_present=True,
+        transcript_path="/tmp/x.jsonl",
+        usage_tokens={},
+    )
+
+    rt.loop.decisions = DecisionLog()
+    rt.loop.assert_and_persist(
+        task,
+        CCRequest(
+            task_id=task.task_id,
+            session_uuid="u" * 8 + "-0000-0000-0000-000000000001",
+            prompt="/vibe-stock 600519",
+            schema=None,
+            budget_usd=1.0,
+            max_turns=5,
+            allowed_tools=("Read",),
+        ),
+        bad,
+        queue=queue,
+        sessions=rt.loop.load_sessions(),
+    )
+    rows = [
+        json.loads(r) for r in layout.decisions_path.read_text(encoding="utf-8").splitlines() if r
+    ]
+    refused = [d for d in rows if d["kind"] == "assert_refuse"]
+    assert refused and "structured_missing" in refused[0]["payload"]["reason_codes"]
+
+
 def test_repair_cli_end_to_end(tmp_path: Path, monkeypatch):
     """CLI repair-decisions 黑盒：断链 → 修复 → strict load 通过 → noop 复跑。"""
     import stock_trading_agent.__main__ as cli

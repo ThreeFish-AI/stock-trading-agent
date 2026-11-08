@@ -103,6 +103,7 @@
 - **双 kind 加槽（六层）**：新 kind `briefing_morning`/`briefing_evening`（routing.yaml 双模板带槽位化 prompt 与 NR-4 字段、schema_ref=briefing 收编可选 action_items 数组；dedup_key 与 UUIDv5 会话身份天然按 kind 分槽；REPORT_BLOCKING_KINDS/提交白名单两处同步收编；②页 dgform 下拉换双 kind、legacy kind 仍可 API 提交）。
 - **自动触发**：判据纯函数 `plan_auto_briefings`（工作日 ∧ L2 总闸开 ∧ universe 可读 ∧ 槽窗内 ∧ 每股每槽当日未入队）——盘前窗 09:00–09:29、盘后窗 18:15–23:59（禁跑窗 18:10 含端点之后留余量）；worker 线程 60s 节流检查、source=monitor、universe 全码（不分 real/sim）、universe 不可读记 `briefing_auto_skipped` 决策后跳过（宁拒不漏留痕）。坑位：节假日未建模（多触发一次=一次小会话成本，宁多勿漏口径）；L2 关闭零入队（无人值守语义与 §⑩ 同源，不产决策噪音）。
 - **面板⑥**：stats 聚合（kind 分布/任务三态成功率（样本 <30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）/budget 双口径日桶曲线）；「全样本登记含亏损、模拟绩效假设性」常驻标注。
+- **§15 指标族管线（0.0.22 落地，方案 §15 承诺全量闭合）**：①**AssertVerdict typed codes**——15 桶键枚举（三段判据三类 structured_missing/result_subtype_error/mcp_server_errors/signal_enum/disclaimer/schema/sensitive/stale_data/anchor_escalation/anchor_unreadable/advice_contract…+uncategorized 兜底），`assert_refuse`/`advice_refused(assert)` 决策 payload 增 `reason_codes`（与 reasons 平行；legacy 存量无码归 uncategorized 可聚合不拒读）；新增检查必须配码（判据只收严）；②**三聚合函数**：`assertion_buckets`（分桶计数）/`route_hit_rate`（分母=task_submitted 总量、分子=route_unknown 兜底拒；坑位：server 白名单先拦使面板路径恒 100% 属预期，防线在 CLI/内部直建 TaskRecord 路径——worker UNKNOWN_KIND 拒绝带 reason_code=route_unknown）/`cost_by_kind`（sessions×queue 终态任务经 task_id join，join 不上归 unknown 不丢账）；③`/api/stats` 增三键 + ⑥页三块呈现（分桶表/命中率行/成本分布表）；④`router.fallback_count` 内存计数器维持现状（重启即失、无读取方——登记为不删的占位，指标以决策行为准）。
 
 ## ⑩ L2 无人值守裁定（0.0.9 落地）
 
