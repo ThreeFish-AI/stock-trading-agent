@@ -335,9 +335,15 @@ class TestDesignUpgrade024:
         assert codes == ["000001", "600519", "00700", "300750"]  # breach 置顶
 
     def test_ts_short_cross_day(self):
+        """跨日台账 MM-DD HH:MM；断言与运行机时区无关（CI=UTC/本机=+08 均可跑）。"""
+        import datetime as dt
+
         from stock_trading_agent.server.panel import _ts_short
 
-        assert _ts_short("2026-11-08T02:50:29+00:00") == "11-08 10:50"  # +00:00 转本地
+        raw = "2026-11-08T02:50:29+00:00"
+        expected = dt.datetime.fromisoformat(raw).astimezone().strftime("%m-%d %H:%M")
+        assert _ts_short(raw) == expected  # +00:00 串按运行机时区换算（非纯切片）
+        assert _ts_short(raw).startswith("11-08 ")
         assert _ts_short("not-a-ts") == "not-a-ts"  # 解析失败回退
 
     def test_error_card_escape_and_retry(self):
