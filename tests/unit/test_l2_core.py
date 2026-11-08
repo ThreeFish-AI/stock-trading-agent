@@ -232,3 +232,88 @@ class TestL2EndpointE2E:
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
             frag = client.get("/api/panel/l2").text
             assert "L2" in frag and "关闭" in frag  # 默认关态
+
+
+class TestCrashReplay:
+    def _seed_running(self, rt: LoopRuntime, kind: str, source: str = "monitor"):
+        from stock_trading_agent.state.queue import TaskRecord as T
+
+        rt.loop.load_queue()  # 建目录
+        task = T(
+            task_id="t-run",
+            dedup_key=f"{kind}:600519:2026-11-08",
+            kind=kind,
+            code="600519",
+            status="running",
+            source=source,
+        )
+        from stock_trading_agent.state.store import atomic_write_json
+
+        atomic_write_json(rt.layout.queue_path, {"version": 1, "tasks": [task.__dict__]})
+        return task
+
+    def test_monitor_source_replayed(self, tmp_path: Path):
+        rt = _make_runtime(tmp_path)
+        save_agent_config(rt.layout.agent_config_path, AgentConfig(l2_enabled=True))
+        self._seed_running(rt, "monitor_review")
+        orphans = rt.recover_orphans()
+        assert len(orphans) == 1
+        q = json.loads(rt.layout.queue_path.read_text(encoding="utf-8"))
+        assert q["tasks"][0]["status"] == "abandoned"  # 原任务先 abandoned（WAL）
+        assert len(q["tasks"]) == 2 and q["tasks"][1]["status"] == "queued"  # 重放新任务
+        decisions = _decisions(rt)
+        kinds = [d["kind"] for d in decisions]
+        assert "task_abandoned" in kinds and "task_requeued" in kinds
+
+    def test_replay_cap_blocks_second_spin(self, tmp_path: Path):
+        rt = _make_runtime(tmp_path)
+        save_agent_config(rt.layout.agent_config_path, AgentConfig(l2_enabled=True))
+        task = self._seed_running(rt, "monitor_review")
+        from stock_trading_agent.state.store import atomic_write_json
+
+        # 同键已有 2 个实体（abandoned 原 + 一个 done）→ replay_cap
+        atomic_write_json(
+            rt.layout.queue_path,
+            {
+                "version": 1,
+                "tasks": [
+                    task.__dict__ | {"status": "abandoned"},
+                    task.__dict__ | {"task_id": "t-prev", "status": "done"},
+                ],
+            },
+        )
+        # 把第一个改回 running 模拟再次崩溃
+        tasks = json.loads(rt.layout.queue_path.read_text(encoding="utf-8"))["tasks"]
+        tasks[0]["status"] = "running"
+        atomic_write_json(rt.layout.queue_path, {"version": 1, "tasks": tasks})
+        rt.recover_orphans()
+        decisions = _decisions(rt)
+        skipped = [d for d in decisions if d["kind"] == "task_replay_skipped"]
+        assert skipped and skipped[-1]["payload"]["reason_code"] == "replay_cap"
+
+    def test_l2_off_skips_monitor_review_replay(self, tmp_path: Path):
+        rt = _make_runtime(tmp_path)
+        self._seed_running(rt, "monitor_review")  # l2 默认关
+        rt.recover_orphans()
+        decisions = _decisions(rt)
+        skipped = [d for d in decisions if d["kind"] == "task_replay_skipped"]
+        assert skipped and skipped[-1]["payload"]["reason_code"] == "l2_disabled"
+        q = json.loads(rt.layout.queue_path.read_text(encoding="utf-8"))
+        assert len(q["tasks"]) == 1  # 无重放任务
+
+    def test_panel_source_only_abandoned(self, tmp_path: Path):
+        rt = _make_runtime(tmp_path)
+        save_agent_config(rt.layout.agent_config_path, AgentConfig(l2_enabled=True))
+        self._seed_running(rt, "diagnose_quick", source="panel")
+        rt.recover_orphans()
+        decisions = _decisions(rt)
+        assert not [d for d in decisions if d["kind"] == "task_requeued"]
+        q = json.loads(rt.layout.queue_path.read_text(encoding="utf-8"))
+        assert len(q["tasks"]) == 1 and q["tasks"][0]["status"] == "abandoned"
+
+    def test_t1_replayed_unconditionally(self, tmp_path: Path):
+        rt = _make_runtime(tmp_path)  # l2 关：t1_refresh 仍重放（零 LLM）
+        self._seed_running(rt, "t1_refresh")
+        rt.recover_orphans()
+        decisions = _decisions(rt)
+        assert any(d["kind"] == "task_requeued" for d in decisions)

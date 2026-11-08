@@ -14,7 +14,7 @@ import contextlib
 import datetime as _dt
 import threading
 import traceback
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from stock_trading_agent.budget.gate import BudgetConfig
 from stock_trading_agent.cc_client.contract import CCClient
@@ -72,6 +72,42 @@ def task_eligible(
     if reason := gate_report_event(now, task.kind):
         return reason
     return None
+
+
+@dataclass(frozen=True)
+class ReplayAction:
+    """重放计划项（plan_replays 纯函数输出；判据与 IO 分离）。"""
+
+    task_id: str
+    dedup_key: str
+    kind: str
+    code: str
+    skip_reason: str | None = None  # l2_disabled | replay_cap；None=重放
+
+
+def plan_replays(
+    orphans: list[TaskRecord], queue_tasks: list[TaskRecord], *, l2_enabled: bool
+) -> list[ReplayAction]:
+    """R5 判据纯函数：monitor 源残留 → 重放（monitor_review 另需 l2；t1 无条件）。
+
+    防自旋：queue_tasks 里同 dedup_key 计数 ≥2 即 replay_cap（含本批 abandoned 的原任务）。
+    """
+    from collections import Counter
+
+    key_counts = Counter(t.dedup_key for t in queue_tasks)
+    actions: list[ReplayAction] = []
+    for task in orphans:
+        if task.source != "monitor":
+            continue  # panel/cli 源维持 abandoned（人在环，M1 语义）
+        base = dict(task_id=task.task_id, dedup_key=task.dedup_key, kind=task.kind, code=task.code)
+        if task.kind == MONITOR_REVIEW_KIND and not l2_enabled:
+            actions.append(ReplayAction(**base, skip_reason="l2_disabled"))
+            continue
+        if key_counts.get(task.dedup_key, 0) >= 2:
+            actions.append(ReplayAction(**base, skip_reason="replay_cap"))
+            continue
+        actions.append(ReplayAction(**base))
+    return actions
 
 
 class LoopRuntime:
@@ -311,18 +347,58 @@ class LoopRuntime:
         self.loop.budget.billing_mode = cfg.billing_mode or "api"
         return cfg
 
-    # --- 崩溃恢复（启动期；running 残留 → abandoned） ---
+    # --- 崩溃恢复（启动期；running 残留 → abandoned；monitor 源按 R5 重放） ---
     def recover_orphans(self) -> list[TaskRecord]:
+        """R5：全部残留先 abandoned（WAL 语义不变）；monitor 源再选择重放。
+
+        防自旋=队列派生判据：同 dedup_key 任务数 ≥2（原任务+一次重放产物）即不再重放
+        （重放任务若再崩成 abandoned，count=3 仍 >2 拦截——同键至多两个实体任务）；
+        monitor_review 重放另要求当下 l2_enabled（关则记 task_replay_skipped 双保险）；
+        重放≠保证执行——新任务消费期仍过全闸（L2/5 票/预算）。
+        """
         with FileLock(self.layout.queue_lock):
             queue = self.loop.load_queue()
             orphans = queue.replayables()
             for task in orphans:
                 queue.transition(task.task_id, "abandoned")
                 task.finished_at = _now_iso()
-                task.error = "进程重启回收 running 残留（M1 人在环不自动重放）"
+                task.error = "进程重启回收 running 残留（monitor 源按规则重放）"
                 self._decide(
                     "task_abandoned",
                     {"task_id": task.task_id, "kind": task.kind, "code": task.code},
+                )
+            l2_on = load_agent_config(self.layout.agent_config_path).l2_enabled
+            now = _dt.datetime.now(tz=_dt.UTC)
+            for action in plan_replays(orphans, list(queue.tasks), l2_enabled=l2_on):
+                if action.skip_reason is not None:
+                    self._decide(
+                        "task_replay_skipped",
+                        {
+                            "task_id": action.task_id,
+                            "kind": action.kind,
+                            "code": action.code,
+                            "reason_code": action.skip_reason,
+                        },
+                    )
+                    continue
+                new = TaskRecord(
+                    task_id=f"{action.dedup_key}:{now.strftime('%H%M%S')}r",
+                    dedup_key=action.dedup_key,
+                    kind=action.kind,
+                    code=action.code,
+                    enqueued_at=_now_iso(),
+                    source="monitor",
+                )
+                queue.submit(new)  # abandoned 终态不阻 find_active
+                self._decide(
+                    "task_requeued",
+                    {
+                        "old_task_id": action.task_id,
+                        "new_task_id": new.task_id,
+                        "kind": action.kind,
+                        "code": action.code,
+                        "reason": "crash_recovery",
+                    },
                 )
             if orphans:
                 atomic_write_json(self.layout.queue_path, queue.to_dict())
