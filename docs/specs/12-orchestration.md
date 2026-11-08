@@ -76,3 +76,12 @@
 - **advice_refused 决策 kind**：五源统一（gate/assert/render_scan/write_failure/session_degraded），monitor_review 断言违例由 assert_refuse 改判此 kind（其余 kind 维持）；面板⑤拒卡/降级通报区消费。
 - **locks 语义收敛**：/api/monitor/status locks 由存在性改 lock_is_held()（0.0.4 修复的闸语义延伸到展示面）。
 - **monitor_review prompt 扩展**（默认表修正程序沿 0.0.4 先例）：T1 pack 指针+NR-1 链指令+facts_only 出口+写者纪律（禁写 advice/ 与 signals.json）；模板禁 {code} 外花括号（router 测试钉 .format 不炸）。
+
+## ⑨ SSE 与晨报/复盘卡裁定（0.0.7 落地）
+
+- **单流单端点** `GET /api/stream`（sse-starlette EventSourceResponse，15s ping）：多目录变更以命名事件区分（queue/decisions/budget/monitor/advice/status/outlook/paper/briefing；同拍多事件并包为 multi）；localhost 单页一条连接（I-21 上限约束）。
+- **事件桥独立**：泛型 `loop/dirwatch.py`（mtime 快照 diff，与 EventsWatcher 分立——后者承载 T1 偏移断点领域态）；不依赖 daemon 锁（只读桥）；watchfiles 事件只当触发器。
+- **轮询兜底**：面板 compound trigger `every 180s, sse:X`（逗号=OR）——SSE 挂了轮询仍在（I-23）；htmx-ext-sse 本地 vendor（2.2.4，sha256 锚入 vendor/README）。
+- **锁态快照坑位**：vibe-stock 两锁 flock 获取/释放不改 mtime（锁文件不删除）——锁态不可文件监听，SSE 侧 30s 节拍快照 diff 推 status 事件。
+- **晨报/复盘卡**：`agent/briefing/<date>/<code>.md` 每日每股一卡（同日重跑覆盖；早晚分卡留 M3）；行动项措辞限定「复核」禁指令词（R7 同源）；脱敏三层（prompt 禁读模拟台账+断言器键扫+卡面数量词负断言）；ack 走 decision log `briefing_ack`（hash 链防篡改；降级只读态 503、仅当日卡可确认）；worker 钩子=断言放行后落盘+`briefing_card` 决策（失败即 failed 杜绝 done-无卡）。
+- **面板⑥**：stats 聚合（kind 分布/任务三态成功率（样本 <30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）/budget 双口径日桶曲线）；「全样本登记含亏损、模拟绩效假设性」常驻标注。

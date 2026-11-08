@@ -27,6 +27,12 @@ from stock_trading_agent.loop.advice import (
     write_advice_card,
 )
 from stock_trading_agent.loop.assertor import OPINION_KINDS, assess_result
+from stock_trading_agent.loop.briefing import (
+    BRIEFING_KIND,
+    build_card_md,
+    persist_card,
+    scan_briefing_text,
+)
 from stock_trading_agent.loop.events import (
     EventEnvelope,
     dedup_key,
@@ -237,6 +243,10 @@ class AgentLoop:
             declined = self._advice_card_or_refuse(task, result, queue, sessions, ctx)
             if declined is not None:
                 return declined  # 写卡链失败 → task=failed + advice_refused，杜绝 done-无卡
+        if task.kind == BRIEFING_KIND:
+            declined = self._briefing_card_or_fail(task, result, queue, sessions)
+            if declined is not None:
+                return declined
         queue.transition(task.task_id, "done")
         record = next(t for t in queue.tasks if t.task_id == task.task_id)
         record.finished_at = _now_iso()
@@ -325,6 +335,49 @@ class AgentLoop:
                 "path": str(card_path),
                 "candidate_action": structured.get("candidate_action"),
                 "final_signal": structured.get("final_signal"),
+            },
+        )
+        return None
+
+    def _briefing_card_or_fail(
+        self, task: TaskRecord, result, queue: QueueState, sessions: SessionsState
+    ) -> bool | None:
+        """晨报/复盘卡落盘钩子（脱敏三层之卡面负断言；失败即 failed 杜绝 done-无卡）。"""
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        structured = result.structured_output or {}
+        date = market_today()
+        try:
+            md = build_card_md(structured, date=date, code=task.code)
+            problems = scan_briefing_text(md)
+            if problems:
+                raise ValueError("；".join(problems))
+            card_path = persist_card(self.layout, date, task.code, md)
+        except (OSError, ValueError) as exc:
+            queue.transition(task.task_id, "failed")
+            record = next(t for t in queue.tasks if t.task_id == task.task_id)
+            record.finished_at = _now_iso()
+            record.error = str(exc)
+            self.decisions.append(
+                _now_iso(),
+                kind="task_failed",
+                payload={
+                    "task_id": task.task_id,
+                    "kind": task.kind,
+                    "code": task.code,
+                    "reasons": [str(exc)],
+                },
+            )
+            self._persist_all(queue, sessions)
+            return False
+        self.decisions.append(
+            _now_iso(),
+            kind="briefing_card",
+            payload={
+                "task_id": task.task_id,
+                "code": task.code,
+                "date": date,
+                "path": str(card_path),
             },
         )
         return None

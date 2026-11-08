@@ -92,6 +92,14 @@ class StateLayout:
         return self.runs_dir / date / "t1" / code
 
     @property
+    def briefing_dir(self) -> Path:
+        """晨报/复盘行动项卡（agent/briefing/<date>/<code>.md；每日每股一卡）。"""
+        return self.agent_dir / "briefing"
+
+    def briefing_card_path(self, date: str, code: str) -> Path:
+        return self.briefing_dir / date / f"{code}.md"
+
+    @property
     def watcher_state_path(self) -> Path:
         """monitor 台账监听偏移断点（agent/watcher.json；崩溃不重放已登记事件）。"""
         return self.agent_dir / "watcher.json"

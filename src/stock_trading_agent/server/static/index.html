@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stock Trading Agent · 面板</title>
 <script src="/vendor/htmx.min.js"></script>
+<script src="/vendor/sse.js"></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -46,7 +47,7 @@
   footer { margin-top: 28px; font-size: 12px; color: #8b949e; line-height: 1.8; border-top: 1px solid #21262d; padding-top: 14px; }
 </style>
 </head>
-<body>
+<body hx-ext="sse" sse-connect="/api/stream">
 <header>
   <h1>Stock Trading Agent · 面板</h1>
 </header>
@@ -56,7 +57,7 @@
 <main>
   <section class="wide">
     <h2>① 今日总览</h2>
-    <div id="overview" hx-get="/api/panel/overview" hx-trigger="every 180s" hx-swap="innerHTML">
+    <div id="overview" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:queue, sse:monitor, sse:status, sse:multi" hx-swap="innerHTML">
       <p class="muted">加载中……（180s 轮询）</p>
     </div>
   </section>
@@ -78,35 +79,47 @@
   <section>
     <h2>③ 盯盘事件与 T2 复核</h2>
     <p class="muted">事件源 = vibe-stock watch.py 台账（零 LLM 轮询，不花模型钱）；「××复核」行可发起 T2 手动复核（人在环）。</p>
-    <div id="events" hx-get="/api/panel/events" hx-trigger="every 180s" hx-swap="innerHTML">
+    <div id="events" hx-get="/api/panel/events" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML">
       <p class="muted">加载中……</p>
     </div>
   </section>
 
   <section class="wide">
     <h2>⑦ 审计与预算</h2>
-    <div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s" hx-swap="innerHTML">
+    <div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML">
       <p class="muted">加载中……</p>
     </div>
   </section>
 
   <section>
     <h2>④ 模拟盘</h2>
-    <div id="paper" hx-get="/api/panel/paper" hx-trigger="every 180s" hx-swap="outerHTML">
+    <div id="paper" hx-get="/api/panel/paper" hx-trigger="every 180s, sse:paper, sse:multi" hx-swap="outerHTML">
       <p class="muted">加载中……</p>
     </div>
   </section>
   <section>
     <h2>⑤ 建议卡库</h2>
-    <div id="advice" hx-get="/api/panel/advice" hx-trigger="every 180s" hx-swap="innerHTML">
+    <div id="advice" hx-get="/api/panel/advice" hx-trigger="every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML">
       <p class="muted">加载中……</p>
     </div>
   </section>
-  <section class="disabled"><h2>⑥ 后验战绩</h2><p>decision log 画像、全样本登记含亏损、模拟绩效标注假设性。</p></section>
+  <section class="wide">
+    <h2>⑥ 后验战绩</h2>
+    <div id="stats" hx-get="/api/panel/stats" hx-trigger="every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML">
+      <p class="muted">加载中……</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>盘前晨报 / 盘后复盘</h2>
+    <div id="briefing" hx-get="/api/panel/briefing" hx-trigger="every 180s, sse:briefing, sse:multi" hx-swap="outerHTML">
+      <p class="muted">加载中……</p>
+    </div>
+  </section>
 </main>
 
 <footer>
-  只读 API：<code>/api/health</code> · <code>/api/queue</code> · <code>/api/sessions</code> · <code>/api/decisions</code> · <code>/api/paper</code> · <code>/api/budget</code> · <code>/api/monitor/events</code> · <code>/api/monitor/status</code> · <code>/api/reports</code> · <code>/api/advice</code>（htmx 180s 轮询，§16）<br>
+  只读 API：<code>/api/health</code> · <code>/api/queue</code> · <code>/api/sessions</code> · <code>/api/decisions</code> · <code>/api/paper</code> · <code>/api/budget</code> · <code>/api/monitor/events</code> · <code>/api/monitor/status</code> · <code>/api/reports</code> · <code>/api/advice</code> · <code>/api/stats</code> · <code>/api/stream</code>（SSE 实时流 + 180s 轮询兜底，§16）<br>
   本产品输出仅供学习与研究参考，<strong>不构成投资建议</strong>；不下单、不保证收益；模拟绩效均为假设性推演（含费用与滑点）；全部产物由 AI 生成、用户复核前置。
 </footer>
 </body>

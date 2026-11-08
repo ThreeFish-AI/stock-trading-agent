@@ -557,6 +557,33 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("paper.pending_roundtrip", paper_pending_roundtrip)
 
+    def sse_event_mapping():
+        from pathlib import Path
+
+        from stock_trading_agent.server.stream_hub import to_event_name
+        from stock_trading_agent.state.paths import StateLayout
+
+        layout = StateLayout(root=Path("/tmp/sse-test"))
+        assert to_event_name(layout.root / "agent" / "queue.json", layout) == "queue"
+        assert to_event_name(layout.root / "monitor" / "events" / "d.jsonl", layout) == "monitor"
+        assert to_event_name(layout.root / "sim-portfolio.json", layout) == "paper"
+
+    check_case("server.sse.event_map", sse_event_mapping)
+
+    def stats_and_briefing_scan():
+        from stock_trading_agent.loop.briefing import build_card_md, scan_briefing_text
+        from stock_trading_agent.server.stats import aggregate_decisions
+
+        agg = aggregate_decisions([{"kind": "task_done"}, {"kind": "task_failed"}])
+        assert agg["total"] == 2 and agg["success_rate"] == 0.5
+        assert not agg["sufficient_sample"]  # 样本 <30 只观察
+        md = build_card_md({"briefing": "收盘跌破 MA20。"}, date="2026-11-08", code="600519")
+        assert scan_briefing_text(md) == []
+        bad = build_card_md({"briefing": "卖 300 股"}, date="d", code="c")
+        assert scan_briefing_text(bad)
+
+    check_case("server.stats_briefing.scan", stats_and_briefing_scan)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 

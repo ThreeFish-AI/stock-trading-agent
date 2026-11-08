@@ -206,6 +206,80 @@ def _sparkline_svg(points: list[dict], *, width: int = 220, height: int = 44) ->
     )
 
 
+def render_stats_fragment(payload: dict) -> str:
+    """面板⑥：kind 分布 + 任务成功率（样本不足标注）+ 预算双口径小表（§15）。"""
+    d = payload.get("decisions") or {}
+    rows = "".join(
+        f"<tr><td>{_esc(k)}</td><td>{v}</td></tr>" for k, v in (d.get("kinds") or {}).items()
+    )
+    rate = d.get("success_rate")
+    rate_text = f"{rate:.0%}" if rate is not None else "—"
+    summary = (
+        f"done {d.get('done', 0)} · failed {d.get('failed', 0)} · "
+        f"abandoned {d.get('abandoned', 0)} · 成功率 {rate_text}"
+    )
+    if d.get("note"):
+        summary += f"（{_esc(d.get('note'))}）"
+    parts = [
+        "<h3>任务画像（全样本登记，含失败与弃单）</h3>",
+        f'<p class="muted">{summary}</p>',
+        '<table class="grid"><thead><tr><th>决策 kind</th><th>计数</th></tr></thead>'
+        f"<tbody>{rows}</tbody></table>",
+        "<h3>预算曲线（token + 等效美元双口径，F-34）</h3>",
+    ]
+    curve = payload.get("budget_curve") or []
+    if curve:
+        crows = "".join(
+            "<tr>"
+            f"<td>{_esc(p.get('date'))}</td><td>{p.get('sessions', 0)}</td>"
+            f"<td>{p.get('tokens', 0)}</td><td>{p.get('cost_usd_equiv', 0)}</td>"
+            "</tr>"
+            for p in curve
+        )
+        parts.append(
+            '<table class="grid"><thead><tr><th>日</th><th>会话</th><th>token</th>'
+            f"<th>等效 USD</th></tr></thead><tbody>{crows}</tbody></table>"
+        )
+    else:
+        parts.append('<p class="muted">暂无会话记账。</p>')
+    parts.append('<p class="muted">后验画像：全样本登记含亏损；模拟绩效均为假设性推演。</p>')
+    return "".join(parts)
+
+
+def render_briefing_fragment(payload: dict) -> str:
+    """晨报/复盘卡区：当日卡列表 + ack 状态 + 触发按钮（复用 submit；禁跑窗提示）。"""
+    day = payload.get("date", "")
+    cards = payload.get("cards") or []
+    parts = [f"<h3>晨报 / 复盘行动项卡 · {day}</h3>"]
+    if cards:
+        for card in cards:
+            ack = bool(card.get("ack"))
+            code = _esc(card.get("code", ""))
+            if ack:
+                state = '<span class="st done">已确认</span>'
+                action = ""
+            else:
+                state = '<span class="st queued">待确认</span>'
+                vals = f'{{"date": "{_esc(day)}", "code": "{code}"}}'
+                action = (
+                    '<button class="mini" hx-post="/api/panel/briefing/ack" '
+                    f"hx-vals='{vals}' "
+                    'hx-target="#briefing" hx-swap="outerHTML">确认复核</button>'
+                )
+            body = _esc(str(card.get("md", ""))[:1200])
+            parts.append(
+                f'<div class="task-card"><p><strong>{code}</strong> · {state} {action}</p>'
+                f'<pre style="white-space:pre-wrap;font-size:12px;color:#8b949e">'
+                f"{body}</pre></div>"
+            )
+    else:
+        parts.append(
+            '<p class="muted">当日无卡（面板触发 briefing_review 生成；'
+            "盘后复盘建议 18:10 后触发）。</p>"
+        )
+    return "".join(parts)
+
+
 def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     """面板④：NR-2 常驻条 + 持仓表（T1/T2/T3 徽章 + 可卖(T+1) + 市值/盈亏%）+ 确认队列 + 权益曲线。
 
