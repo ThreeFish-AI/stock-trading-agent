@@ -314,6 +314,279 @@ def render_briefing_fragment(payload: dict) -> str:
     return "".join(parts)
 
 
+# ═══ 0.0.11 §⑫ 新组件渲染器 ═══
+
+
+def render_phase_chip(phase: dict) -> str:
+    overall = str(phase.get("overall", "closed"))
+    return (
+        f'<span class="phase phase-{overall}" data-testid="phase">'
+        f'<span class="pd pd-{overall}"></span>{phase.get("label", "")} · '
+        f"{phase.get('weekday', '')}</span>"
+    )
+
+
+def _fmt(value, suffix: str = "") -> str:
+    if value is None:
+        return "—"
+    return f"{value}{suffix}"
+
+
+def render_diag_form() -> str:
+    """②页发起诊股表单：六 kind 白名单下拉 + code 输入 + 提交。"""
+    options = "".join(
+        f'<option value="{k}">{label}</option>'
+        for k, label in [
+            ("diagnose_quick", "快速诊股"),
+            ("diagnose_full", "全量诊股（双轨）"),
+            ("batch_wave", "批量波次"),
+            ("paper_confirm", "模拟盘逐笔确认（CC 辅助）"),
+            ("briefing_review", "盘前晨报/盘后复盘"),
+            ("monitor_review", "盯盘复核（T2）"),
+        ]
+    )
+    return (
+        '<form class="inrow" hx-post="/api/panel/submit" hx-target="#dg-result" '
+        'hx-swap="innerHTML" style="display:flex;flex-direction:column;gap:10px">'
+        '<div style="display:flex;gap:8px">'
+        '<input class="inp" name="code" placeholder="600519 / 00700" '
+        'pattern="\d{5,6}" required style="flex:1">'
+        f'<select class="sel" name="kind" style="flex:1.4">{options}</select>'
+        '<button class="btn btn-pri" type="submit">开始</button></div>'
+        '<p class="tbl-note">LLM 只产意见 · 聚合一律确定性裁决 · NR-3 断言器前置门 · '
+        "锁/禁跑窗内提交将被拒（423）</p></form>"
+        '<div id="dg-result" style="margin-top:10px"></div>'
+    )
+
+
+def render_event_feed(payload: dict) -> str:
+    """①今日事件流：时间轴形态（T 徽章/mech_risk riskchip/风险行高亮/现价与距线）。"""
+    events = (payload.get("events") or [])[-10:]
+    if not events:
+        return '<p class="loadmsg">暂无盯盘事件（watch.py 台账为空或未运行）。</p>'
+    rows = []
+    for ev in events:
+        facts = ev.get("facts") or {}
+        price = facts.get("price") or facts.get("pct")
+        mech = ev.get("mech_risk") or {}
+        risk_cls = " breach" if mech else ""
+        riskchip = (
+            f'<span class="riskchip">mech_risk {mech.get("severity", "")}</span>' if mech else ""
+        )
+        price_txt = f"现价 {price}" if price is not None else ""
+        review_txt = f" · {ev['review']}" if ev.get("review") else ""
+        rows.append(
+            f'<div class="ev{risk_cls}"><div class="ev-time num">{_esc(ev.get("ts", ""))}</div>'
+            f'<div class="ev-rail"><div class="ev-dot"></div></div>'
+            f'<div class="ev-name"><span class="ev-stock"><span class="code num">'
+            f"{_esc(ev.get('code', ''))}</span> {_esc(ev.get('rule', ''))}</span>"
+            f'<span class="ev-top">{_esc(price_txt)} {riskchip}'
+            f'<span class="lv lv0">{_esc(ev.get("level", "T0"))}</span>'
+            f"{_esc(review_txt)}</span></div></div>"
+        )
+    return "".join(rows)
+
+
+def render_signals_table(payload: dict) -> str:
+    """①在册信号卡表 6 列（信号五词/置信/距止损/轨）。"""
+    rows = payload.get("rows") or []
+    if not rows:
+        note = "" if payload.get("read_ok") else "（signals.json 不可读——宁拒不漏）"
+        return f'<p class="loadmsg">无在册信号{note}。</p>'
+    trs = []
+    for row in rows:
+        signal = row.get("signal")
+        sig_cls = {
+            "strong_buy": "sig-sb",
+            "buy": "sig-b",
+            "hold": "sig-h",
+            "sell": "sig-s",
+            "strong_sell": "sig-ss",
+        }.get(signal, "")
+        to_stop = row.get("to_stop_pct")
+        dist_cls = (
+            "dist-breach"
+            if to_stop is not None and to_stop <= 0
+            else ("dist-near" if to_stop is not None and to_stop <= 3 else "")
+        )
+        trs.append(
+            "<tr>"
+            f'<td><span class="code num">{_esc(row["code"])}</span></td>'
+            f'<td><span class="{sig_cls}"></span> {_esc(signal or row.get("signal_raw"))}</td>'
+            f'<td class="num">{_fmt(row.get("confidence"))}</td>'
+            f'<td class="num {_esc(dist_cls)}">{_fmt(to_stop, "%")}</td>'
+            f"<td>{_esc('中线' if row.get('profile') == 'position' else '短线')}</td>"
+            f'<td class="num">{_esc(row.get("date", ""))}</td>'
+            "</tr>"
+        )
+    return (
+        '<table class="tbl"><thead><tr><th>代码</th><th>最新信号</th><th>置信</th>'
+        f"<th>距止损</th><th>轨</th><th>信号日</th></tr></thead><tbody>{''.join(trs)}</tbody></table>"
+        '<p class="tbl-note">adjudicate 产出 · 盘中结论以收盘复核为准（R9）</p>'
+    )
+
+
+def render_todos(payload: dict) -> str:
+    """①今日待办卡：三源聚合（pending 优先）。"""
+    todos = payload.get("todos") or []
+    if not todos:
+        return '<p class="loadmsg">无待办。</p>'
+    rows = []
+    for item in todos:
+        rows.append(
+            f'<div class="todo"><div class="cbx"></div><div style="flex:1;min-width:0">'
+            f'<span class="code num">{_esc(item["code"])}</span> {_esc(item["text"])}</div>'
+            f'<span class="chip chip-warn">{_esc(item["chip"])}</span></div>'
+        )
+    return "".join(rows)
+
+
+def render_navcard(view: dict) -> str:
+    """①模拟盘净值卡：NAV 大数字 + 今日%/成立以来% + sparkline。"""
+    history = view.get("equity_history") or []
+    if not history:
+        return '<p class="loadmsg">权益曲线待积累（盘后日终复核产出）。</p>'
+    navs = [float(p.get("nav") or 0) for p in history]
+    nav = navs[-1]
+    today_pct = ((nav / navs[-2] - 1) * 100) if len(navs) >= 2 and navs[-2] else None
+    since_pct = (nav - 1.0) * 100
+    up_today = (today_pct or 0) >= 0
+    chip = f'<span class="chip {"chip-up" if up_today else "chip-neutral"}">'
+    return (
+        f'<div class="nv-v num">{nav:.4f}</div>'
+        '<div style="display:flex;gap:8px;margin:6px 0 8px">'
+        f"{chip}今日 {today_pct:+.2f}%</span>"
+        if today_pct is not None
+        else ""
+    ) + (
+        f'<span class="chip chip-neutral">成立以来 {since_pct:+.2f}%</span></div>'
+        + _sparkline_svg([{"nav": n} for n in navs])
+        + '<p class="tbl-note">初始 1.0000 · 含费用与滑点（假设性推演）</p>'
+    )
+
+
+def render_syscard(status: dict, sessions: dict, queue: dict) -> str:
+    """①系统状态卡：三槽调度时刻+分级+CC 行+在跑会话。"""
+    slots = status.get("slots") or {}
+    sched = {"monitor": "09:15", "outlook": "17:35", "postmortem": "18:05"}
+    rows = []
+    for name in ("monitor", "outlook", "postmortem"):
+        done = bool((slots.get(name) or {}).get("done"))
+        dot = "sdot-ok" if done else "sdot-wait"
+        state = "已收口" if done else "待触发"
+        desc = {
+            "monitor": "盯盘轮询与收盘复核",
+            "outlook": "走势参考日表",
+            "postmortem": "信号后验记分",
+        }[name]
+        rows.append(
+            f'<div class="sys-row"><div class="sdot {dot}"></div>'
+            f'<div style="flex:1;min-width:0"><span class="sys-name">{name}</span>'
+            f'<div class="sys-desc">{desc}</div></div>'
+            f'<span class="sys-sched num">{sched[name]}</span>'
+            f'<span class="sys-st">{state}</span></div>'
+        )
+    cc_active = bool((status.get("loop") or {}).get("active"))
+    rows.append(
+        f'<div class="sys-row"><div class="sdot {"sdot-ok" if cc_active else "sdot-wait"}"></div>'
+        '<div style="flex:1;min-width:0"><span class="sys-name">CC 大脑</span>'
+        '<div class="sys-desc">headless 子进程唯一 LLM 通道</div></div>'
+        f'<span class="sys-st">{"运行中" if cc_active else "降级只读"}</span></div>'
+    )
+    sess_count = len(sessions.get("sessions") or {})
+    latest = list((sessions.get("sessions") or {}).values())[-1:] or [{}]
+    cost = latest[0].get("cost_usd_equiv", 0) if isinstance(latest[0], dict) else 0
+    queued = (status.get("loop") or {}).get("queued", 0)
+    running = (status.get("loop") or {}).get("running", 0)
+    body = "".join(rows)
+    return (
+        f"{body}"
+        f'<p class="tbl-note">在册会话 {sess_count} · 队列 queued {queued} / running {running}'
+        f" · 最新会话等效 {cost} USD</p>"
+    )
+
+
+def render_reports_list(payload: dict) -> str:
+    """②报告档案列表（目录+latest+count，点击查正文）。"""
+    rows = payload.get("reports") or []
+    if not rows:
+        return '<p class="loadmsg">暂无诊股报告（提交诊股后由 vibe-stock report 段产出）。</p>'
+    trs = []
+    for row in rows[:20]:
+        link = (
+            f'<a href="#" hx-get="/api/panel/report/{_esc(row["dir"])}/{_esc(row["latest"])}" '
+            'hx-target="#dg-report-body" hx-swap="innerHTML">'
+            f'<span class="code num">{_esc(row["code"])}</span>.{_esc(row["market"])}</a>'
+        )
+        trs.append(
+            f'<tr><td>{link}</td><td class="num">{_esc(row.get("latest", ""))}</td>'
+            f'<td class="num">{row.get("count", 0)}</td></tr>'
+        )
+    return (
+        '<table class="tbl"><thead><tr><th>标的</th><th>最新报告</th><th>在档</th>'
+        f"</tr></thead><tbody>{''.join(trs)}</tbody></table>"
+        '<p class="tbl-note">04 规约结构 · 免责段必含</p>'
+    )
+
+
+def render_report_body(code_market: str, filename: str, md: str) -> str:
+    has_disclaimer = "不构成投资建议" in md
+    warn = "" if has_disclaimer else '<p class="riskchip">免责段缺失（异常）</p>'
+    return (
+        f'<div class="card"><div class="card-h"><span class="ct">报告 · {_esc(code_market)} · '
+        f'{_esc(filename)}</span><span class="cm">md 直读</span></div>'
+        f'<div class="card-b">{warn}<pre style="white-space:pre-wrap;font-size:12.5px;'
+        f'line-height:1.75;color:var(--t2)">{_esc(md)}</pre></div></div>'
+    )
+
+
+def render_advice_detail(body: dict) -> str:
+    """③⑤建议卡详情：四块布局（候选动作/差异/份额原值 .bignum/σ√h 表）。"""
+    meta = body.get("meta") or {}
+    rendered = body.get("rendered")
+    from stock_trading_agent.loop.advice import parse_trend_table
+
+    band_rows = parse_trend_table(body.get("md", ""))
+    prev = meta.get("prev_final_signal", "none")
+    final = meta.get("final_signal", "")
+    shares = (
+        f'<div class="bignum num">{rendered["t1_sell_shares"]:,}</div>'
+        f'<p class="tbl-note">持仓 {rendered["held_lots"]} 手 · 冻结后可卖 '
+        f"{rendered['t1_sell_lots']} 手 × {rendered['board_lot']}/手（T+1，asof "
+        f"{_esc(rendered['asof'])}）——呈现态原值（NR-5/R2 豁免面，落盘为百分比）</p>"
+        if rendered
+        else '<p class="loadmsg">无模拟持仓（原值不可现算；落盘口径见卡面百分比）。</p>'
+    )
+    trend_rows = "".join(
+        f'<tr><td>{_esc(r["horizon"])}</td><td class="num">{r["low"]}</td>'
+        f'<td class="num">{r["high"]}</td><td class="num">{r["prob_touch_low_pct"]}%</td></tr>'
+        for r in band_rows
+    )
+    trend = (
+        '<table class="tbl"><thead><tr><th>h</th><th>带下沿</th><th>带上沿</th>'
+        f"<th>P 触下</th></tr></thead><tbody>{trend_rows}</tbody></table>"
+        if band_rows
+        else '<p class="loadmsg">无走势参考表。</p>'
+    )
+    return (
+        f'<div class="card adv"><div class="card-h">'
+        f'<span class="lv lv2">monitor-advice/1</span>'
+        '<span class="ct">T2 建议卡 · '
+        f'<span class="code num">{_esc(meta.get("code", ""))}</span></span>'
+        '<span class="cm">已重裁决 ✓ NR-1 · 待用户复核</span></div>'
+        '<div class="card-b"><div class="adv-grid">'
+        f'<div class="adv-blk"><div class="adv-k">候选动作（04 五档措辞）</div>'
+        f'<div class="quote">「{_esc(meta.get("candidate_action", ""))}」</div></div>'
+        f'<div class="adv-blk"><div class="adv-k">与上一裁决差异（adjudicate 重裁决产出）</div>'
+        f'<div class="num">{_esc(prev)} → {_esc(final)}</div></div>'
+        f'<div class="adv-blk"><div class="adv-k">T+1 可卖份额（呈现态）</div>{shares}</div>'
+        f'<div class="adv-blk"><div class="adv-k">走势参考（σ√h · 零权重）</div>{trend}</div>'
+        "</div>"
+        '<p class="tbl-note">盘中结论以收盘复核为准 · 候选动作为五档分类学措辞 · 不构成投资建议</p>'
+        "</div></div>"
+    )
+
+
 def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     """面板④：NR-2 常驻条 + 持仓表（T1/T2/T3 徽章 + 可卖(T+1) + 市值/盈亏%）+ 确认队列 + 权益曲线。
 

@@ -121,6 +121,40 @@ def parse_advice_card(text: str) -> dict:
     return {}
 
 
+def parse_trend_table(md: str) -> list[dict]:
+    """卡面 md「## 走势参考」σ√h 管道表 → band_rows（render_advice_card 的 round-trip 反解）。
+
+    无节/无表 → []；转义管道符（\\|）由单元格 unescape 还原；坏行跳过不炸。
+    """
+    rows: list[dict] = []
+    in_section = False
+    for line in md.splitlines():
+        if line.startswith("## "):
+            in_section = "走势参考" in line
+            continue
+        if not in_section or not line.strip().startswith("|"):
+            continue
+        cells = [c.strip().replace("\\|", "|") for c in line.strip().strip("|").split("|")]
+        if (
+            len(cells) < 4
+            or cells[0] in ("horizon", "---", ":---")
+            or set(cells[0]) <= {"-", ":", " "}
+        ):
+            continue
+        try:
+            rows.append(
+                {
+                    "horizon": cells[0],
+                    "low": float(cells[1]),
+                    "high": float(cells[2]),
+                    "prob_touch_low_pct": float(cells[3].rstrip("%")),
+                }
+            )
+        except ValueError:
+            continue
+    return rows
+
+
 def scan_advice_text(md: str) -> list[str]:
     """渲染层脱敏负断言（双保险第二层）：命中即拒（宁误拒不漏放）。"""
     reasons: list[str] = []

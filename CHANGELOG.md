@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.11] - 2026-11-08
+
+### Added
+
+- **面板大重构（PR-I，P0+P1 一轮；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑫）**。①**七页 hash tab 导航**（纯 CSS/JS 无构建链；每页 hero 元信息带；七 section 常驻 SSE compound trigger 全保留）+**视觉 token 系统**（:root 18 变量/A 股红涨绿跌唯一语义色/.num 等宽/tbl-lv-riskchip-metachip-ev 时间轴-sig 点-leg-phase 等组件类自四页原型直取）；②**P0 纯渲染**：events `facts` 透出（①③现价/距线/mech_risk riskchip/风险行高亮时间轴）、②诊股报告区（列表+正文 md 直读+免责段在场检查+任务卡报告链接；五段流水线/意见板/裁决卡 P2 另轮）、①净值卡（NAV 大数字+今日%/成立以来%+sparkline）+系统状态卡完整版（三槽调度时刻+CC 行+脉冲）+在跑会话、④表尾汇总条+坐标轴版权益曲线 SVG+盈亏红涨绿跌+建仓中高亮+绩效三格（Sharpe/maxDD/胜率 FIFO，<30 insufficient）、③⑤建议卡详情四块布局（候选动作引号/差异/份额原值 .bignum/σ√h 表 `parse_trend_table` round-trip 反解）+事件行→卡联动；③**P1 数据链**：`/api/signals`（在册信号卡 6 列：信号/置信/距止损/轨；现价序 sim→facts）、`/api/todos`（三源聚合 pending 优先）、`advice rendered` 呈现态原值（运行时 tplus1 现算，落盘 md 负断言照过）、⑥T+1 复核命中率（vs ledger.agent.json）、晨报行动项解析投影、`dgform` 六 kind 全量下拉、盘态判定+名称映射（升级位登记）；④report fragment 三保险路径安全（目录正则+文件名正则+resolve 边界）；stream_hub 增 signals/reports 事件名。测试 +25 例（385 passed 全绿）：panel_data 纯函数（盘态矩阵/快照降级/待办三源/绩效手算锚/命中率/σ√h round-trip）+ e2e（signals/todos 种子、rendered 原值+落盘脱敏负断言、路径遍历 404×4、七页骨架与 26 端点冒烟）。
+
 ## [0.0.10] - 2026-11-08
 
 ### Added

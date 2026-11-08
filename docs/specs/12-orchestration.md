@@ -102,3 +102,12 @@
 - **R5 重放策略**：启动期 running 残留全部先 abandoned（WAL 语义不变+task_abandoned 决策照记）；monitor 源残留按计划重放——判据纯函数 `plan_replays`（判据与 IO 分离）：monitor_review 另要求当下 l2_enabled（关则 `task_replay_skipped(l2_disabled)`，与消费期闸双保险）；**防自旋=队列派生判据**（同 dedup_key 实体数 ≥2 即 replay_cap——重放任务若再崩成 abandoned，count=3 仍 >2 拦截，同键至多两个实体任务，零新状态位）；t1_refresh（零 LLM）无条件重放；panel/cli 源维持 abandoned（M1 语义）。决策 kind 族：task_requeued / task_replay_skipped{reason_code}。重放≠保证执行——新任务消费期仍过全闸。
 - **--bg 评估（D-63，文档性判定）**：结论不引入——依据 D-06 稳定性反证（一次性+resume 比长驻管道稳，两个 open issue 属同一会话族状态面）、现形态已覆盖保活（超时状态机+AbandonProcessGroup+R5 重放）、成本收益未证（L2 事件频率远未触达冷启动瓶颈）；触发再评条件见 [docs/ops/bg-session-eval.md](../ops/bg-session-eval.md)。
 - **SDK 对照（D6，R7 只交脚本+模板不真跑）**：`ops/d6_sdk_compare.py`（--real 旗标+STA_ALLOW_REAL_CC 环境门；cli_path 钉同二进制+preset 对齐+setting_sources=[]，D-16/D-17）；记录模板 [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md) 初始行「未跑，待用户触发」。
+
+## ⑫ 面板七页重构裁定（0.0.11 落地）
+
+- **信息架构**：七页 hash 路由（`#/overview|diagnosis|monitor|paper|advice|stats|audit`，纯 CSS/JS ~20 行无构建链；七 section 常驻 DOM——隐藏页 fragment 照常 180s+SSE compound trigger 轮询，本机单用户成本可忽略）；每页 hero 元信息带（①刷新+盘态/②会话+预算/③心跳+零 LLM/④台账注/⑤脱敏口径/⑥样本纪律/⑦hash 链头）。
+- **视觉 token SSOT = index.html**：`:root` 18 组变量（bg/line/t/四语义色三态/字体栈）自原型提炼；**A 股红涨绿跌唯一语义色**（--up 红=涨/命中、--dn 绿=跌）；`.num` 等宽 tabular-nums；组件类（tbl/lv/riskchip/metachip/ev 时间轴/sig 五词点/leg/phase/todo/kchip/stat）自原型直取——panel.py 类名同 PR 原子切换。
+- **呈现态原值三处**（用户裁定；落盘产物脱敏零改动重申 NR-5/R2）：events `facts` 透出（现价/机械事实）、`/api/advice/{date}/{code}` 响应 `rendered` 字段（运行时 sim-portfolio+tplus1+frozen 现算 t1_sell_shares；无持仓→null；`scan_advice_text` 负断言照过）、④表尾汇总条。诊断报告正文 md 直读（自带免责段，缺失时警示）。
+- **新端点契约**（全 GET 零 CSRF 新面）：`/api/signals`（signals.json 只读+last_price→facts.price 现价序）、`/api/todos`（三源：pending fills→mech_risk→briefing 未 ack）、`/api/panel/{phase,topbar,signals,todos,navcard,syscard,overview(事件流),mometa,dgmeta,aumeta,tasks,reports,report/{dir}/{file},advice-detail/{date}/{code},dgform}`；report fragment 三保险路径安全（目录正则+日期文件名正则+resolve.is_relative_to）。
+- **纯函数落点**：`server/panel_data.py`（market_phase 连续窗简化午休并入盘中——升级位/build_name_map 无名称源硬缺省 mono code——升级位/signals_snapshot 非法词呈现降级/derive_todos/briefing_action_items/薄读取器）；`stats.perf_summary`（Sharpe 日频年化/maxDD/胜率 FIFO，<30 insufficient）与 `t1_review_hitrate`（vs ledger.agent.json）；`loop/advice.parse_trend_table`（σ√h 表 round-trip 反解，与 render 同模块）；`stream_hub` 增 signals/reports 事件名。
+- **轻量版过渡清单**（升级位）：②五段流水线/双轨意见板/裁决卡（P2 会话中间产物架构，另轮）、③通知预览（P2 通知台账）、①事件日历预告（c 类数据源）、股票名称源、现价源、午休分态。
