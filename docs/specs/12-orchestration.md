@@ -63,3 +63,16 @@
 - 模板**不带** STA_ALLOW_REAL_CC（出厂 dry-run 安全）；启用真实通道由用户安装时注入 EnvironmentVariables（文档明示后果与预算闸建议）。
 - WatchPaths/StartCalendarInterval 不用（I-52 race-prone；常驻服务非日历槽）；三份 vibe-stock plist 零接触。
 - 模板关键属性由 selftest/单测 plistlib 钉死（KeepAlive/AbandonProcessGroup/ExitTimeOut/ThrottleInterval/RunAtLoad/占位符），漂移即测试红。
+
+## ⑧ T2 建议卡链裁定（0.0.5 落地）
+
+- **ADVICE_SCHEMA 全量契约**（`loop/schemas.py`）：`outcome enum [card, facts_only]`（降级一等公民）+卡面字段（candidate_action=vibe-stock/04 五档逐字枚举、final_signal 五词、prev_diff、t1_sell_pct 0..100、t1_sell_tier、verdict_date、opinion_data_date、replayed_opinions≥2、trend_ref.band_rows、rationale、facts_note）；扁平子集无 if/then，分支必填由断言器程序化（防 CC 端 schema 方言风险）；喂 CC 与本地复验同一份（NR-3 延伸）。
+- **脱敏字段命名与双保险**：字段名避开断言器敏感词族（禁 sellable 等前缀，扫描零豁免零放宽）；份额原值负断言=渲染层单位正则（股|份|手）+断言层键扫双保险；卡面常量（三声明/免责尾注）置空视为缺失（空串恒子串坑位）。
+- **三声明句裁定**：产品侧等义短句+vibe-stock 绝对 URL 指针落卡面，禁转述外仓规约句原文（AGENTS SSOT 纪律）；断言只钉存在性与关键词。
+- **锚③落位**（只降不升三重锚的编排侧唯一可独立复算项）：signals.json 只读读取在 loop/advice.py（layout.root 直拼；红线扫描字面量禁令只覆盖 state/ 层，state/ 零字面量纪律不变）；锚①②归 vibe-stock adjudicate 机制。signals 在场不可解析→拒卡（宁拒不漏）。
+- **保鲜门编排侧投影**：verdict_date 与 opinion_data_date 均==市场今日（断言）；「有效意见<2 回退重产」由 replayed_opinions≥2 投影；真实重产在会话内（07 机制）。
+- **写者例外执行序**：断言放行→render→scan_advice_text→atomic write（`state.store.atomic_write_text` 单一入口）→`advice_card_written` 决策（payload 全脱敏：task_id/code/date/path/candidate_action/final_signal）→queue done；任何一步失败即 failed+`advice_refused`，杜绝 done-无卡。facts_only（会话自报降级）=task done+`advice_refused(origin=session_degraded)` 携 facts_note，不触 advice/ 目录。
+- **5 票闸与实盘优先**（07 硬前置）：消费期判定（mark_running 后、build_request 前；配额随日变化消费时刻权威）；计数口径=当日 done 的 monitor_review（含 facts_only，enqueued_at 市场钟面匹配——规避 ingest dedup UTC 日期的既有时区日界差）；超额仅放行 monitor/universe.json kind==real；universe 不可读+超额→宁拒不漏；拒绝=failed 终态防自旋。
+- **advice_refused 决策 kind**：五源统一（gate/assert/render_scan/write_failure/session_degraded），monitor_review 断言违例由 assert_refuse 改判此 kind（其余 kind 维持）；面板⑤拒卡/降级通报区消费。
+- **locks 语义收敛**：/api/monitor/status locks 由存在性改 lock_is_held()（0.0.4 修复的闸语义延伸到展示面）。
+- **monitor_review prompt 扩展**（默认表修正程序沿 0.0.4 先例）：T1 pack 指针+NR-1 链指令+facts_only 出口+写者纪律（禁写 advice/ 与 signals.json）；模板禁 {code} 外花括号（router 测试钉 .format 不炸）。

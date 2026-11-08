@@ -52,6 +52,22 @@ def atomic_write_json(path: Path, payload: dict, *, makedirs: bool = True) -> No
         raise
 
 
+def atomic_write_text(path: Path, text: str, *, makedirs: bool = True) -> None:
+    """原子写纯文本（md 产物单一入口）：同目录 tmp + fsync + os.replace（与 JSON 版同构）。"""
+    if makedirs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def atomic_append_jsonl(path: Path, obj: dict, *, makedirs: bool = True) -> None:
     """追加写 JSONL（文件级 flock 串行；追加前 fsync 保证断电不丢尾行）。"""
     if makedirs:

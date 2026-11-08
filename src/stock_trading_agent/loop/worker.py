@@ -19,6 +19,12 @@ from dataclasses import asdict
 from stock_trading_agent.budget.gate import BudgetConfig
 from stock_trading_agent.cc_client.contract import CCClient
 from stock_trading_agent.cc_client.dryrun import DryRunCCClient
+from stock_trading_agent.loop.advice import (
+    MONITOR_REVIEW_KIND,
+    count_t2_done,
+    t2_admission,
+    universe_real_codes,
+)
 from stock_trading_agent.loop.events import (
     EventEnvelope,
     gate_report_event,
@@ -256,6 +262,34 @@ class LoopRuntime:
                 return None
             self.loop.mark_running(picked, queue)  # WAL 不变式：执行前 running 落盘
             request = None
+            if picked.kind == MONITOR_REVIEW_KIND:
+                # T2 准入闸（消费期判定：每日 ≤5 票 + 实盘优先；超额拒=failed 终态防自旋）
+                reason = t2_admission(
+                    picked,
+                    done_count=count_t2_done(queue, today=market_today()),
+                    real_codes=universe_real_codes(self.layout),
+                )
+                if reason is not None:
+                    queue.transition(picked.task_id, "failed")
+                    picked.finished_at = _now_iso()
+                    picked.error = reason
+                    self._decide(
+                        "advice_refused",
+                        {
+                            "task_id": picked.task_id,
+                            "kind": picked.kind,
+                            "code": picked.code,
+                            "origin": "gate",
+                            "reason_code": (
+                                "t2_daily_quota"
+                                if "5 票" in reason
+                                else "real_priority_universe_unreadable"
+                            ),
+                            "reasons": [reason],
+                        },
+                    )
+                    atomic_write_json(self.layout.queue_path, queue.to_dict())
+                    return picked
             if self.table.zero_llm.get(picked.kind) != T1_HANDLER:
                 try:
                     request = self.loop.build_request(picked)

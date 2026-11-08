@@ -121,6 +121,11 @@ class StateLayout:
         return self.outlook_dir / f"{date}.md"
 
     @property
+    def universe_path(self) -> Path:
+        """monitor/universe.json（盯盘宇宙，只读消费：T2 实盘优先判据的数据源）。"""
+        return self.monitor_dir / "universe.json"
+
+    @property
     def reports_dir(self) -> Path:
         """vibe-stock 全诊报告目录（<code>.<market>/<date>.md，只读）。"""
         return self.root / "reports"

@@ -32,13 +32,24 @@ def _cmd_run_once(args: argparse.Namespace) -> int:
     退出码：0=done · 1=failed/被拒 · 2=队空或全部 defer · 3=daemon 锁被持有。
     """
     import json
+    import os
     from dataclasses import asdict
 
+    from stock_trading_agent.cc_client.cli import HeadlessCLIClient
+    from stock_trading_agent.cc_client.dryrun import DryRunCCClient
     from stock_trading_agent.loop.loop import LoopReject
     from stock_trading_agent.loop.worker import LoopRuntime
     from stock_trading_agent.state.paths import StateLayout
 
-    runtime = LoopRuntime(layout=StateLayout.from_env())
+    # 通道选择同 probe：STA_ALLOW_REAL_CC=1 → 真实 headless 通道（默认 dry-run 安全）
+    layout = StateLayout.from_env()
+    real = os.environ.get("STA_ALLOW_REAL_CC") == "1"
+    cc = (
+        HeadlessCLIClient(audit_dir=layout.audit_dir)
+        if real
+        else DryRunCCClient(audit_dir=layout.audit_dir)
+    )
+    runtime = LoopRuntime(layout=layout, cc=cc)
     if not runtime.acquire_daemon(timeout_s=1.0):
         print("daemon.lock 被持有（另一消费者在跑：serve 或另一 run-once），exit 3")
         return 3
@@ -412,6 +423,56 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         assert data["RunAtLoad"] is True and "serve" in data["ProgramArguments"]
 
     check_case("ops.launchd.plist", launchd_plist_pinned)
+
+    def advice_constants_and_scan():
+        from stock_trading_agent.loop.advice import (
+            ADVICE_ACTIONS,
+            render_advice_card,
+            scan_advice_text,
+        )
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        assert ADVICE_ACTIONS == ("可加仓", "持有", "持有·等回踩", "持有观察", "减仓", "离场")
+        payload = {
+            "outcome": "card",
+            "candidate_action": "持有观察",
+            "final_signal": "hold",
+            "prev_diff": {"prev_final_signal": "none", "note": "n"},
+            "t1_sell_pct": 85.0,
+            "t1_sell_tier": "大部分",
+            "verdict_date": market_today(),
+            "opinion_data_date": market_today(),
+            "replayed_opinions": 2,
+            "trend_ref": {
+                "band_rows": [
+                    {"horizon": "1d", "low": 9.5, "high": 10.5, "prob_touch_low_pct": 31.0}
+                ]
+            },
+            "rationale": "r",
+        }
+        md = render_advice_card(payload, code="600519", date=market_today(), task_id="t")
+        assert scan_advice_text(md) == []
+        bad = render_advice_card(
+            {**payload, "rationale": "卖 1200 股"}, code="600519", date="d", task_id="t"
+        )
+        assert scan_advice_text(bad)  # 份额原值负断言命中
+
+    check_case("loop.advice.card_scan", advice_constants_and_scan)
+
+    def advice_anchor_and_gate():
+        from stock_trading_agent.loop.advice import t2_admission
+        from stock_trading_agent.loop.assertor import _SIGNAL_RANK, AdviceContext
+        from stock_trading_agent.state.queue import TaskRecord
+
+        assert _SIGNAL_RANK["strong_buy"] < _SIGNAL_RANK["hold"] < _SIGNAL_RANK["strong_sell"]
+        task = TaskRecord(task_id="t", dedup_key="k", kind="monitor_review", code="600519")
+        assert t2_admission(task, done_count=4, real_codes=None) is None
+        assert t2_admission(task, done_count=5, real_codes={"600519"}) is None
+        assert t2_admission(task, done_count=5, real_codes={"601919"}) is not None
+        ctx = AdviceContext(today="2026-11-08", last_signal="hold", signals_read_ok=True)
+        assert ctx.last_signal == "hold"
+
+    check_case("loop.advice.anchor_gate", advice_anchor_and_gate)
 
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
