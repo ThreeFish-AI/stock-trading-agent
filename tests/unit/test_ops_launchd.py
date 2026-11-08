@@ -61,6 +61,31 @@ class TestPlistPinned:
             assert token in raw
 
 
+class TestD8ProbePlist:
+    PLIST_D8 = PLIST.parent / "com.threefish.stocktrading.d8-probe.plist"
+
+    @pytest.fixture(scope="class")
+    def parsed_d8(self) -> dict:
+        import plistlib
+
+        with self.PLIST_D8.open("rb") as fh:
+            return plistlib.load(fh)
+
+    def test_entry_and_slots(self, parsed_d8: dict):
+        argv = parsed_d8["ProgramArguments"]
+        assert argv[0] == "/usr/bin/python3"  # stdlib-only：无 uv/venv 依赖（launchd 无 PATH）
+        assert argv[1] == "__REPO_PATH__/ops/d8_probe.py"
+        slots = parsed_d8["StartCalendarInterval"]
+        assert len(slots) == 10  # 周一至五 ×（09:36 + 13:06）两对照时点
+        for slot in slots:
+            assert slot["Minute"] in (36, 6)
+        assert parsed_d8["Label"] == "com.threefish.stocktrading.d8-probe"
+        assert "KeepAlive" not in parsed_d8  # 日历槽触发即退，无守护语义
+
+    def test_logs_path(self, parsed_d8: dict):
+        assert parsed_d8["StandardOutPath"].endswith(".vibe-stock/agent/logs/d8-probe.log")
+
+
 class TestRoutingNail:
     def test_monitor_review_has_nr1_tools(self):
         # NR-1 机器钉：T2 会话须能跑 adjudicate（Bash）与 risk 覆写（Write）——0.0.4 修错防回退

@@ -14,7 +14,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import ValidationError
 
 from stock_trading_agent import __version__
@@ -33,6 +33,7 @@ from stock_trading_agent.server.schemas import REJECT_STATUS, SubmitRequest
 from stock_trading_agent.state.paths import StateLayout
 
 router = APIRouter(prefix="/api")
+root_router = APIRouter()  # 无前缀（favicon 等根级路由）
 
 _REPORTS_DIR_RE = re.compile(r"^\d{5,6}\.(cn|hk)$")
 
@@ -49,6 +50,13 @@ def _runtime(request: Request):
 
 
 # --- 只读态（§11 面板读半边） ---
+
+
+@root_router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    from stock_trading_agent.server.app import _STATIC_DIR
+
+    return FileResponse(_STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
 
 
 @router.get("/health")

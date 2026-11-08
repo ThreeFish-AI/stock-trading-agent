@@ -50,7 +50,7 @@ sed -e "s|__UV_PATH__|$(command -v uv)|g" -e "s|__REPO_PATH__|$(pwd)|g" -e "s|__
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktrading.agent.plist
 ```
 
-与 vibe-stock 三槽并存收编不替代；逐键取值与运维见 [docs/ops/launchd.md](docs/ops/launchd.md)。
+与 vibe-stock 三槽并存收编不替代；逐键取值与运维见 [docs/ops/launchd.md](docs/ops/launchd.md)。交易日验证（D8 定谳、T2 出卡真跑）见 [docs/ops/trading-day-verify.md](docs/ops/trading-day-verify.md)。
 
 ## 仓库结构
 

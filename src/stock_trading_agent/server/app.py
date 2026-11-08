@@ -62,6 +62,7 @@ def create_app(
         budget=BudgetConfig(),
     )
     app.include_router(routes.router)
+    app.include_router(routes.root_router)
     app.include_router(sse_router)
     # SSE 装配（只读桥，不依赖 daemon 锁）：hub 绑事件循环 + DirWatcher 盯台账目录
     hub = StreamHub()
