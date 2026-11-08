@@ -119,3 +119,13 @@
 - **五段状态机**：evidence 落地→①②done；opinions **非空数组**→③（铺底 `[]` 是骨架态不算完成——LLM 覆写后才推进）；verdict→④；reports/<code>.<market>/<date>.md→⑤；首个未完成=current。
 - **观测反查键**：worker `build_request` 后把 `request.session_uuid` 回写 TaskRecord 并落盘（queue.json 终态保留）——`GET /api/session/{task_id}|/api/panel/session/{task_id}` 反查 `.vs/` 产物；②页「会话观测」区由任务卡同源 5s 轮询双写驱动（running 态进度条随 workdir 文件逐步落地自然点亮，非严格流式）。
 - **渲染件**：五段进度条（done/cur/pend）+ 双轨意见板（default 逐卡 source/signal/confidence/weight、position 折叠计数）+ 裁决卡（initial→RiskGuard log→final、置信、分歧三桶计数、R3/R5 尾注）——组件自原型 diagnosis.html 语义对齐；dry-run 通道无 workdir 时如实空态（「待真实会话产物」）。
+
+## ⑭ 状态层健壮性与读侧修复裁定（0.0.15 落地，[存储选型决策记录](../research/storage-db-decision.md) §3/§6 执行轮）
+
+- **决策落盘唯一入口（W1，I-003 根治）**：`DecisionLog` 绑定 `path` 后 `append` 自动原子追加（内存链与盘上链同一行）；`AgentLoop`/`LoopRuntime` 缺省绑定 `layout.decisions_path`，`_persisted_lines` 增量游标整体删除，`worker._decide` 与 `routes` 三处旁路（l2_toggle/briefing_ack/paper 确认）全部收编——重灌 bug 类结构性消灭（回归钉：跨 daemon 双代重启后盘上无重复 seq 且 `verify_chain()` 通过）。
+- **载入 fail-loud（W3）**：`DecisionLog.load(strict=True)` 校验失败抛 `ChainBroken`（与 SchemaVersionMismatch 同纪律：显式报错不静默），`acquire_daemon` 捕获后拒载入→serve 降级只读（`/api/monitor/status.loop.active=false` 可见）；`strict=False` 仅修复工具用。
+- **修复与归档子命令（W2/G1）**：`repair-decisions [--apply]`（按 seq 保首行去重+重排重算全链+`chain_repaired` 留痕；daemon.lock 守卫，被持有 exit 3）；`archive-state [--apply]`（六桶归档非删除：queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分重建热链+`state_archived` 留痕；档案落 `agent/archive/<桶>-YYYYMM.jsonl`）。decisions 月度切分跨仓契约已核实安全（外仓 [agent_postmortem.py](https://github.com/ThreeFish-AI/vibe-stock/blob/main/scripts/agent_postmortem.py) 硬编码单文件+键控 last-wins+T+5 回看 ≪ 当月窗口）。
+- **写序收敛与孤儿自愈（W5）**：任务终态落账序固定为 budget→decisions→sessions→**queue 最后**（状态机权威崩残由 `recover_orphans` 兜底）；paper 确认流 `confirmed` 残留（崩溃窗口脏态）启动期 `purge_confirmed_orphans` 清出+`paper_orphan_purged` 逐笔留痕（Operation 无 request_id 锚不重放落账，人工补账）。
+- **写纪律补洞（W6/W7）**：`watcher.json` 偏移零变化不重写（消 ~4.3 万次/日无效 fsync+rename）；audit 转录归档收编 `store.atomic_append_lines`（flock+单次 fsync，原 cli.py/dryrun.py 裸 `open("a")` 写点清零）。
+- **读侧（R1'-R5'）**：面板 21 处 fragment `hx-trigger` 前缀 `load,`（htmx every=setTimeout 首延 180s 空转一行修掉）；SSE 建连即推 `multi` 初始快照（断线重连同覆盖，事件全集 11 名）；`store` 增 mtime+size 短路缓存（`read_json_cached`/`read_jsonl_lines_cached`/`read_text_cached`——SSE 扇出 decisions×6/queue×4 重复读消除；坑位：缓存对象共享只读，写者 os.replace 必变 mtime 即失效）；DirWatcher roots 收敛单根（原 4 根互相包含）+skip 谓词出 `monitor/ticks` 子树（O(总文件数) 与外仓最大增长源解耦）；`/api/signals` 单请求 signals 单读注入 `load_name_map`。
+- **巡检（G2）**：`ops/state_probe.py` stdlib 只读巡检（三源分列体量/台账行数+T1/T3 判据状态；阈值与决策记录 §4 同源，判据只收严）。触发后形态（queryindex 只读索引投影）维持蓝图不入库，判据 T1-T5 门禁不变。

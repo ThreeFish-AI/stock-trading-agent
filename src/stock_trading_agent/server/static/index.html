@@ -373,76 +373,76 @@ tr.open td{background:var(--warnbg)}
 <button class="tab" data-page="stats" onclick="location.hash='#/stats'">⑥ 后验战绩</button>
 <button class="tab" data-page="audit" onclick="location.hash='#/audit'">⑦ 审计与预算</button>
   </nav>
-  <div class="top-r" id="topbar-r" hx-get="/api/panel/phase" hx-trigger="every 180s, sse:status" hx-swap="innerHTML"></div>
+  <div class="top-r" id="topbar-r" hx-get="/api/panel/phase" hx-trigger="load, every 180s, sse:status" hx-swap="innerHTML"></div>
 </header>
 <main>
 <section class="page" id="page-overview" data-page="overview">
 <div class="hero"><div><h1>今日总览</h1><div class="sub" id="ov-sub">加载中……</div></div>
-<div class="hero-r" id="ov-hero-r" hx-get="/api/panel/topbar" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
+<div class="hero-r" id="ov-hero-r" hx-get="/api/panel/topbar" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="grid3">
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">今日事件流</span><span class="cm" id="ov-ev-count"></span></div>
-      <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="none"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="none"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">今日待办</span><span class="cm" id="ov-todo-count"></span></div>
-      <div class="card-b" id="ov-todos" hx-get="/api/panel/todos" hx-trigger="every 180s, sse:decisions, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-todos" hx-get="/api/panel/todos" hx-trigger="load, every 180s, sse:decisions, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm">adjudicate 产出 · 盘中以收盘复核为准 R9</span></div>
-      <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm">披露/解禁/公告 · evidence 聚合</span></div>
-      <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">晨报 / 复盘行动项</span><span class="cm">briefing 投影</span></div>
-      <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="load, every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">模拟盘净值</span><span class="cm">含费用与滑点</span></div>
-      <div class="card-b" id="ov-nav" hx-get="/api/panel/navcard" hx-trigger="every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-nav" hx-get="/api/panel/navcard" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">系统状态</span><span class="cm">launchd 三槽 · 并存收编不替代</span></div>
-      <div class="card-b" id="ov-sys" hx-get="/api/panel/syscard" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-sys" hx-get="/api/panel/syscard" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
 </div></section>
 <section class="page" id="page-diagnosis" data-page="diagnosis">
 <div class="hero"><div><h1>诊股工作台</h1><div class="sub">五段流水线经本机 CC 大脑 · LLM 只产意见 · 聚合一律确定性裁决（NR-1/NR-3）</div></div>
-<div class="hero-r" id="dg-hero-r" hx-get="/api/panel/dgmeta" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
+<div class="hero-r" id="dg-hero-r" hx-get="/api/panel/dgmeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="grid" style="grid-template-columns:1fr 1fr;gap:13px">
   <div class="card"><div class="card-h"><span class="ct">发起诊股</span><span class="cm">六 kind 白名单</span></div>
     <div class="card-b" id="dg-form" hx-get="/api/panel/dgform" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   <div class="card"><div class="card-h"><span class="ct">会话任务</span><span class="cm" id="dg-task-meta"></span></div>
-    <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="every 5s, sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+    <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="load, every 5s, sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">会话观测</span><span class="cm">五段进度 · 双轨意见板 · 裁决卡</span></div>
       <div class="card-b" id="dg-session"><div class="loadmsg">提交任务后于此观测五段推进（真实 CC 会话）。</div></div></div>
 </div>
 <div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="cm">vibe-stock reports 目录 · 04 规约结构</span></div>
-  <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="load, every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div id="dg-report-body"></div></section>
 <section class="page" id="page-monitor" data-page="monitor">
 <div class="hero"><div><h1>盯盘事件与 T2 复核</h1><div class="sub">watch.py 机械判据族 · 零 LLM 轮询 · 监控永不写 signals.json（R8）</div></div>
-<div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
+<div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm">T0 机械事实 · 短语措辞限定「复核」（R7）</span></div>
-  <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm">osascript 通道 · 只读</span></div>
-  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div id="advice-detail"></div></section>
 <section class="page" id="page-paper" data-page="paper">
 <div class="hero"><div><h1>模拟盘</h1><div class="sub">paper 引擎 · 严格穿价撮合 + 静态费用栈 + 逐笔人工确认 · 撮合零 LLM</div></div>
 <div class="hero-r"><span class="metachip">台账 append-only · hash 链</span></div></div>
 <div class="nr2"><b>NR-2</b> 模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
-<div id="paper" hx-get="/api/panel/paper" hx-trigger="every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="paper" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-advice" data-page="advice">
 <div class="hero"><div><h1>建议卡库</h1><div class="sub">monitor-advice/1 · 卡面落盘脱敏（百分比与档位词）· 面板呈现态给原值（NR-5/R2 豁免面）</div></div>
 <div class="hero-r"><span class="metachip">候选动作 · 04 五档分类学措辞</span></div></div>
-<div id="advice" hx-get="/api/panel/advice" hx-trigger="every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div id="advice" hx-get="/api/panel/advice" hx-trigger="load, every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div id="advice-detail-2"></div></section>
 <section class="page" id="page-stats" data-page="stats">
 <div class="hero"><div><h1>后验战绩</h1><div class="sub">全样本登记含亏损 · 不挑样对比 · 样本 &lt;30 只观察不记分（MIN_SAMPLES=30）</div></div>
 <div class="hero-r"><span class="metachip">agent: 前缀独立画像</span></div></div>
-<div id="stats" hx-get="/api/panel/stats" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="stats" hx-get="/api/panel/stats" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-audit" data-page="audit">
 <div class="hero"><div><h1>审计与预算</h1><div class="sub">decisions hash 链防篡改 · 预算双口径记账（token + 等效美元，F-34）· L2 总闸</div></div>
-<div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
-<div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
+<div id="audit" hx-get="/api/panel/audit" hx-trigger="load, every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div style="height:13px"></div>
-<div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="outerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="outerHTML"><div class="loadmsg">加载中……</div></div></section>
 </main>
 <footer class="foot">Stock Trading Agent · 本地面板（127.0.0.1 · SSE 实时流 + 180s 轮询兜底）· API：<code>/api/health|queue|sessions|decisions|paper|budget|monitor/events|monitor/status|reports|advice|signals|todos|stats|l2|stream</code><br>
 本产品输出仅供学习与研究参考，<b>不构成投资建议</b>；不下单、不改单、不撤单、不保证收益；模拟绩效均为假设性推演（含费用与滑点）；全部产物由 AI 生成、用户复核前置。</footer>

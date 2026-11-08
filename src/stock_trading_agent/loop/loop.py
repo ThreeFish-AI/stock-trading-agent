@@ -91,8 +91,10 @@ class AgentLoop:
         self.cc = cc
         self.layout = layout
         self.table = table
-        self.decisions = decisions or DecisionLog()
-        self._persisted_lines = 0  # _persist_all 增量落行游标（advice 链单次 persist 多条决策）
+        # W1 唯一入口：缺省绑定落盘路径（显式注入的裸 log 仅内存态，纯函数测试用）
+        self.decisions = (
+            decisions if decisions is not None else DecisionLog(path=layout.decisions_path)
+        )
         self.budget = budget or BudgetConfig()  # 默认关（人在环期仅记账，§13）
 
     # ① ingest：事件信封入队（幂等键 + 禁跑窗 + 锁前置）
@@ -412,17 +414,12 @@ class AgentLoop:
         atomic_write_json(self.layout.budget_path, updated)
 
     def _persist_all(self, queue: QueueState, sessions: SessionsState) -> None:
-        atomic_write_json(self.layout.queue_path, queue.to_dict())
+        """从属账先落、queue 终态最后落（W5 写序：崩溃残留 running 由启动期 recover_orphans 自愈）。
+
+        决策行不再在此落盘——W1 唯一入口化后 decisions.append 经绑定 path 即时原子追加。
+        """
         atomic_write_json(self.layout.sessions_path, sessions.to_dict())
-        if self.layout.decisions_path.parent.exists():
-            from dataclasses import asdict
-
-            from stock_trading_agent.state.store import atomic_append_jsonl
-
-            fresh = self.decisions.lines[self._persisted_lines :]
-            for line in fresh:
-                atomic_append_jsonl(self.layout.decisions_path, asdict(line))
-            self._persisted_lines = len(self.decisions.lines)
+        atomic_write_json(self.layout.queue_path, queue.to_dict())
 
     def load_queue(self) -> QueueState:
         return QueueState.from_dict(read_json(self.layout.queue_path, expect_version=1))

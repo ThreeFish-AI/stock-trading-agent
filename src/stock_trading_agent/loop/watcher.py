@@ -31,6 +31,7 @@ class EventsWatcher:
         self._on_events = on_events
         self._offsets: dict[str, int] = {}
         self._date = ""
+        self._last_saved: dict | None = None  # W6：偏移零变化跳过重写（消 ~4.3 万次/日无效 fsync）
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._load_state()
@@ -41,12 +42,14 @@ class EventsWatcher:
         if data and data.get("date") == market_today():
             self._date = str(data["date"])
             self._offsets = {str(k): int(v) for k, v in (data.get("offsets") or {}).items()}
+            self._last_saved = data  # 盘上即此态：下次相同不重写
 
     def _save_state(self) -> None:
-        atomic_write_json(
-            self.layout.watcher_state_path,
-            {"version": 1, "date": self._date, "offsets": self._offsets},
-        )
+        payload = {"version": 1, "date": self._date, "offsets": self._offsets}
+        if payload == self._last_saved:
+            return  # W6：偏移与日历零变化——不重写（SSE 桥靠 mtime diff，跳过不产生漏事件）
+        atomic_write_json(self.layout.watcher_state_path, payload)
+        self._last_saved = payload
 
     # --- 增量消费（同步可测） ---
     def poll_once(self) -> list[MonitorEvent]:

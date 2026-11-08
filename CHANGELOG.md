@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.15] - 2026-11-08
+
+### Added
+
+- **状态层健壮性与读侧修复（I-003 收口轮；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑭；执行 [存储选型决策记录](docs/research/storage-db-decision.md) §3/§6 全量修法）**。**写侧 W 族**：①**决策落盘唯一入口（W1 根治）**——`DecisionLog` 绑定 path 后 append 自动原子追加，`_persisted_lines` 增量游标整体删除，`worker._decide` 与 routes 三处旁路（l2/briefing_ack/paper）全部收编，重灌 bug 类结构性消灭；②**载入 fail-loud（W3）**——`load(strict=True)` 破链抛 `ChainBroken` 拒启（serve 降级只读），修复工具走 `strict=False`；③**`repair-decisions [--apply]` 子命令（W2）**——按 seq 保首行去重+重排重算全链+`chain_repaired` 留痕，daemon.lock 守卫；④**`archive-state [--apply]` 六桶归档（G1）**——queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分（热链重建+`state_archived` 留痕），档案 `agent/archive/`（归档非删除）；⑤**写序收敛（W5）**——任务终态 queue 最后落；paper `confirmed` 残留启动期清出+`paper_orphan_purged` 留痕；⑥watcher.json 偏移零变化不重写（W6，消 ~4.3 万次/日无效 fsync）；⑦audit 裸写点收编 `store.atomic_append_lines`（W7，flock+单次 fsync）。**读侧 R 族**：21 处 fragment `hx-trigger` 加 `load,` 前缀（修 htmx every=setTimeout 首延 180s 首屏空转）；SSE 建连即推 `multi` 初始快照（断线重连同覆盖）；`store` mtime+size 短路缓存三件（json/jsonl/text——SSE 扇出重复读消除）；DirWatcher roots 收敛单根+skip 谓词出 monitor/ticks（O(总文件数) 解耦外仓增长）；`/api/signals` 单请求 signals 单读。**巡检 G2**：`ops/state_probe.py` stdlib 只读巡检（三源分列+T1/T3 判据状态）。生产升级手册见 [issue.md I-003](docs/.agents/issue.md)；盘上链已被先行修复（59 行全唯一），0.0.15 部署后根因不再复发。测试 +6 例（406 passed 全绿）：跨 daemon 双代重启无重复 seq 回归（W4 主钉）、破链拒启、repair CLI dry-run/apply、confirmed 孤儿清出、六桶归档端到端、dry-run 零落盘；selftest +8 case（40/40）。
+
 ## [0.0.14] - 2026-11-08
 
 ### Added

@@ -85,11 +85,12 @@ class DryRunCCClient:
         lines = self._pending.pop(req.task_id, None)
         if lines is None:
             return
+        from stock_trading_agent.state.store import atomic_append_lines
+
         path = self._archive_path(req)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            for line in lines:
-                fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+        atomic_append_lines(  # W7：收编 store 单一入口（flock+fsync，原裸写点）
+            path, [json.dumps(line, ensure_ascii=False) for line in lines]
+        )
 
     def _result(self, req: CCRequest, session_id: str) -> CCResult:
         structured = _minimal_structured_output(kind=req.task_id.split(":", 1)[0])

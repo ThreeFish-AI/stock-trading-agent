@@ -297,11 +297,10 @@ class HeadlessCLIClient:
         lines = self._pending.pop(req.task_id, None)
         if lines is None:
             return
+        from stock_trading_agent.state.store import atomic_append_lines
+
         path = self._audit_path(req, req.session_uuid)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as fh:
-            for line in lines:
-                fh.write(line + "\n")
+        atomic_append_lines(path, lines)  # W7：收编 store 单一入口（flock+fsync，原裸写点）
 
     # --- 探针 ---
     def probe(self, *, deep: bool = False) -> ProbeReport:
