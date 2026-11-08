@@ -99,7 +99,8 @@ def _cmd_probe(_args: argparse.Namespace) -> int:
 def _cmd_repair_decisions(args: argparse.Namespace) -> int:
     """修复 decisions.jsonl 破链（W2，I-003）：按 seq 保首行去重 + 重排重算全链 + 留痕。
 
-    退出码：0=完成或 dry-run · 3=daemon 在跑（单写者守卫，先停 serve/run-once）。
+    退出码：0=完成或 dry-run · 3=daemon 在跑（单写者守卫，先停 serve/run-once）
+    · 4=存在无法解析的行（修复工具拒碰，先人工处理坏行）。
     """
     import datetime as dt
     import json
@@ -115,11 +116,25 @@ def _cmd_repair_decisions(args: argparse.Namespace) -> int:
         return 0
     try:
         with FileLock(layout.daemon_lock, timeout_s=1.0):
-            lines = [
-                DecisionLine(**json.loads(raw))
-                for raw in layout.decisions_path.read_text(encoding="utf-8").splitlines()
-                if raw
-            ]
+            lines: list[DecisionLine] = []
+            bad_rows: list[int] = []
+            for row_no, raw in enumerate(
+                layout.decisions_path.read_text(encoding="utf-8").splitlines(), start=1
+            ):
+                if not raw:
+                    continue
+                try:
+                    lines.append(DecisionLine(**json.loads(raw)))
+                except (ValueError, TypeError):
+                    bad_rows.append(row_no)
+            if bad_rows:
+                shown = ", ".join(str(n) for n in bad_rows[:10])
+                suffix = "…" if len(bad_rows) > 10 else ""
+                print(
+                    f"decisions.jsonl 存在无法解析的行（行号 {shown}{suffix}，"
+                    f"共 {len(bad_rows)} 行）——修复工具拒碰，先人工剔除/修复坏行，exit 4"
+                )
+                return 4
             broken_before = not DecisionLog(lines).verify_chain()
             rebuilt, dropped = plan_repair(lines)
             print(
@@ -917,9 +932,13 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         rows = [
             '{"seq":1,"ts":"2026-10-31T23:00:00+00:00","kind":"task_done","payload":{}}',
             '{"seq":2,"ts":"2026-11-01T23:00:00+00:00","kind":"task_done","payload":{}}',
+            '{"seq":3,"ts":"2026-09-30T23:00:00+00:00","kind":"task_done","payload":{}}',
+            '{"broken',
         ]
         keep_r, arch_r = split_decisions_rows(rows, today="2026-11-08")
-        assert keep_r == [rows[1]] and arch_r == [rows[0]]  # 月度切分（跨仓契约安全已核实）
+        # 10-31 距今 8 天：月前缀 < 当月但在尾随保底窗内 → 恒留（外仓 T+5 回看窗覆盖）；
+        # 09-30 超窗归档；不可解析行随归档迁出（防 _rebuild 中途崩溃）。
+        assert keep_r == [rows[0], rows[1]] and arch_r == [rows[2], rows[3]]
 
     check_case("state.prune.plans", prune_plans)
 
@@ -949,19 +968,52 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
     check_case("loop.dirwatch.skip", dirwatch_skip_predicate)
 
     def watcher_conditional_save():
+        import json as _json
         import tempfile
         from pathlib import Path
 
+        from stock_trading_agent.loop.monitor_events import market_today
         from stock_trading_agent.loop.watcher import EventsWatcher
         from stock_trading_agent.state.paths import StateLayout
 
         layout = StateLayout(root=Path(tempfile.mkdtemp()))
+        ev_file = layout.monitor_events_file(market_today())
+        ev_file.parent.mkdir(parents=True, exist_ok=True)
+        ev_file.write_text("", encoding="utf-8")
         w = EventsWatcher(layout=layout, on_events=lambda _: None)
-        w.poll_once()
+        w.poll_once()  # 建基线（首写）
         state = layout.watcher_state_path
         first_mtime = state.stat().st_mtime_ns
         w.poll_once()  # 偏移零变化（W6：不重写）
         assert state.stat().st_mtime_ns == first_mtime
+
+        def _ev_line(ts: str) -> str:
+            return _json.dumps(
+                {
+                    "ts": ts,
+                    "code": "600519",
+                    "market": "cn",
+                    "kind": "real",
+                    "rule": "stop_break",
+                    "level": "T0",
+                    "notify": True,
+                    "review": "止损复核",
+                },
+                ensure_ascii=False,
+            )
+
+        with ev_file.open("a", encoding="utf-8") as fh:  # 偏移推进 → 必须重写（别名回归钉）
+            fh.write(_ev_line("09:31:00") + "\n")
+        assert len(w.poll_once()) == 1
+        assert state.stat().st_mtime_ns != first_mtime
+        saved = _json.loads(state.read_text(encoding="utf-8"))
+        assert saved["offsets"] == {ev_file.name: len(_ev_line("09:31:00").encode("utf-8")) + 1}
+        # 偏移快照须与内存解耦：再推进后不落盘的比较不得因别名恒等而漏写
+        with ev_file.open("a", encoding="utf-8") as fh:
+            fh.write(_ev_line("09:32:00") + "\n")
+        assert len(w.poll_once()) == 1
+        saved2 = _json.loads(state.read_text(encoding="utf-8"))
+        assert saved2["offsets"][ev_file.name] > saved["offsets"][ev_file.name]
 
     check_case("loop.watcher.conditional_save", watcher_conditional_save)
 

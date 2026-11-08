@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -101,6 +102,9 @@ class DecisionLog:
     ) -> None:
         self.lines: list[DecisionLine] = list(lines or [])
         self.path = path  # 绑定落盘路径（None=纯内存，测试/纯函数用）
+        # 进程内 append 串行：worker/watcher 线程与 FastAPI 线程池 handler 共享同一实例，
+        # seq=len+1 与 append 非原子，交错即产重复 seq（W3 下次启动即 ChainBroken）。
+        self._append_lock = threading.Lock()
 
     @classmethod
     def load(cls, path: Path, *, strict: bool = True) -> DecisionLog:
@@ -130,16 +134,24 @@ class DecisionLog:
     def append(
         self, ts: str, kind: str, payload: dict, *, path: Path | None = None
     ) -> DecisionLine:
-        """追加一条决策（内存链 + 落盘原子追加；落盘路径 = 显式 path 参数 ?? 实例绑定 path）。"""
-        line = DecisionLine.make(
-            seq=len(self.lines) + 1, ts=ts, kind=kind, payload=payload, prev_hash=self.head_hash
-        )
-        self.lines.append(line)
-        target = path if path is not None else self.path
-        if target is not None:
-            from stock_trading_agent.state.store import atomic_append_jsonl
+        """追加一条决策（内存链 + 落盘原子追加；落盘路径 = 显式 path 参数 ?? 实例绑定 path）。
 
-            atomic_append_jsonl(target, asdict(line))
+        整体持 _append_lock：seq 计算、内存追加与落盘为一个临界区（跨线程无重复 seq）。
+        """
+        with self._append_lock:
+            line = DecisionLine.make(
+                seq=len(self.lines) + 1,
+                ts=ts,
+                kind=kind,
+                payload=payload,
+                prev_hash=self.head_hash,
+            )
+            self.lines.append(line)
+            target = path if path is not None else self.path
+            if target is not None:
+                from stock_trading_agent.state.store import atomic_append_jsonl
+
+                atomic_append_jsonl(target, asdict(line))
         return line
 
     def verify_chain(self) -> bool:

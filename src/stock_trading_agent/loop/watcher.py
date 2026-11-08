@@ -45,7 +45,9 @@ class EventsWatcher:
             self._last_saved = data  # 盘上即此态：下次相同不重写
 
     def _save_state(self) -> None:
-        payload = {"version": 1, "date": self._date, "offsets": self._offsets}
+        # 坑位：offsets 须浅拷贝快照——直嵌 self._offsets 引用会与 _last_saved 别名同一 dict，
+        # read_new_lines 原地推进后值比较恒等，偏移自此永不落盘（重启即重放当日事件）。
+        payload = {"version": 1, "date": self._date, "offsets": dict(self._offsets)}
         if payload == self._last_saved:
             return  # W6：偏移与日历零变化——不重写（SSE 桥靠 mtime diff，跳过不产生漏事件）
         atomic_write_json(self.layout.watcher_state_path, payload)

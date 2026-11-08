@@ -155,19 +155,26 @@ class LoopRuntime:
         )
 
     def acquire_daemon(self, *, timeout_s: float = 3.0) -> bool:
-        """获取 daemon.lock（失败返回 False——serve 降级只读，run-once 由 CLI 转 exit 3）。"""
+        """获取 daemon.lock（失败返回 False——serve 降级只读，run-once 由 CLI 转 exit 3）。
+
+        坑位：失败路径必须把 decisions 重绑为纯内存链——构造缺省绑定 decisions_path 的空链，
+        降级期任一 append（§⑤ 提交入队 / paper 确认 / l2_probe）都会向已有多行文件写
+        seq=1/GENESIS 毒行，repair 后再毒化、下次启动再次 ChainBroken。
+        """
         if self._daemon_stack is not None:
             return True
         try:
             stack = contextlib.ExitStack()
             stack.enter_context(FileLock(self.layout.daemon_lock, timeout_s=timeout_s))
         except LockTimeout:
+            self.loop.decisions = DecisionLog()  # 降级防毒：内存链，append 不落盘
             return False
         # 决策链载入即校验（W3 fail-loud）：破链拒载入——serve 降级只读，修复走 repair-decisions
         try:
             self.loop.decisions = DecisionLog.load(self.layout.decisions_path)
         except ChainBroken as exc:
             print(f"[sta] 决策链拒载入（降级只读）：{exc}")
+            self.loop.decisions = DecisionLog()  # 降级防毒：内存链，append 不落盘
             return False
         self._daemon_stack = stack
         return True

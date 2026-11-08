@@ -56,7 +56,7 @@ class TestCursorRegression:
         assert len(seqs) >= 5  # submit×2 + task_done×2 + l2_toggled 至少 5 行
 
     def test_broken_chain_refuses_daemon(self, tmp_path: Path):
-        """W3：破链文件拒载入（serve 降级只读语义）。"""
+        """W3：破链文件拒载入（serve 降级只读语义）+ 降级防毒重绑（append 不落盘）。"""
         layout = StateLayout(root=tmp_path / "state")
         log = DecisionLog()
         log.append("2026-11-08T00:00:00Z", "task_done", {"t": 1})
@@ -66,6 +66,11 @@ class TestCursorRegression:
         runtime = _runtime(layout)
         assert runtime.acquire_daemon() is False
         assert runtime.is_active is False
+        # 降级防毒：decisions 重绑纯内存链，append 不向已有多行文件写 seq=1 毒行
+        assert runtime.loop.decisions.path is None
+        before = layout.decisions_path.read_text(encoding="utf-8")
+        runtime.loop.decisions.append("2026-11-08T01:00:00Z", "l2_probe", {"ok": True})
+        assert layout.decisions_path.read_text(encoding="utf-8") == before
 
 
 class TestRepairCli:
@@ -90,6 +95,22 @@ class TestRepairCli:
         kinds = [line.kind for line in chain.lines]
         assert kinds == ["task_done", "task_done", "chain_repaired"]  # 留痕行在场
         assert chain.lines[-1].payload["dropped_duplicates"] == 2
+
+    def test_repair_refuses_unparseable_line(self, tmp_path: Path, monkeypatch):
+        """坏行守护：无法解析的行 → 报行号 exit 4，不写任何东西。"""
+        from stock_trading_agent.__main__ import main
+
+        monkeypatch.setenv("STA_STATE_ROOT", str(tmp_path / "state"))
+        layout = StateLayout.from_env()
+        log = DecisionLog()
+        log.append("2026-11-07T00:00:00Z", "task_done", {"t": 1})
+        _write_decisions(layout.decisions_path, log)
+        raw = layout.decisions_path.read_text(encoding="utf-8")
+        broken = raw + '{"truncated' + "\n"
+        layout.decisions_path.write_text(broken, encoding="utf-8")
+
+        assert main(["repair-decisions", "--apply"]) == 4
+        assert layout.decisions_path.read_text(encoding="utf-8") == broken  # 拒碰原文件
 
 
 class TestPaperOrphanPurge:
@@ -162,7 +183,7 @@ class TestArchiveState:
             },
         )
         log = DecisionLog()
-        log.append("2026-10-31T23:00:00+00:00", "task_done", {"m": "old"})
+        log.append("2026-09-30T23:00:00+00:00", "task_done", {"m": "old"})  # 超尾随保底窗（>14 天）
         log.append("2026-11-08T10:00:00+00:00", "task_done", {"m": "new"})
         _write_decisions(layout.decisions_path, log)
         audit_old = layout.audit_dir / "2026-07-01" / "s.jsonl"  # >90 天窗
@@ -173,6 +194,13 @@ class TestArchiveState:
         (runs_old / "evidence.json").write_text("{}", encoding="utf-8")
         old_ts = os.stat(runs_old).st_mtime - 90 * 86400
         os.utime(runs_old, (old_ts, old_ts))
+
+        dry_summary = archive_state(layout, today="2026-11-08", apply=False)
+        assert dry_summary["audit_files"] == {
+            "archive": 1,
+            "keep": 0,
+        }  # 六桶全量预览（dry-run 不漏）
+        assert dry_summary["runs_dirs"] == {"archive": 1, "keep": 0}
 
         summary = archive_state(layout, today="2026-11-08", apply=True)
 
@@ -190,7 +218,7 @@ class TestArchiveState:
         assert (layout.agent_dir / "archive" / "queue-2026-09.jsonl").exists()
         assert (layout.agent_dir / "archive" / "sessions-2026-08.jsonl").exists()
         assert (layout.agent_dir / "archive" / "budget-daily-2026-04.jsonl").exists()
-        assert (layout.agent_dir / "archive" / "decisions-2026-10.jsonl").exists()
+        assert (layout.agent_dir / "archive" / "decisions-2026-09.jsonl").exists()
         assert (layout.agent_dir / "archive" / "audit" / "2026-07-01" / "s.jsonl.gz").exists()
         assert (layout.agent_dir / "archive" / "runs" / "2026-10-01.tgz").exists()
         assert not audit_old.exists() and not runs_old.exists()
@@ -200,10 +228,50 @@ class TestArchiveState:
         assert kinds == ["task_done", "state_archived"]
         assert chain.lines[0].payload == {"m": "new"}  # 保留行 payload 不动、seq 重排
 
+    def test_month_start_row_within_lookback_window_kept(self, tmp_path: Path):
+        """尾随保底窗：月初跑归档，上一月但仍在外仓 T+5 回看窗内的行恒留热文件。"""
+        layout = StateLayout(root=tmp_path / "state")
+        log = DecisionLog()
+        log.append("2026-11-27T23:00:00+00:00", "advice_card_written", {"code": "600519"})
+        log.append("2026-11-28T10:00:00+00:00", "task_done", {"m": "new"})
+        _write_decisions(layout.decisions_path, log)
+
+        summary = archive_state(layout, today="2026-12-01", apply=True)
+
+        assert summary["decisions"] == {"archive": 0, "keep": 2}
+        chain = DecisionLog.load(layout.decisions_path)
+        assert [line.kind for line in chain.lines] == ["advice_card_written", "task_done"]
+        assert not (layout.agent_dir / "archive").exists() or not any(
+            (layout.agent_dir / "archive").iterdir()
+        )  # 零归档零落盘
+
+    def test_unparseable_row_archived_not_crash(self, tmp_path: Path):
+        """坏行不再中断 apply：随归档迁出（保档案），热链照常重建。"""
+        layout = StateLayout(root=tmp_path / "state")
+        log = DecisionLog()
+        log.append("2026-09-30T23:00:00+00:00", "task_done", {"m": "old"})
+        log.append("2026-11-08T10:00:00+00:00", "task_done", {"m": "new"})
+        _write_decisions(layout.decisions_path, log)
+        raw = layout.decisions_path.read_text(encoding="utf-8")
+        layout.decisions_path.write_text(raw + '{"truncated' + "\n", encoding="utf-8")
+
+        summary = archive_state(layout, today="2026-11-08", apply=True)
+
+        assert summary["decisions"] == {"archive": 2, "keep": 1}
+        # 坏行不可解析 → 回落当月桶（2026-11），上月行进上月桶；均留档案原样
+        assert (layout.agent_dir / "archive" / "decisions-2026-09.jsonl").read_text(
+            encoding="utf-8"
+        ).count("\n") == 1
+        assert (layout.agent_dir / "archive" / "decisions-2026-11.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines() == ['{"truncated']
+        chain = DecisionLog.load(layout.decisions_path)  # strict 通过：坏行不在热文件
+        assert [line.kind for line in chain.lines] == ["task_done", "state_archived"]
+
     def test_dryrun_touches_nothing(self, tmp_path: Path):
         layout = StateLayout(root=tmp_path / "state")
         log = DecisionLog()
-        log.append("2026-10-31T23:00:00+00:00", "task_done", {"m": "old"})
+        log.append("2026-09-30T23:00:00+00:00", "task_done", {"m": "old"})
         _write_decisions(layout.decisions_path, log)
         before = layout.decisions_path.read_text(encoding="utf-8")
         summary = archive_state(layout, today="2026-11-08", apply=False)

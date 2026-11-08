@@ -4,8 +4,8 @@
 CLI `archive-state` 默认 dry-run，--apply 才落盘，且要求 daemon 空闲（单写者纪律）。
 档案统一落 agent/archive/<桶>-YYYYMM.jsonl（月度 append 复用 store.atomic_append_lines）；
 audit 按日期目录 gzip 迁档；runs/ 按目录 mtime tar.gz 迁档。
-坑位：decisions 月度切分已核实跨仓契约安全（外仓 agent_postmortem.py 硬编码单文件 +
-T+5 回看 ≪ 当月窗口）；归档后面板读侧只看热文件，跨月检索走档案 jq（T5 判据数据源）。
+坑位：decisions 月度切分带尾随保底窗（月初跨月界仍覆盖外仓 agent_postmortem.py 的
+T+5 交易日回看）；归档后面板读侧只看热文件，跨月检索走档案 jq（T5 判据数据源）。
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 from stock_trading_agent.state.decisions import DecisionLine, DecisionLog, plan_repair
 from stock_trading_agent.state.paths import StateLayout
@@ -29,6 +30,8 @@ SESSIONS_KEEP_DAYS = 90
 AUDIT_KEEP_DAYS = 90
 RUNS_KEEP_DAYS = 14
 BUDGET_DAILY_KEEP_DAYS = 180
+# decisions 尾随保底窗：月初跨月界也须覆盖外仓 T+5 回看（5 交易日 + 节假日最坏 ~14 自然日）
+DECISIONS_KEEP_RECENT_DAYS = 14
 
 
 def _date_str(value: str | None) -> str | None:
@@ -109,16 +112,24 @@ def budget_daily_split(
 
 
 def split_decisions_rows(rows: list[str], *, today: str) -> tuple[list[str], list[str]]:
-    """decisions 月度切分：ts 月 < 当月的行归档（跨仓契约已核实安全）。不可解析行保守保留。"""
+    """decisions 月度切分：ts 月 < 当月 ∧ 超出尾随保底窗的行归档。
+
+    坑位：尾随保底窗（DECISIONS_KEEP_RECENT_DAYS）覆盖月初跨月界——外仓 agent_postmortem
+    只读热文件、T+1/3/5 回看最长 5 个交易日（节假日最坏 ~14 个自然日），纯月前缀比较会在
+    月初把仍在回看窗内的上一月行移出热文件，T+3/T+5 后验被静默跳过。不可解析行随归档
+    迁出（保档案不丢；留在 keep 会让 _rebuild_live_decisions 在 apply 中途崩溃）。
+    """
     keep: list[str] = []
     archive: list[str] = []
     for raw in rows:
         try:
             ts = str(json.loads(raw).get("ts", ""))
         except ValueError:
-            keep.append(raw)
+            archive.append(raw)
             continue
-        (archive if ts[:7] < today[:7] else keep).append(raw)
+        old_month = ts[:7] < today[:7]
+        beyond_window = _days_old(_date_str(ts), today) > DECISIONS_KEEP_RECENT_DAYS
+        (archive if old_month and beyond_window else keep).append(raw)
     return keep, archive
 
 
@@ -132,11 +143,32 @@ def _rebuild_live_decisions(kept_rows: list[str]) -> list[DecisionLine]:
 def archive_state(layout: StateLayout, *, today: str, apply: bool) -> dict:
     """六桶归档主口：默认 dry-run（只读盘点返回计划），apply=True 落盘。
 
-    返回摘要 {bucket: {"archive": n, "keep": n}}；apply 后 decisions 追加 state_archived 留痕。
+    返回摘要 {bucket: {"archive": n, "keep": n}}（audit/runs 亦在 dry-run 统计——六桶全量预览，
+    「只打印计划」不得漏报两个迁移桶）；apply 后 decisions 追加 state_archived 留痕。
     坑位：调用方须先确认 daemon 空闲（CLI 已做 FileLock 守卫）；本函数自身不再抢锁。
     """
     summary: dict[str, dict] = {}
     archive_dir = layout.agent_dir / "archive"
+
+    def _month_of(row: dict | str) -> str:
+        try:
+            raw = json.loads(row) if isinstance(row, str) else row
+        except ValueError:  # 不可解析行（随归档迁出）：回落当月桶
+            return today[:7]
+        # 时间锚链：ts（决策/会话）→ finished_at → enqueued_at（任务）；全缺回落当月
+        for key in ("ts", "finished_at", "enqueued_at"):
+            if raw.get(key):
+                return str(raw[key])[:7]
+        return today[:7]
+
+    def _batch_append(rows: list[str], prefix: str, month_of=None) -> None:
+        """按月聚合成单次批量追加（坑位：逐行 append 的中断-重跑窗口随行数放大，档案会双份）。"""
+        month_of = month_of or (lambda row: _month_of(row)[:7])
+        by_month: dict[str, list[str]] = {}
+        for row in rows:
+            by_month.setdefault(month_of(row), []).append(row)
+        for month, batch in sorted(by_month.items()):
+            atomic_append_lines(archive_dir / f"{prefix}-{month}.jsonl", batch)
 
     # --- queue / sessions / budget / decisions（台账四桶） ---
     from stock_trading_agent.state.store import read_json
@@ -161,44 +193,61 @@ def archive_state(layout: StateLayout, *, today: str, apply: bool) -> dict:
     keep_rows, arch_rows = split_decisions_rows(decision_rows, today=today)
     summary["decisions"] = {"archive": len(arch_rows), "keep": len(keep_rows)}
 
+    # --- audit / runs（先扫描统计——dry-run 同样可见；apply 再迁移） ---
+    import gzip
+    import shutil
+    import tarfile
+
+    audit_plan: list[tuple[str, Path]] = []  # (day, src jsonl)
+    audit_total = 0
+    if layout.audit_dir.exists():
+        for day_dir in sorted(layout.audit_dir.iterdir()):
+            if not day_dir.is_dir():
+                continue
+            files = sorted(day_dir.glob("*.jsonl"))
+            audit_total += len(files)
+            if _days_old(day_dir.name, today) > AUDIT_KEEP_DAYS:
+                audit_plan.extend((day_dir.name, src) for src in files)
+    summary["audit_files"] = {"archive": len(audit_plan), "keep": audit_total - len(audit_plan)}
+
+    runs_plan: list[Path] = []
+    runs_total = 0
+    cutoff_runs = (_dt.datetime.now(tz=_dt.UTC) - _dt.timedelta(days=RUNS_KEEP_DAYS)).timestamp()
+    if layout.runs_dir.exists():
+        for entry in sorted(layout.runs_dir.iterdir()):
+            runs_total += 1
+            try:
+                if entry.stat().st_mtime <= cutoff_runs:
+                    runs_plan.append(entry)
+            except OSError:
+                continue
+    summary["runs_dirs"] = {"archive": len(runs_plan), "keep": runs_total - len(runs_plan)}
+
     if not apply:
         return summary
 
-    def _month_of(row: dict | str) -> str:
-        raw = json.loads(row) if isinstance(row, str) else row
-        # 时间锚链：ts（决策/会话）→ finished_at → enqueued_at（任务）；全缺回落当月
-        for key in ("ts", "finished_at", "enqueued_at"):
-            if raw.get(key):
-                return str(raw[key])[:7]
-        return today[:7]
-
-    # queue 档案（按 finished/enqueued 月分文件）
-    for row in arch_tasks:
-        month = _month_of(row)[:7]
-        atomic_append_lines(
-            archive_dir / f"queue-{month}.jsonl", [json.dumps(row, ensure_ascii=False)]
-        )
+    # queue 档案（按 finished/enqueued 月分文件，单月单次批量追加）
     if arch_tasks:
+        _batch_append([json.dumps(row, ensure_ascii=False) for row in arch_tasks], "queue")
         atomic_write_json(layout.queue_path, {**queue_data, "tasks": keep_tasks})
 
-    for row in arch_sessions:
-        atomic_append_lines(
-            archive_dir / f"sessions-{_month_of(row)}.jsonl", [json.dumps(row, ensure_ascii=False)]
-        )
     if arch_sessions:
+        _batch_append([json.dumps(row, ensure_ascii=False) for row in arch_sessions], "sessions")
         atomic_write_json(layout.sessions_path, {**sessions_data, "sessions": keep_sessions})
 
-    for day, bucket in sorted(arch_daily.items()):
-        atomic_append_lines(
-            archive_dir / f"budget-daily-{day[:7]}.jsonl",
-            [json.dumps({"day": day, **bucket}, ensure_ascii=False)],
-        )
     if arch_daily:
+        _batch_append(
+            [
+                json.dumps({"day": day, **bucket}, ensure_ascii=False)
+                for day, bucket in sorted(arch_daily.items())
+            ],
+            "budget-daily",
+            month_of=lambda row: json.loads(row)["day"][:7],  # budget 行时间锚=day 键
+        )
         atomic_write_json(layout.budget_path, {**budget_data, "daily": keep_daily})
 
-    for row in arch_rows:
-        atomic_append_lines(archive_dir / f"decisions-{_month_of(row)}.jsonl", [row])
     if arch_rows:
+        _batch_append(arch_rows, "decisions")
         rebuilt = _rebuild_live_decisions(keep_rows)
         text = "".join(json.dumps(asdict(line), ensure_ascii=False) + "\n" for line in rebuilt)
         atomic_write_text(layout.decisions_path, text)
@@ -209,41 +258,18 @@ def archive_state(layout: StateLayout, *, today: str, apply: bool) -> dict:
             {"decisions_archived": len(arch_rows), "note": "月度切分归档，档案 agent/archive/"},
         )
 
-    # --- audit（gzip 迁档）/ runs（mtime tar 迁档） ---
-    import gzip
-    import shutil
-    import tarfile
-
-    audit_archived = runs_archived = 0
-    cutoff_runs = (_dt.datetime.now(tz=_dt.UTC) - _dt.timedelta(days=RUNS_KEEP_DAYS)).timestamp()
-    if layout.audit_dir.exists():
-        for day_dir in sorted(layout.audit_dir.iterdir()):
-            if not day_dir.is_dir():
-                continue
-            if _days_old(day_dir.name, today) <= AUDIT_KEEP_DAYS:
-                continue
-            for src in sorted(day_dir.glob("*.jsonl")):
-                dest = archive_dir / "audit" / day_dir.name / (src.name + ".gz")
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                with src.open("rb") as fin, gzip.open(dest, "wb") as fout:
-                    shutil.copyfileobj(fin, fout)
-                src.unlink()
-                audit_archived += 1
-            if not any(day_dir.iterdir()):
-                day_dir.rmdir()
-    summary["audit_files"] = {"archive": audit_archived, "keep": -1}
-    if layout.runs_dir.exists():
-        for entry in sorted(layout.runs_dir.iterdir()):
-            try:
-                if entry.stat().st_mtime > cutoff_runs:
-                    continue
-            except OSError:
-                continue
-            dest = archive_dir / "runs" / f"{entry.name}.tgz"
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(dest, "w:gz") as tar:
-                tar.add(entry, arcname=entry.name)
-            shutil.rmtree(entry, ignore_errors=True)
-            runs_archived += 1
-    summary["runs_dirs"] = {"archive": runs_archived, "keep": -1}
+    for day, src in audit_plan:
+        dest = archive_dir / "audit" / day / (src.name + ".gz")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with src.open("rb") as fin, gzip.open(dest, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
+        src.unlink()
+        if not any(src.parent.iterdir()):
+            src.parent.rmdir()
+    for entry in runs_plan:
+        dest = archive_dir / "runs" / f"{entry.name}.tgz"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(dest, "w:gz") as tar:
+            tar.add(entry, arcname=entry.name)
+        shutil.rmtree(entry, ignore_errors=True)
     return summary

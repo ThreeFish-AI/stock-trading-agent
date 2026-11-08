@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.16] - 2026-11-08
+
+### Fixed
+
+- **0.0.15 对抗评审收口（13-agent 评审 8 findings 全量修复，[12-orchestration.md §⑭](docs/specs/12-orchestration.md) 坑位同步）**：①**W6 别名 bug**——`watcher.json` 条件保存快照直嵌 `self._offsets` 引用，与 `_last_saved` 别名同一 dict 后值比较恒等，基线写入后偏移永不落盘、daemon 重启重放当日全部 monitor 事件（重复决策行 + T2 确认卡因 request_id 盐跨进程必变而重复，人工双确认即模拟盘双落账）——改拷贝快照（回归钉：同实例二次消费偏移必落盘）；②**降级防毒**——`acquire_daemon` 失败路径（LockTimeout/ChainBroken）把 `decisions` 重绑纯内存链，降级 serve 的任一 append（提交入队/paper 确认/l2_probe）不再向已有多行文件写 `seq=1/GENESIS` 毒行（原会致 repair 后再毒化、「修复不生效」循环）；③**decisions 月度切分加 14 天尾随保底窗**——月初跑归档不再把外仓 agent_postmortem T+5 回看窗内的上一月行移出热文件（T+3/T+5 后验静默跳过）；④**DecisionLog append 进程内串行**（`_append_lock`）——worker/watcher 线程与线程池 handler 并发追加不再可能产重复 seq（回归钉：8 线程×25 条并发后链完整）；⑤**archive-state 修三处**——不可解析行随归档迁出（原会让热链重建在 apply 中途崩溃、重跑档案双份）、audit/runs 两桶 dry-run 同样统计（六桶全量预览）、档案追加按月聚合单次批量写（中断-重跑窗口收窄）；⑥**repair-decisions 坏行守护**——无法解析的行报行号 exit 4 拒碰（原裸 traceback exit 1，违反自身声明的 0/3 退出码契约）。测试 +4 例（410 passed 全绿）、selftest 强化 2 case（40/40）。
+
 ## [0.0.15] - 2026-11-08
 
 ### Added
