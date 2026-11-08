@@ -325,6 +325,47 @@ class TestStatsT1Review:
         assert "任务画像" in frag and "假设性" in frag  # 钉死断言回归
 
 
+class TestPRDPolish:
+    """0.0.18：报告结构化渲染 / ⑥双 sparkline / 壳层 color-scheme 与响应式。"""
+
+    def test_report_body_structured(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        _seed_report(layout)
+        frag = client.get("/api/panel/report/600519.cn/2026-11-06.md").text
+        assert '<div class="md">' in frag and '<h1 class="md">诊股报告</h1>' in frag
+        assert "免责段缺失" not in frag
+
+    def test_stats_dual_sparkline_when_curve(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        sessions = {
+            "sessions": {
+                f"s{i}": {
+                    "ts": f"2026-11-0{i + 1}T08:00:00+08:00",
+                    "usage_tokens": {"input": 100},
+                    "cost_usd_equiv": 0.1,
+                }
+                for i in range(1, 4)
+            }
+        }
+        (layout.agent_dir / "sessions.json").write_text(json.dumps(sessions), encoding="utf-8")
+        frag = client.get("/api/panel/stats").text
+        assert frag.count("<svg") >= 2  # tokens + USD 双曲线
+        assert 'aria-label="token 日桶曲线"' in frag
+
+    def test_shell_polish_bits(self, tmp_path: Path):
+        client, _ = _make_client(tmp_path)
+        html = client.get("/").text
+        assert '<meta name="color-scheme" content="dark">' in html
+        assert "@media (max-width:1180px)" in html and "@media (max-width:880px)" in html
+        assert 'class="grid-2"' in html  # ②页 inline grid 迁类
+        assert html.count('class="htmx-indicator spin"') == 7  # ①页试点
+        assert "animation:rot" in html and "@keyframes rot{" in html  # .spin 修活
+        # 死码清除负断言
+        for dead in [".notif{", ".ghostbtn", ".dawn{", "tr.sel", ".rpt-r{"]:
+            assert dead not in html, dead
+
+
 class TestHtmxWiring:
     """0.0.14 P0 回归：htmx 生命周期修复（swap 策略/target 落点/表格类对齐/状态色）。"""
 

@@ -161,3 +161,71 @@ class TestTableNorms:
         assert ">09:31</div>" in html  # ISO 串取 HH:MM
         assert 'title="2026-11-08T09:31:17+08:00"' in html  # 全值 Tooltip
         assert '<span id="ov-ev-count" hx-swap-oob="true">1 条</span>' in html
+
+
+class TestMdLite:
+    """0.0.18：报告 md 结构化渲染状态机（全文本先 _esc）。"""
+
+    def test_headings_table_list_bold(self):
+        from stock_trading_agent.server.panel import _md_lite
+
+        md = (
+            "# 诊股报告\n\n## 结论\n\n| 指标 | 值 |\n|---|---|\n"
+            "| 置信 | 0.7 |\n\n- 复核止损位\n\n**关键**提示\n"
+        )
+        html = _md_lite(md)
+        assert '<h1 class="md">诊股报告</h1>' in html
+        assert '<h2 class="md">结论</h2>' in html
+        assert "<table" in html and "<td>置信</td>" in html  # 表格行，分隔行被跳过
+        assert "<ul><li>复核止损位</li></ul>" in html
+        assert "<b>关键</b>提示" in html
+
+    def test_code_fence_and_escaping(self):
+        from stock_trading_agent.server.panel import _md_lite
+
+        html = _md_lite("```\n<script>alert(1)</script>\n```\n\n**<b>**")
+        assert "&lt;script&gt;" in html  # 全文本转义
+        assert "<pre>" in html and "</pre>" in html
+
+    def test_render_report_body_structured(self):
+        from stock_trading_agent.server.panel import render_report_body
+
+        html = render_report_body(
+            "600519.cn", "2026-11-06.md", "# 诊股报告\n\n本报告不构成投资建议。\n"
+        )
+        assert '<div class="md">' in html
+        assert "诊股报告" in html and "免责段缺失" not in html
+
+
+class TestSparklineGeneralized:
+    def test_aria_label_and_token_stroke(self):
+        from stock_trading_agent.server.panel import _sparkline_svg
+
+        svg = _sparkline_svg([1.0, 1.01, 0.99], aria_label="净值走势，最新 0.99")
+        assert 'aria-label="净值走势，最新 0.99"' in svg
+        assert "stroke:var(--acc)" in svg  # 硬编码色归 token
+        assert "#58a6ff" not in svg
+
+    def test_degrades_below_two_points(self):
+        from stock_trading_agent.server.panel import _sparkline_svg
+
+        assert "曲线待积累" in _sparkline_svg([1.0], aria_label="x")
+
+
+class TestBriefingChips:
+    def test_action_items_chips_rendered(self):
+        from stock_trading_agent.server.panel import render_briefing_fragment
+
+        payload = {
+            "date": "2026-11-08",
+            "cards": [
+                {
+                    "code": "600519",
+                    "ack": False,
+                    "md": "code: 600519\n\n## 行动项\n- [ ] 复核：止损线 9.5 距现价 3.4%\n",
+                }
+            ],
+        }
+        html = render_briefing_fragment(payload)
+        assert "复核：止损线 9.5 距现价 3.4%" in html
+        assert 'class="kchip"' in html
