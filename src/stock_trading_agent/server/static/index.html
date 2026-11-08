@@ -10,16 +10,56 @@
 <script src="/vendor/sse.js"></script>
 <style>
 :root {
---bg0:#0B0E14; --bg1:#12161F; --bg2:#171C27; --bg3:#1C2230;
-  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
-  --t1:#E9EDF5; --t2:#A9B4C8; --t3:#8792A6; --t4:#7E8AA5;
-  --up:#FF6B6B; --up2:#FF8A80; --upbg:rgba(255,107,107,.11); --upln:rgba(255,107,107,.34);
-  --dn:#3DCE96; --dn2:#5EE0AC; --dnbg:rgba(61,206,150,.11); --dnln:rgba(61,206,150,.34);
-  --hold:#9AA6BC; --holdbg:rgba(154,166,188,.11); --holdln:rgba(154,166,188,.3);
-  --acc:#6C9EFF; --acc2:#9DBAFF; --accbg:rgba(108,158,255,.12); --accln:rgba(108,158,255,.36);
-  --warn:#F0B35C; --warnbg:rgba(240,179,92,.11); --warnln:rgba(240,179,92,.36);
-  --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,'Roboto Mono',monospace;
-  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif;
+/* ═══ 1/3 Primitive（原始值层：全库唯一 hex/px 字面落点；规范 docs/specs/14-design-system.md）═══ */
+--px-bg-0:#0B0E14; --px-bg-1:#12161F; --px-bg-2:#171C27; --px-bg-3:#1C2230;
+--px-txt-1:#E9EDF5; --px-txt-2:#A9B4C8; --px-txt-3:#8792A6; --px-txt-4:#7E8AA5;
+--px-red:#FF6B6B; --px-red-hi:#FF8A80; --px-green:#3DCE96; --px-green-hi:#5EE0AC;
+--px-blue:#6C9EFF; --px-blue-hi:#9DBAFF; --px-amber:#F0B35C; --px-grey:#9AA6BC;
+--px-white:#FFFFFF; --px-black:#000000;
+/* 字号 9 档 */
+--fs-10:10px; --fs-11:11px; --fs-12:12px; --fs-13:13px; --fs-14:14px;
+--fs-16:16px; --fs-17:17px; --fs-19:19px; --fs-26:26px;
+/* 圆角 5 档（50% 圆点为形状非档位，白名单字面）*/
+--r-xs:4px; --r-sm:6px; --r-md:8px; --r-lg:10px; --r-full:999px;
+/* 间距 7 档（4px 基；既有 padding/margin/gap 不回溯迁移，13px 密度基因字面保留）*/
+--sp-1:2px; --sp-2:4px; --sp-3:6px; --sp-4:8px; --sp-5:10px; --sp-6:12px; --sp-7:16px;
+/* 阴影三档 + glow 四枚（color-mix 构造，零 rgba）*/
+--sh-1:0 1px 0 color-mix(in srgb,var(--px-white) 2%,transparent) inset,0 10px 30px color-mix(in srgb,var(--px-black) 28%,transparent);
+--sh-2:0 4px 14px color-mix(in srgb,var(--px-blue) 28%,transparent),inset 0 1px 0 color-mix(in srgb,var(--px-white) 25%,transparent);
+--sh-3:0 0 0 3px color-mix(in srgb,var(--px-blue) 25%,transparent);
+--glow-up:0 0 8px color-mix(in srgb,var(--px-red) 70%,transparent);
+--glow-dn:0 0 8px color-mix(in srgb,var(--px-green) 70%,transparent);
+--glow-warn:0 0 8px color-mix(in srgb,var(--px-amber) 70%,transparent);
+--glow-acc:0 0 18px color-mix(in srgb,var(--px-blue) 35%,transparent);
+/* 动效 */
+--dur-fast:120ms; --dur-slow:180ms; --ease-std:ease-in-out;
+/* ═══ 2/3 Semantic（30 个既有名 = 向后兼容层：名与计算值双不动；组件类/panel.py 引用零改）═══ */
+--bg0:var(--px-bg-0); --bg1:var(--px-bg-1); --bg2:var(--px-bg-2); --bg3:var(--px-bg-3);
+--line:color-mix(in srgb,var(--px-white) 8%,transparent);
+--line2:color-mix(in srgb,var(--px-white) 14%,transparent);
+--t1:var(--px-txt-1); --t2:var(--px-txt-2); --t3:var(--px-txt-3); --t4:var(--px-txt-4);
+--up:var(--px-red); --up2:var(--px-red-hi);
+--upbg:color-mix(in srgb,var(--px-red) 11%,transparent);
+--upln:color-mix(in srgb,var(--px-red) 34%,transparent);
+--dn:var(--px-green); --dn2:var(--px-green-hi);
+--dnbg:color-mix(in srgb,var(--px-green) 11%,transparent);
+--dnln:color-mix(in srgb,var(--px-green) 34%,transparent);
+--hold:var(--px-grey);
+--holdbg:color-mix(in srgb,var(--px-grey) 11%,transparent);
+--holdln:color-mix(in srgb,var(--px-grey) 30%,transparent);
+--acc:var(--px-blue); --acc2:var(--px-blue-hi);
+--accbg:color-mix(in srgb,var(--px-blue) 12%,transparent);
+--accln:color-mix(in srgb,var(--px-blue) 36%,transparent);
+--warn:var(--px-amber);
+--warnbg:color-mix(in srgb,var(--px-amber) 11%,transparent);
+--warnln:color-mix(in srgb,var(--px-amber) 36%,transparent);
+--mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,'Roboto Mono',monospace;
+--sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif;
+/* ═══ 3/3 Component（组件级 token；变体经作用域覆写入口）═══ */
+--inp-bg:var(--bg3); --inp-bd:var(--line2);
+--btn-grad:linear-gradient(180deg,#7EABFF,#5F92F2); --btn-fg:var(--bg0);
+--step-cur-grad:linear-gradient(180deg,var(--acc),#4E7FE8);
+--nr2-fg:#FFB4B4; --nr2-fg-em:#FFD0D0; --ev-risk-fg:#D9A0A0;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
