@@ -584,6 +584,27 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("server.stats_briefing.scan", stats_and_briefing_scan)
 
+    def d8_probe_parsers():
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
+        import d8_probe
+
+        line = "~".join(
+            ['v_r_hk00700="100', "318.000", "腾讯控股", "319.000", "318.000", "319.400", "315.600"]
+            + [""] * 23
+            + ["2026/11/06 16:00:03"]
+        )
+        parsed = d8_probe.parse_qt_r_hk(line)
+        assert parsed is not None and parsed["price"] == 319.0
+        assert parsed["ts_raw"] == "2026/11/06 16:00:03" and parsed["lag_min"] is not None
+        assert d8_probe.parse_sina_rt_hk('var x="腾讯,318,319,319.5,321,316,";') == 319.5
+        em = d8_probe.parse_eastmoney({"f43": 319000, "f124": 1790000000, "f19": 318500})
+        assert em is not None and em["price"] == 319.0 and em["bid1"] == 318.5
+
+    check_case("ops.d8_probe.parsers", d8_probe_parsers)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 

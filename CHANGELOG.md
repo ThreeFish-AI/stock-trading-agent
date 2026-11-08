@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.8] - 2026-11-08
+
+### Added
+
+- **遗留落实轮（D8 采样自动面 + Tauri 门口评审 + T1 轻量链登记 + favicon）**。①**D8 港股时戳重探采样器** [ops/d8_probe.py](ops/d8_probe.py)（stdlib-only `/usr/bin/python3` 直跑，零依赖零 vibe-stock import）：qt r_hk f[30] 时戳→lag_min（E-25 主张面）+ 新浪 rt_hk 交叉价 + 东财 push2 价格/时戳/五档（E-76 锚）；标的集 universe hk 行回落固定集；session 态如实标注（非盘中 session_closed 不误判）；输出 append-only `agent/logs/d8-samples-YYYYMMDD.jsonl`；配套 launchd 模板 [ops/launchd/com.threefish.stocktrading.d8-probe.plist](ops/launchd/com.threefish.stocktrading.d8-probe.plist)（周一至五 09:36/13:06 两对照时点，stdlib 直跑无 PATH 依赖，plistlib 钉死单测）与本机安装；②**[docs/ops/trading-day-verify.md](docs/ops/trading-day-verify.md)**：D8 定谳判据与落位流程（含「判据只收严：定谳未通过维持 HK 收盘复核闸」）+ T2 出卡真跑操作手册（盘后用户唤起执行，含降级路径同样算验证通过）；③**Tauri 门口评审记录** [docs/ops/tauri-gate-review.md](docs/ops/tauri-gate-review.md)：结论不做（使用数据不足一日+候选 C 自评价值最低+浏览器 tab 完整后备结构保证），触发再评条件（≥4 周稳定使用+真实多窗口需求且 pywebview 不满足）；④**T1 轻量日 K 链机制升级候选登记** issue.md I-002（07 L89/L103 行锚+两条实施坑位：snapshot 通道保走势参考节、fetch_state.lock 计账）；⑤favicon：static/favicon.svg + /favicon.ico 根级路由 + index link（修 404）。测试 +12 例（qt 解析/lag/新浪东财/固定集回落/session 态/JSONL append 幂等重跑/d8 plist 逐键）；selftest 28 case（+1）。M3 L2 明确排除本轮（用户裁定，留下轮专项）。
+
 ## [0.0.7] - 2026-11-08
 
 ### Added
