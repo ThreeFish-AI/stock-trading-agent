@@ -659,6 +659,39 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("cc_client.leak.scan", l2_leak_scan)
 
+    def panel_phase_and_trend():
+        import datetime as dt
+        from zoneinfo import ZoneInfo
+
+        from stock_trading_agent.loop.advice import parse_trend_table, render_advice_card
+        from stock_trading_agent.server.panel_data import market_phase
+
+        tz = ZoneInfo("Asia/Shanghai")
+        assert market_phase(dt.datetime(2026, 11, 9, 10, 0, tzinfo=tz))["overall"] == "live"
+        assert market_phase(dt.datetime(2026, 11, 8, 10, 0, tzinfo=tz))["overall"] == "closed"
+        payload = {
+            "outcome": "card",
+            "candidate_action": "持有观察",
+            "final_signal": "hold",
+            "prev_diff": {"prev_final_signal": "none", "note": "n"},
+            "t1_sell_pct": 85.0,
+            "t1_sell_tier": "b",
+            "verdict_date": "d",
+            "opinion_data_date": "d",
+            "replayed_opinions": 2,
+            "trend_ref": {
+                "band_rows": [
+                    {"horizon": "1d", "low": 9.5, "high": 10.5, "prob_touch_low_pct": 31.0}
+                ]
+            },
+            "rationale": "r",
+        }
+        md = render_advice_card(payload, code="c", date="d", task_id="t")
+        rows = parse_trend_table(md)
+        assert rows and rows[0]["low"] == 9.5
+
+    check_case("panel.phase_trend", panel_phase_and_trend)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 

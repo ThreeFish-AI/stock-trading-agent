@@ -40,6 +40,10 @@ def to_event_name(path: Path, layout: StateLayout) -> str | None:
         return "outlook"
     if parts[:1] == ("sim-portfolio.json",) or parts[:1] == ("sim-pending-fills.json",):
         return "paper"
+    if parts[:1] == ("signals.json",):
+        return "signals"
+    if parts[:1] == ("reports",):
+        return "reports"
     return None
 
 
