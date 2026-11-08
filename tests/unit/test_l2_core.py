@@ -80,9 +80,20 @@ class TestT2Worthy:
         assert not t2_worthy(self._ev(rule="stop_break", level="T1"))
 
 
+class _OkT1:
+    """CI 无 vibe-stock skill 目录：注入恒成功 T1 runner（零网络零子进程）。"""
+
+    def run(self, code: str, *, workdir):
+        workdir.mkdir(parents=True, exist_ok=True)
+        (workdir / "context-pack.md").write_text("# pack", encoding="utf-8")
+        from stock_trading_agent.loop.t1 import T1Outcome
+
+        return T1Outcome(ok=True, workdir=workdir, reasons=())
+
+
 def _make_runtime(tmp_path: Path) -> LoopRuntime:
     layout = StateLayout(root=tmp_path / "state")
-    return LoopRuntime(layout=layout, t1=T1Runner(), watcher_enabled=False)
+    return LoopRuntime(layout=layout, t1=_OkT1(), watcher_enabled=False)
 
 
 def _decisions(rt) -> list[dict]:
