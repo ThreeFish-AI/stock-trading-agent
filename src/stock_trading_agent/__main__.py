@@ -14,8 +14,49 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 
     from stock_trading_agent.server.app import HOST, PORT, create_app
 
-    uvicorn.run(create_app(), host=HOST, port=args.port or PORT, workers=1, log_level="info")
+    # enable_loop_runtime：lifespan 起 worker/watcher 线程；daemon 锁被持有时面板降级只读
+    uvicorn.run(
+        create_app(enable_loop_runtime=True),
+        host=HOST,
+        port=args.port or PORT,
+        workers=1,
+        log_level="info",
+    )
     return 0
+
+
+def _cmd_run_once(args: argparse.Namespace) -> int:
+    """消费恰一个任务（CLI 黑盒消费冒烟/运维手动补跑）。
+
+    退出码：0=done · 1=failed/被拒 · 2=队空或全部 defer · 3=daemon 锁被持有。
+    """
+    import json
+    from dataclasses import asdict
+
+    from stock_trading_agent.loop.loop import LoopReject
+    from stock_trading_agent.loop.worker import LoopRuntime
+    from stock_trading_agent.state.paths import StateLayout
+
+    runtime = LoopRuntime(layout=StateLayout.from_env())
+    if not runtime.acquire_daemon(timeout_s=1.0):
+        print("daemon.lock 被持有（另一消费者在跑：serve 或另一 run-once），exit 3")
+        return 3
+    try:
+        runtime.recover_orphans()
+        if args.kind and args.code:
+            try:
+                runtime.submit(kind=args.kind, code=args.code, source="cli")
+            except LoopReject as exc:
+                print(f"提交被拒：{exc}")
+                return 1
+        task = runtime.consume_one()
+    finally:
+        runtime.stop()
+    if task is None:
+        print("队空或全部 defer（锁/禁跑窗），exit 2")
+        return 2
+    print(json.dumps(asdict(task), ensure_ascii=False))
+    return 0 if task.status == "done" else 1
 
 
 def _cmd_probe(args: argparse.Namespace) -> int:
@@ -256,6 +297,85 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("budget.gate.axes", budget_gates)
 
+    def monitor_event_parsing():
+        from stock_trading_agent.loop.monitor_events import MonitorEvent, parse_line, t1_trigger
+
+        good = parse_line(
+            '{"ts":"09:31:00","code":"600519","market":"cn","kind":"real","rule":"stop_break",'
+            '"level":"T0","notify":true,"mech_risk":{"downgrade":true,"severity":"high"},'
+            '"facts":{"pct":-2.1},"review":"止损复核"}'
+        )
+        assert good is not None and good.code == "600519" and good.review == "止损复核"
+        assert parse_line("{截断") is None and parse_line("") is None  # 坏行不抛
+        assert t1_trigger(good)
+        assert not t1_trigger(
+            MonitorEvent(
+                ts="t",
+                code="600519",
+                market="cn",
+                kind="real",
+                rule="r",
+                level="T0",
+                notify=True,
+                suppress_reason="cooldown",
+                review="止损复核",
+            )
+        )
+        assert not t1_trigger(
+            MonitorEvent(ts="t", code="*", market="cn", kind="*", rule="r", level="T0", notify=True)
+        )
+
+    check_case("loop.monitor_events.t1_trigger", monitor_event_parsing)
+
+    def reject_status_map():
+        from stock_trading_agent.loop.loop import RejectReason
+        from stock_trading_agent.server.schemas import REJECT_STATUS
+
+        assert REJECT_STATUS[RejectReason.DUPLICATE] == 409
+        assert REJECT_STATUS[RejectReason.LOCK] == 423
+        assert REJECT_STATUS[RejectReason.WINDOW] == 423
+        assert REJECT_STATUS[RejectReason.UNKNOWN_KIND] == 422
+
+    check_case("server.schemas.reject_status", reject_status_map)
+
+    def task_eligible_matrix():
+        import datetime as dt
+        from zoneinfo import ZoneInfo
+
+        from stock_trading_agent.loop.worker import task_eligible
+        from stock_trading_agent.state.queue import TaskRecord
+
+        t1 = TaskRecord(task_id="a", dedup_key="k", kind="t1_refresh", code="600519")
+        rep = TaskRecord(task_id="b", dedup_key="k2", kind="diagnose_quick", code="600519")
+        assert task_eligible(t1, fetch_lock=True, watch_lock=False, now=dt.datetime.now(tz=dt.UTC))
+        assert task_eligible(t1, fetch_lock=False, watch_lock=True, now=dt.datetime.now(tz=dt.UTC))
+        free = dt.datetime(2026, 11, 7, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        assert task_eligible(rep, fetch_lock=False, watch_lock=False, now=free) is None
+        win = dt.datetime(2026, 11, 7, 17, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+        assert task_eligible(rep, fetch_lock=False, watch_lock=False, now=win)
+
+    check_case("loop.worker.task_eligible", task_eligible_matrix)
+
+    def queue_find_any():
+        from stock_trading_agent.state.queue import QueueState, TaskRecord
+
+        q = QueueState()
+        q.submit(
+            TaskRecord(
+                task_id="a",
+                dedup_key="t1_refresh:600519:2026-11-08",
+                kind="t1_refresh",
+                code="600519",
+            )
+        )
+        q.transition("a", "running")
+        q.transition("a", "done")
+        assert q.find_any("t1_refresh:600519:2026-11-08") is not None  # 终态也命中（每股每日一次）
+        assert q.find_any("t1_refresh:600519:2026-11-09") is None
+        assert q.find_active("t1_refresh:600519:2026-11-08") is None
+
+    check_case("state.queue.find_any", queue_find_any)
+
     return results
 
 
@@ -277,12 +397,24 @@ def main(argv: list[str] | None = None) -> int:
         prog="stock-trading-agent", description="Stock Trading Agent CLI（骨架）"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    serve_p = sub.add_parser("serve", help="起本地面板（FastAPI + 静态页，默认 dry-run 通道）")
+    serve_p = sub.add_parser(
+        "serve", help="起本地面板（FastAPI + 静态页 + Loop 运行时，默认 dry-run 通道）"
+    )
     serve_p.add_argument("--port", type=int, default=None)
+    run_p = sub.add_parser(
+        "run-once", help="消费恰一个队列任务（退出码 0/1/2/3；与 serve 抢 daemon 锁）"
+    )
+    run_p.add_argument("--kind", default=None, help="可选：先提交再消费（六 kind 或 t1_refresh）")
+    run_p.add_argument("--code", default=None, help="标的码（与 --kind 成对）")
     sub.add_parser("probe", help="CC 通道探针（骨架期即 dry-run 报告）")
     sub.add_parser("selftest", help="聚合纯函数回归（与 pytest 同源判据）")
     args = parser.parse_args(argv)
-    handlers = {"serve": _cmd_serve, "probe": _cmd_probe, "selftest": _cmd_selftest}
+    handlers = {
+        "serve": _cmd_serve,
+        "run-once": _cmd_run_once,
+        "probe": _cmd_probe,
+        "selftest": _cmd_selftest,
+    }
     return handlers[args.command](args)
 
 

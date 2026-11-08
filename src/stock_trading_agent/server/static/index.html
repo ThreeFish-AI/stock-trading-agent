@@ -3,46 +3,100 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stock Trading Agent · 面板骨架</title>
+<title>Stock Trading Agent · 面板</title>
+<script src="/vendor/htmx.min.js"></script>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; padding: 32px; }
-  header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0d1117; color: #e6edf3; padding: 32px; max-width: 1180px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
   h1 { font-size: 20px; font-weight: 600; }
+  h2 { font-size: 15px; margin-bottom: 10px; }
+  h3 { font-size: 13px; margin: 18px 0 8px; color: #8b949e; font-weight: 600; }
   .badge { font-size: 12px; color: #8b949e; border: 1px solid #30363d; border-radius: 999px; padding: 2px 10px; }
-  .nr2 { background: #3d1d1d; border: 1px solid #a25b5b; color: #f3b8b8; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 14px; }
-  nav { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-  .page { border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
-  .page h2 { font-size: 14px; margin-bottom: 6px; }
-  .page p { font-size: 12px; color: #8b949e; }
+  .badge.ok { color: #3fb950; border-color: #238636; }
+  .badge.warn { color: #d29922; border-color: #9e6a03; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .nr2 { background: #3d1d1d; border: 1px solid #a25b5b; color: #f3b8b8; border-radius: 8px; padding: 12px 16px; margin-bottom: 22px; font-size: 14px; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  section { border: 1px solid #30363d; border-radius: 10px; padding: 16px; min-width: 0; }
+  section.wide { grid-column: 1 / -1; }
   .disabled { opacity: .55; }
-  .disabled h2::after { content: " · M1 待点亮"; font-size: 11px; color: #d29922; font-weight: 400; }
-  footer { margin-top: 28px; font-size: 12px; color: #8b949e; line-height: 1.8; border-top: 1px solid #21262d; padding-top: 14px; }
+  .disabled h2::after { content: " · M2 待点亮"; font-size: 11px; color: #d29922; font-weight: 400; }
+  .disabled p { font-size: 12px; color: #8b949e; }
+  form.row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  input, select { background: #161b22; border: 1px solid #30363d; color: #e6edf3; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+  input.code { width: 110px; }
+  button { background: #238636; border: 1px solid #2ea043; color: #fff; border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  button.mini { background: #21262d; border-color: #30363d; color: #58a6ff; padding: 2px 8px; font-size: 12px; }
+  button:hover { filter: brightness(1.1); }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  table.grid th, table.grid td { border-bottom: 1px solid #21262d; padding: 5px 8px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.grid th { color: #8b949e; font-weight: 600; }
+  .st { display: inline-block; padding: 0 8px; border-radius: 999px; font-size: 11px; border: 1px solid #30363d; }
+  .st.done { color: #3fb950; border-color: #238636; }
+  .st.failed, .st.abandoned { color: #f85149; border-color: #da3633; }
+  .st.running { color: #d29922; border-color: #9e6a03; }
+  .st.queued { color: #8b949e; }
+  .task-card { border: 1px solid #30363d; border-radius: 8px; padding: 12px; margin-top: 10px; font-size: 13px; line-height: 1.7; }
+  p.muted { font-size: 12px; color: #8b949e; line-height: 1.7; }
+  p.ok { font-size: 12px; color: #3fb950; }
+  p.warn { font-size: 12px; color: #d29922; }
   code { background: #161b22; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+  footer { margin-top: 28px; font-size: 12px; color: #8b949e; line-height: 1.8; border-top: 1px solid #21262d; padding-top: 14px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Stock Trading Agent · 面板骨架</h1>
-  <span class="badge">0.0.1 · dry-run 通道</span>
-  <span class="badge">127.0.0.1:8730</span>
+  <h1>Stock Trading Agent · 面板</h1>
 </header>
 
 <div class="nr2"><strong>NR-2</strong>：模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
 
-<nav>
-  <div class="page disabled"><h2>① 今日总览</h2><p>launchd 三槽状态、在册事件流、在跑 CC 会话与预算水位、待办。</p></div>
-  <div class="page disabled"><h2>② 诊股工作台</h2><p>输入码 → 五段流水线进度 → 双轨意见板 → 裁决卡 → 报告渲染。</p></div>
-  <div class="page disabled"><h2>③ 盯盘事件与 T2 复核</h2><p>事件表（复核短语列）+ T2 建议卡（必经原命令重裁决，NR-1）。</p></div>
-  <div class="page disabled"><h2>④ 模拟盘</h2><p>三批建仓持仓表、record_fill 逐笔确认队列、权益曲线（含费用与滑点）。</p></div>
-  <div class="page disabled"><h2>⑤ 建议卡库</h2><p>monitor/advice/ 建议卡档案（脱敏口径：百分比与档位词）。</p></div>
-  <div class="page disabled"><h2>⑥ 后验战绩</h2><p>decision log 画像、全样本登记含亏损、模拟绩效标注假设性。</p></div>
-  <div class="page disabled"><h2>⑦ 审计与预算</h2><p>decisions hash 链、audit 归档、token+等效美元双口径台账。</p></div>
-</nav>
+<main>
+  <section class="wide">
+    <h2>① 今日总览</h2>
+    <div id="overview" hx-get="/api/panel/overview" hx-trigger="every 180s" hx-swap="innerHTML">
+      <p class="muted">加载中……（180s 轮询）</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>② 诊股工作台</h2>
+    <form class="row" hx-post="/api/panel/submit" hx-target="#submit-result" hx-swap="innerHTML">
+      <input class="code" name="code" placeholder="600519 / 00700" pattern="\d{5,6}" required>
+      <select name="kind">
+        <option value="diagnose_quick">快速诊股</option>
+        <option value="diagnose_full">全量诊股</option>
+      </select>
+      <button type="submit">提交诊股</button>
+    </form>
+    <p class="muted">任务经路由 → CC 会话 → 断言器（NR-3）→ agent/ 台账落盘；盯盘/取数锁在场或 17:30–18:10 禁跑窗内提交将被拒（423）。</p>
+    <div id="submit-result"></div>
+  </section>
+
+  <section>
+    <h2>③ 盯盘事件与 T2 复核</h2>
+    <p class="muted">事件源 = vibe-stock watch.py 台账（零 LLM 轮询，不花模型钱）；「××复核」行可发起 T2 手动复核（人在环）。</p>
+    <div id="events" hx-get="/api/panel/events" hx-trigger="every 180s" hx-swap="innerHTML">
+      <p class="muted">加载中……</p>
+    </div>
+  </section>
+
+  <section class="wide">
+    <h2>⑦ 审计与预算</h2>
+    <div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s" hx-swap="innerHTML">
+      <p class="muted">加载中……</p>
+    </div>
+  </section>
+
+  <section class="disabled"><h2>④ 模拟盘</h2><p>三批建仓持仓表、record_fill 逐笔确认队列、权益曲线（含费用与滑点）。</p></section>
+  <section class="disabled"><h2>⑤ 建议卡库</h2><p>monitor/advice/ 建议卡档案（脱敏口径：百分比与档位词）。</p></section>
+  <section class="disabled"><h2>⑥ 后验战绩</h2><p>decision log 画像、全样本登记含亏损、模拟绩效标注假设性。</p></section>
+</main>
 
 <footer>
-  只读态 API：<code>/api/health</code> · <code>/api/queue</code> · <code>/api/sessions</code> · <code>/api/decisions</code> · <code>/api/paper</code> · <code>/api/budget</code>（htmx 180s 轮询属 M1 接线期，§16）<br>
+  只读 API：<code>/api/health</code> · <code>/api/queue</code> · <code>/api/sessions</code> · <code>/api/decisions</code> · <code>/api/paper</code> · <code>/api/budget</code> · <code>/api/monitor/events</code> · <code>/api/monitor/status</code> · <code>/api/reports</code>（htmx 180s 轮询，§16）<br>
   本产品输出仅供学习与研究参考，<strong>不构成投资建议</strong>；不下单、不保证收益；模拟绩效均为假设性推演（含费用与滑点）；全部产物由 AI 生成、用户复核前置。
 </footer>
 </body>

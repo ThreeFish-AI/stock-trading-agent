@@ -74,7 +74,56 @@ class StateLayout:
 
     @property
     def daemon_lock(self) -> Path:
+        """唯一消费者锁：server worker 线程或 CLI run-once 二选一（12-orchestration §⑤）。"""
         return self.agent_dir / "daemon.lock"
+
+    @property
+    def queue_lock(self) -> Path:
+        """queue.json 读-改-写串行闸：任何变更周期 = 本锁内「重载→变更→落盘」。"""
+        return self.agent_dir / "queue.lock"
+
+    @property
+    def runs_dir(self) -> Path:
+        """会话/任务工作目录父级（agent/runs/；CC 会话 cwd 与 T1 workdir 均落此下）。"""
+        return self.agent_dir / "runs"
+
+    def t1_workdir(self, date: str, code: str) -> Path:
+        """T1 刷新工作目录：agent/runs/<date>/t1/<code>/（evidence+context-pack 落位）。"""
+        return self.runs_dir / date / "t1" / code
+
+    @property
+    def watcher_state_path(self) -> Path:
+        """monitor 台账监听偏移断点（agent/watcher.json；崩溃不重放已登记事件）。"""
+        return self.agent_dir / "watcher.json"
+
+    # --- vibe-stock 既有产物（只读消费；写者=外仓脚本，R3/R8） ---
+    @property
+    def monitor_dir(self) -> Path:
+        return self.root / "monitor"
+
+    @property
+    def monitor_events_dir(self) -> Path:
+        return self.monitor_dir / "events"
+
+    def monitor_events_file(self, date: str) -> Path:
+        return self.monitor_events_dir / f"{date}.jsonl"
+
+    @property
+    def monitor_state_path(self) -> Path:
+        """watch.py 运行时状态（close_done/next_due 等三槽状态条数据源，只读）。"""
+        return self.monitor_dir / "state.json"
+
+    @property
+    def outlook_dir(self) -> Path:
+        return self.root / "outlook"
+
+    def outlook_file(self, date: str) -> Path:
+        return self.outlook_dir / f"{date}.md"
+
+    @property
+    def reports_dir(self) -> Path:
+        """vibe-stock 全诊报告目录（<code>.<market>/<date>.md，只读）。"""
+        return self.root / "reports"
 
     # --- 根级与既有 SSOT（只读或零接触） ---
     @property

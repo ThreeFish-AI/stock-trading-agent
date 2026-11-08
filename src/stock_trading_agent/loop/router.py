@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
@@ -101,10 +101,3 @@ def load_table(path: Path) -> RoutingTable:
                 f"路由 {kind} 放宽被拒：allowed_tools 扩集 {sorted(extra_tools)}（只许收严）"
             )
     return table
-
-
-@dataclass
-class ZeroLLMDispatch:
-    """零 LLM 分派占位（T0→本地通知 osascript、T1→diagnose prepare 的执行体，M1 接线期落地）。"""
-
-    handlers: dict[str, str] = field(default_factory=dict)

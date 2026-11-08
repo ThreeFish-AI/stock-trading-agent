@@ -1,4 +1,4 @@
-"""FastAPI 面板冒烟：只读路由、TrustedHost、静态页 NR-2 横幅、POST 501。"""
+"""FastAPI 面板冒烟：只读路由、TrustedHost、静态页 NR-2 横幅、提交契约（422 白名单闸）。"""
 
 from __future__ import annotations
 
@@ -50,8 +50,36 @@ class TestSecurity:
         with TestClient(create_app(state_root=tmp_path), base_url="http://evil.example") as c:
             assert c.get("/api/health").status_code == 400
 
-    def test_submit_is_501_placeholder(self, client: TestClient):
-        assert client.post("/api/queue/submit", json={}).status_code == 501
+    def test_submit_contract_replaces_501(self, client: TestClient):
+        # 501 占位已实现（M1 接线）：空 body → pydantic 422（kind/code 白名单闸）
+        assert client.post("/api/queue/submit", json={}).status_code == 422
+        assert (
+            client.post("/api/queue/submit", json={"kind": "hft", "code": "600519"}).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/api/queue/submit", json={"kind": "diagnose_quick", "code": "6005191"}
+            ).status_code
+            == 422
+        )
+
+    def test_monitor_projection_empty_default(self, client: TestClient):
+        events = client.get("/api/monitor/events").json()
+        assert events["events"] == [] and events["count"] == 0
+        status = client.get("/api/monitor/status").json()
+        assert status["loop"]["active"] is False  # 无 lifespan → runtime 未启动（只读默认）
+        assert status["slots"]["outlook"]["done"] is False
+        assert client.get("/api/reports").json() == {"reports": []}
+
+    def test_panel_fragments_serve_html(self, client: TestClient):
+        for path in ("/api/panel/overview", "/api/panel/events", "/api/panel/audit"):
+            resp = client.get(path)
+            assert resp.status_code == 200 and "text/html" in resp.headers["content-type"]
+
+    def test_panel_vendor_htmx_served(self, client: TestClient):
+        resp = client.get("/vendor/htmx.min.js")
+        assert resp.status_code == 200 and len(resp.content) > 10000
 
     def test_decisions_tail_clamped(self, client: TestClient):
         assert client.get("/api/decisions?tail=0").status_code == 422  # 下界

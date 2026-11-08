@@ -11,6 +11,6 @@
 | [docs/research/main-agent-proposal.md](../research/main-agent-proposal.md) | 产品与技术方案：上/下篇 19 节、M1/M2/M3、红线继承 13+NR-5、D1–D8、R-01~R-13 | 贡献者 / Agent |
 | [docs/diagrams/main-agent/](../diagrams/main-agent/) | 四张架构图 archify A 档四件套（总览/Loop 时序/状态数据流/模拟盘生命周期） | 贡献者 / Agent |
 | [docs/prototypes/main-agent/](../prototypes/main-agent/) | 四页产品原型（自包含 HTML + 整页 PNG，全合成数据，方案上篇 §2 借图展开） | 贡献者 |
-| [docs/specs/](../specs/) | 实施规约落位（12-orchestration / 13-paper，随实施 PR 建） | 贡献者 / Agent |
+| [docs/specs/](../specs/) | 实施规约落位：[12-orchestration.md](../specs/12-orchestration.md)（0.0.3 建，主 Agent 编排规约）；13-paper 随 M2 建 | 贡献者 / Agent |
 | [vibe-stock（外仓）](https://github.com/ThreeFish-AI/vibe-stock) | 机制 SSOT：诊股 Skill（SKILL.md + references/01–11 + strategies/ + scripts/ + batch/），本产品经 `~/.claude/skills/vibe-stock` 软链使用 | 贡献者 / Agent |
 | [issue.md](issue.md) | Issue 处理档案（头部索引 + 详情锚点） | 贡献者 / Agent |
