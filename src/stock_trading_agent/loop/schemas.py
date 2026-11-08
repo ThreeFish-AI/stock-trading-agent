@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from stock_trading_agent.loop.advice import ADVICE_ACTIONS
+
 _DRAFT07 = "http://json-schema.org/draft-07/schema#"
 
 _SIGNAL_ENUM = ["strong_buy", "buy", "hold", "sell", "strong_sell"]
@@ -24,13 +26,57 @@ OPINION_SCHEMA: dict[str, Any] = {
     },
 }
 
+# T2 建议卡结构化契约（monitor-advice/1 的 structured 面；07 P2 + 04 五档 + NR-1）。
+# 扁平子集（无 if/then）：outcome=card/facts_only 的分支必填由断言器程序化判定——
+# 防 CC 端 schema 方言风险（F-20）。字段名避开断言器敏感词族（禁 sellable 前缀等）。
 ADVICE_SCHEMA: dict[str, Any] = {
     "$schema": _DRAFT07,
     "type": "object",
-    "required": ["disclaimer"],
+    "required": ["outcome", "disclaimer"],
     "properties": {
         "kind": {"type": "string"},
-        "advice": {"type": "string"},
+        "outcome": {"enum": ["card", "facts_only"]},
+        # --- outcome=card 必带（断言器程序化） ---
+        "candidate_action": {"enum": list(ADVICE_ACTIONS)},
+        "final_signal": {"enum": _SIGNAL_ENUM},
+        "prev_diff": {
+            "type": "object",
+            "properties": {
+                "prev_final_signal": {"enum": [*_SIGNAL_ENUM, "none"]},
+                "note": {"type": "string", "minLength": 1, "maxLength": 200},
+            },
+        },
+        "t1_sell_pct": {"type": "number", "minimum": 0, "maximum": 100},
+        "t1_sell_tier": {"type": "string", "minLength": 1, "maxLength": 20},
+        "verdict_date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+        "opinion_data_date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+        "replayed_opinions": {"type": "integer", "minimum": 2, "maximum": 50},
+        "trend_ref": {
+            "type": "object",
+            "properties": {
+                "band_rows": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "horizon": {"enum": ["1d", "3d", "5d", "10d"]},
+                            "low": {"type": "number", "exclusiveMinimum": 0},
+                            "high": {"type": "number", "exclusiveMinimum": 0},
+                            "prob_touch_low_pct": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100,
+                            },
+                        },
+                    },
+                }
+            },
+        },
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 2000},
+        # --- outcome=facts_only 必带（断言器程序化；卡面字段必须全缺席防走私） ---
+        "facts_note": {"type": "string", "minLength": 1, "maxLength": 1000},
         "disclaimer": {"type": "string", "minLength": 1},
     },
 }

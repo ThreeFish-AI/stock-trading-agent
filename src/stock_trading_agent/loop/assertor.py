@@ -38,10 +38,87 @@ class AssertVerdict:
         return AssertVerdict(ok=False, reasons=tuple(reasons))
 
 
+ADVICE_KINDS = ("monitor_review",)  # T2 建议卡 kind：advice 断言族适用
+# 锚③ rank 序：index 越小越激进（strong_buy=0 … strong_sell=4）——「更激进」= rank 更小
+_SIGNAL_RANK = {s: i for i, s in enumerate(VALID_SIGNALS)}
+
+_CARD_FIELDS = (
+    "candidate_action",
+    "final_signal",
+    "prev_diff",
+    "t1_sell_pct",
+    "t1_sell_tier",
+    "verdict_date",
+    "opinion_data_date",
+    "replayed_opinions",
+    "trend_ref",
+    "rationale",
+)
+
+
+@dataclass(frozen=True)
+class AdviceContext:
+    """advice 断言族上下文（断言器零 IO——由 loop 层注入）。
+
+    today：市场钟面当日（保鲜门与 verdict_date 比对基准）；
+    last_signal：该股最近已登记信号（锚③；None=无记录放行）；
+    signals_read_ok：False=signals.json 在场不可解析 → 拒卡（锚不可比即不出卡，宁拒不漏）。
+    """
+
+    today: str
+    last_signal: str | None
+    signals_read_ok: bool
+
+
+def _advice_family_checks(structured: dict, ctx: AdviceContext) -> list[str]:
+    """T2 建议卡断言族（07 P2 硬前置的编排侧投影；分支必填程序化——schema 扁平无 if/then）。"""
+    reasons: list[str] = []
+    outcome = structured.get("outcome")
+    if outcome == "card":
+        missing = [f for f in _CARD_FIELDS if f not in structured]
+        if missing:
+            reasons.append(f"outcome=card 缺必带字段：{missing}")
+        if not ctx.signals_read_ok:
+            reasons.append("signals.json 在场不可解析：锚③不可比即不出卡（宁拒不漏）")
+        if structured.get("verdict_date") != ctx.today:
+            reasons.append(f"verdict_date≠今日（{structured.get('verdict_date')!r}≠{ctx.today!r}）")
+        if structured.get("opinion_data_date") != ctx.today:
+            stale = structured.get("opinion_data_date")
+            reasons.append(
+                f"opinion_data_date≠今日（意见保鲜机械门：数据日 {stale!r}≠{ctx.today!r}，须重产）"
+            )
+        final_signal = structured.get("final_signal")
+        if (
+            final_signal in _SIGNAL_RANK
+            and ctx.last_signal in _SIGNAL_RANK
+            and _SIGNAL_RANK[final_signal] < _SIGNAL_RANK[ctx.last_signal]
+        ):
+            reasons.append(
+                f"只降不升锚③违例：盘中终版 {final_signal} 比最近登记 {ctx.last_signal} 更激进"
+                "（拒出卡降级纯事实通报）"
+            )
+    elif outcome == "facts_only":
+        if "facts_note" not in structured:
+            reasons.append("outcome=facts_only 缺 facts_note")
+        smuggled = [f for f in _CARD_FIELDS if f in structured]
+        if smuggled:
+            reasons.append(f"outcome=facts_only 出现卡面字段（降级通道走私卡面）：{smuggled}")
+    else:
+        reasons.append(f"outcome 非法：{outcome!r}（card | facts_only）")
+    return reasons
+
+
 def assess_result(
-    result: CCResult, kind: str, *, schema: dict[str, Any] | None = None
+    result: CCResult,
+    kind: str,
+    *,
+    schema: dict[str, Any] | None = None,
+    advice_ctx: AdviceContext | None = None,
 ) -> AssertVerdict:
-    """三段判据 + 结构化输出在场 + 红线族 + draft-07 本地复验；违例即 refuse（Loop 据此拒落盘）。"""
+    """三段判据 + 结构化输出在场 + 红线族 + draft-07 本地复验；违例即 refuse（Loop 据此拒落盘）。
+
+    advice kind 必须注入 advice_ctx（缺省即拒——防漏配，判据只收严）。
+    """
     reasons: list[str] = []
     if result.exit_code != 0:
         reasons.append(f"退出码非 0：{result.exit_code}")
@@ -68,6 +145,8 @@ def assess_result(
         )
 
     structured = result.structured_output
+    if kind in ADVICE_KINDS and advice_ctx is None:
+        reasons.append("advice kind 未注入 advice_ctx（防漏配，收严）")
     if structured is not None:
         if kind in OPINION_KINDS and structured.get("signal") not in VALID_SIGNALS:
             reasons.append(f"signal 非五词枚举：{structured.get('signal')!r}")
@@ -76,6 +155,8 @@ def assess_result(
         if schema is not None:
             reasons.extend(_validate_draft07(structured, schema))
         reasons.extend(scan_sensitive_fields(structured))
+        if kind in ADVICE_KINDS and advice_ctx is not None:
+            reasons.extend(_advice_family_checks(structured, advice_ctx))
     return AssertVerdict(ok=not reasons, reasons=tuple(reasons))
 
 

@@ -179,6 +179,58 @@ def render_audit(decisions: list[dict], budget: dict) -> str:
     return table + render_budget_line(budget)
 
 
+def render_advice_library(payload: dict) -> str:
+    """面板⑤：建议卡库（当日卡列表）+ 拒卡/降级通报区（脱敏字段直接透出）。"""
+    cards = payload.get("cards") or []
+    refused = payload.get("refused") or []
+    parts = [f"<h3>建议卡 · {_esc(payload.get('date', ''))}</h3>"]
+    if cards:
+        rows = []
+        for card in cards:
+            rows.append(
+                "<tr>"
+                f"<td>{_esc(card.get('code', ''))}</td>"
+                f"<td>{_esc(card.get('candidate_action', ''))}</td>"
+                f"<td>{_esc(card.get('final_signal', ''))}</td>"
+                f"<td>{_esc(card.get('prev_final_signal', ''))}</td>"
+                f"<td>{_esc(card.get('t1_sell_pct', ''))}% · {_esc(card.get('t1_sell_tier'))}</td>"
+                f"<td>{_esc(card.get('mtime', ''))}</td>"
+                "</tr>"
+            )
+        parts.append(
+            '<table class="grid"><thead><tr><th>code</th><th>候选动作</th><th>终判</th>'
+            "<th>上一裁决</th><th>T+1 可卖</th><th>落盘</th></tr></thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+    else:
+        parts.append('<p class="muted">当日无建议卡（T2 复核未触发或被降级）。</p>')
+    parts.append("<h3>拒卡 / 降级通报</h3>")
+    if refused:
+        rows = []
+        for item in refused:
+            rows.append(
+                "<tr>"
+                f"<td>{_esc(item.get('ts', ''))}</td>"
+                f"<td>{_esc(item.get('code', ''))}</td>"
+                f"<td>{_esc(item.get('origin', ''))}</td>"
+                f"<td>{_esc(item.get('reason_code', ''))}</td>"
+                f"<td>{_esc((item.get('facts_note') or '')[:80])}</td>"
+                "</tr>"
+            )
+        parts.append(
+            '<table class="grid"><thead><tr><th>ts</th><th>code</th><th>origin</th>'
+            "<th>reason</th><th>通报</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+        )
+    else:
+        parts.append('<p class="muted">无拒卡/降级记录。</p>')
+    parts.append(
+        '<p class="muted">卡面脱敏口径：只落百分比与档位词（份额原值禁入落盘产物，R2/NR-5）；'
+        "候选动作为 vibe-stock/04 五档分类学措辞。</p>"
+    )
+    return "".join(parts)
+
+
 def render_submit_result(task: dict | None, *, status: int, detail: str) -> str:
     if task is not None and status < 300:
         return f'<div id="submit-result">{render_task_card(task)}</div>'

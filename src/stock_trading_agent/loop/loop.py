@@ -19,6 +19,13 @@ from stock_trading_agent.cc_client.contract import (
     derive_session_uuid,
     validate_request,
 )
+from stock_trading_agent.loop.advice import (
+    MONITOR_REVIEW_KIND,
+    advice_context,
+    render_advice_card,
+    scan_advice_text,
+    write_advice_card,
+)
 from stock_trading_agent.loop.assertor import OPINION_KINDS, assess_result
 from stock_trading_agent.loop.events import (
     EventEnvelope,
@@ -79,6 +86,7 @@ class AgentLoop:
         self.layout = layout
         self.table = table
         self.decisions = decisions or DecisionLog()
+        self._persisted_lines = 0  # _persist_all 增量落行游标（advice 链单次 persist 多条决策）
         self.budget = budget or BudgetConfig()  # 默认关（人在环期仅记账，§13）
 
     # ① ingest：事件信封入队（幂等键 + 禁跑窗 + 锁前置）
@@ -195,7 +203,8 @@ class AgentLoop:
         queue: QueueState,
         sessions: SessionsState,
     ) -> bool:
-        verdict = assess_result(result, kind=task.kind, schema=request.schema)
+        ctx = advice_context(self.layout, task.code) if task.kind == MONITOR_REVIEW_KIND else None
+        verdict = assess_result(result, kind=task.kind, schema=request.schema, advice_ctx=ctx)
         if task.status != "running":  # 守卫：spawn 前未 mark_running 即拒（收严，不变式不可绕过）
             raise LoopReject(
                 f"内部不变式违例：task={task.task_id} 在 assert 时处 {task.status!r} 而非 running"
@@ -209,11 +218,25 @@ class AgentLoop:
             record.error = "；".join(verdict.reasons)
             self.decisions.append(
                 _now_iso(),
-                kind="assert_refuse",
-                payload={"task_id": task.task_id, "reasons": list(verdict.reasons)},
+                kind=("advice_refused" if task.kind == MONITOR_REVIEW_KIND else "assert_refuse"),
+                payload={
+                    "task_id": task.task_id,
+                    "kind": task.kind,
+                    "code": task.code,
+                    **(
+                        {"origin": "assert", "reason_code": "schema_or_redline"}
+                        if task.kind == MONITOR_REVIEW_KIND
+                        else {}
+                    ),
+                    "reasons": list(verdict.reasons),
+                },
             )
             self._persist_all(queue, sessions)
             return False
+        if task.kind == MONITOR_REVIEW_KIND:
+            declined = self._advice_card_or_refuse(task, result, queue, sessions, ctx)
+            if declined is not None:
+                return declined  # 写卡链失败 → task=failed + advice_refused，杜绝 done-无卡
         queue.transition(task.task_id, "done")
         record = next(t for t in queue.tasks if t.task_id == task.task_id)
         record.finished_at = _now_iso()
@@ -237,6 +260,75 @@ class AgentLoop:
         self._persist_all(queue, sessions)
         return True
 
+    def _advice_card_or_refuse(
+        self, task: TaskRecord, result, queue: QueueState, sessions: SessionsState, ctx
+    ) -> bool | None:
+        """T2 建议卡写者例外执行序（NR-1/NR-3；07 P2 契约路径）。
+
+        outcome=card：render → 脱敏扫描 → 原子写 → advice_card_written 决策（任何一步失败即
+        failed + advice_refused，杜绝 done-无卡）；outcome=facts_only：会话自报降级——task 照常
+        done（会话/预算照登），另记 advice_refused(origin=session_degraded) 携 facts_note。
+        """
+        structured = result.structured_output or {}
+        if structured.get("outcome") != "card":
+            self.decisions.append(
+                _now_iso(),
+                kind="advice_refused",
+                payload={
+                    "task_id": task.task_id,
+                    "kind": task.kind,
+                    "code": task.code,
+                    "origin": "session_degraded",
+                    "reason_code": "session_degraded",
+                    "facts_note": str(structured.get("facts_note", "")),
+                },
+            )
+            return None  # 正常降级：继续 done 路径
+        origin = None
+        card_path = None
+        try:
+            md = render_advice_card(
+                structured, code=task.code, date=ctx.today, task_id=task.task_id
+            )
+            if errs := scan_advice_text(md):
+                origin, reason_code, detail = "render_scan", "render_scan", "；".join(errs)
+            else:
+                card_path = write_advice_card(self.layout, ctx.today, task.code, md)
+        except OSError as exc:
+            origin, reason_code, detail = "write_failure", "write_failure", str(exc)
+        if origin is not None:
+            queue.transition(task.task_id, "failed")
+            record = next(t for t in queue.tasks if t.task_id == task.task_id)
+            record.finished_at = _now_iso()
+            record.error = detail
+            self.decisions.append(
+                _now_iso(),
+                kind="advice_refused",
+                payload={
+                    "task_id": task.task_id,
+                    "kind": task.kind,
+                    "code": task.code,
+                    "origin": origin,
+                    "reason_code": reason_code,
+                    "reasons": [detail],
+                },
+            )
+            self._persist_all(queue, sessions)
+            return False
+        self.decisions.append(
+            _now_iso(),
+            kind="advice_card_written",
+            payload={
+                "task_id": task.task_id,
+                "code": task.code,
+                "date": ctx.today,
+                "path": str(card_path),
+                "candidate_action": structured.get("candidate_action"),
+                "final_signal": structured.get("final_signal"),
+            },
+        )
+        return None
+
     def _record_budget(self, result) -> None:
         """订阅轨双口径记账（F-34：token + 等效美元；原子写 budget.json，§11 写者=主 Agent）。"""
         ledger = read_json(self.layout.budget_path) or {}
@@ -255,8 +347,10 @@ class AgentLoop:
 
             from stock_trading_agent.state.store import atomic_append_jsonl
 
-            if self.decisions.lines:
-                atomic_append_jsonl(self.layout.decisions_path, asdict(self.decisions.lines[-1]))
+            fresh = self.decisions.lines[self._persisted_lines :]
+            for line in fresh:
+                atomic_append_jsonl(self.layout.decisions_path, asdict(line))
+            self._persisted_lines = len(self.decisions.lines)
 
     def load_queue(self) -> QueueState:
         return QueueState.from_dict(read_json(self.layout.queue_path, expect_version=1))

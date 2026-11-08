@@ -21,6 +21,35 @@ def _minimal_structured_output(kind: str) -> dict:
     if kind in OPINION_KINDS:
         base["signal"] = "hold"
         base["rationale"] = "dry-run 合成意见（非真实裁决）"
+    elif kind == "monitor_review":
+        # T2 建议卡合成载荷（monitor-advice/1 全字段：CI 端到端全链默认可跑；日期取市场今日）
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        today = market_today()
+        base.update(
+            {
+                "outcome": "card",
+                "candidate_action": "持有观察",
+                "final_signal": "hold",
+                "prev_diff": {"prev_final_signal": "none", "note": "dry-run 首卡"},
+                "t1_sell_pct": 100.0,
+                "t1_sell_tier": "全部",
+                "verdict_date": today,
+                "opinion_data_date": today,
+                "replayed_opinions": 2,
+                "trend_ref": {
+                    "band_rows": [
+                        {
+                            "horizon": "1d",
+                            "low": 9.5,
+                            "high": 10.5,
+                            "prob_touch_low_pct": 31.0,
+                        }
+                    ]
+                },
+                "rationale": "dry-run 合成建议卡（非真实裁决）",
+            }
+        )
     return base
 
 

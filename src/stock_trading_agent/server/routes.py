@@ -18,6 +18,8 @@ from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 
 from stock_trading_agent import __version__
+from stock_trading_agent.loop.advice import parse_advice_card
+from stock_trading_agent.loop.events import lock_is_held
 from stock_trading_agent.loop.loop import LoopReject
 from stock_trading_agent.loop.monitor_events import market_today, parse_line
 from stock_trading_agent.server.panel import (
@@ -180,8 +182,9 @@ def monitor_status(request: Request) -> dict:
     return {
         "date": day,
         "locks": {
-            "watch": layout.watch_lock.exists(),
-            "fetch": layout.fetch_lock.exists(),
+            # 持有态探测（0.0.5 收敛）：存在性会把 vibe-stock 不删除的陈旧锁文件误判为持有中
+            "watch": lock_is_held(layout.watch_lock),
+            "fetch": lock_is_held(layout.fetch_lock),
         },
         "watch_state": {
             "close_done": bool(watch_state.get("close_done")),
@@ -238,6 +241,82 @@ def reports(request: Request) -> dict:
                 break
     out.sort(key=lambda r: r["latest"], reverse=True)
     return {"reports": out}
+
+
+# --- 建议卡库（⑤：monitor/advice/ 只读投影 + 拒卡/降级通报区） ---
+
+
+@router.get("/advice")
+def advice(request: Request, date: str | None = None) -> dict:
+    import datetime as dt
+
+    layout = _layout(request)
+    day = date or market_today()
+    cards: list[dict] = []
+    day_dir = layout.advice_dir / day
+    if day_dir.exists():
+        for card_path in sorted(day_dir.glob("*.md")):
+            meta = parse_advice_card(card_path.read_text(encoding="utf-8"))
+            if not meta:
+                continue
+            cards.append(
+                {
+                    "code": meta.get("code", card_path.stem),
+                    "path": str(card_path),
+                    "mtime": dt.datetime.fromtimestamp(
+                        card_path.stat().st_mtime, tz=dt.UTC
+                    ).isoformat(timespec="seconds"),
+                    **{k: v for k, v in meta.items() if k != "task_id"},
+                }
+            )
+    refused = _advice_refused(request, day)
+    return {"date": day, "cards": cards, "refused": refused}
+
+
+def _advice_refused(request: Request, day: str) -> list[dict]:
+    """当日拒卡/降级通报（decisions 尾部扫描 kind=advice_refused，ts 市场钟面匹配）。"""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Asia/Shanghai")
+    out = []
+    for line in decisions(request, tail=200):
+        if line.get("kind") != "advice_refused":
+            continue
+        try:
+            ts = dt.datetime.fromisoformat(line.get("ts", ""))
+        except ValueError:
+            continue
+        if ts.astimezone(tz).strftime("%Y-%m-%d") != day:
+            continue
+        payload = line.get("payload") or {}
+        out.append(
+            {
+                "code": payload.get("code", ""),
+                "origin": payload.get("origin", ""),
+                "reason_code": payload.get("reason_code", ""),
+                "facts_note": payload.get("facts_note", ""),
+                "ts": line.get("ts", ""),
+            }
+        )
+    return out
+
+
+@router.get("/advice/{date}/{code}")
+def advice_card(date: str, code: str, request: Request) -> dict:
+    layout = _layout(request)
+    path = layout.advice_card_path(date, code)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"建议卡不存在：{date}/{code}")
+    md = path.read_text(encoding="utf-8")
+    return {"code": code, "date": date, "md": md, "meta": parse_advice_card(md)}
+
+
+@router.get("/panel/advice")
+def panel_advice(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_advice_library
+
+    return HTMLResponse(render_advice_library(advice(request)))
 
 
 # --- 提交半边（§11「读+提交命令」；写者=主 Agent 进程内直调 runtime.submit） ---

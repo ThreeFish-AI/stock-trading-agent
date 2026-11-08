@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.5] - 2026-11-08
+
+### Added
+
+- **T2 建议卡全链（M2 第一 PR，NR-1 编排侧；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑧）**。①**loop/advice.py**：04 五档枚举常量（可加仓/持有/持有·等回踩/持有观察/减仓/离场，单测逐字钉死）、render/parse_advice_card（YAML front-matter 全脱敏+四要素节+走势参考表+免责尾注）、scan_advice_text（份额单位正则负断言：卡面禁「股|份|手」数量词——宁误拒不漏放；常量置空视为缺失防空串恒子串坑位）、write_advice_card（新 state.store.atomic_write_text 单一入口，写者例外）、read_last_signal（signals.json 只读，锚③数据源；不可解析→宁拒不漏）、t2_admission（每日 ≤5 票+实盘优先：超额仅放行 universe kind=real）、count_t2_done（enqueued_at 市场钟面计数）；②**ADVICE_SCHEMA 全量重构**（outcome=card/facts_only 降级一等公民+卡面十字段；扁平无 if/then 分支必填断言器程序化；字段名避敏感词族）；③**断言器 advice 族**：AdviceContext 注入（零 IO 保持）、advice kind 缺 ctx 即拒（防漏配置收严）、保鲜门投影（verdict/opinion_data_date==今日）、锚③机械校验（final_signal rank 比最近登记信号更激进即拒）、facts_only 走私卡面防线；④**loop 写者例外执行序**：render→scan→原子写→advice_card_written 决策→done，任一步失败即 failed（杜绝 done-无卡）；_persist_all 改增量落多行（advice 链单 persist 两条决策）；monitor_review 断言违例决策改判 advice_refused（五源统一）；⑤**worker 5 票闸**（消费期判定，failed 防自旋）；⑥routing.yaml monitor_review prompt 扩展（T1 pack 指针+NR-1 指令+降级出口+写者纪律）；dryrun 补合成 card 载荷（CI 全链可跑）；⑦**面板⑤点亮**：GET /api/advice?date（卡库+拒卡/降级通报区，front-matter 反解）、/api/advice/{date}/{code}、/api/panel/advice fragment；/api/monitor/status locks 收敛 lock_is_held（存在性误判回归钉）。测试 +32 例（276 passed 全绿）：五档常量钉死/渲染脱敏负断言/锚③矩阵/保鲜门/闸矩阵/走私防线/计数时区日界、e2e 六链（全链落卡→面板读到/断链无卡/facts_only 降级 done/锚③端到端拒卡/5 票闸/locks 回归）；selftest 21 case（+2）。routing.yaml 判据变化登记：monitor_review prompt_template 修正（默认表程序沿 0.0.4 先例，budget/max_turns/tools 不动）。
+
 ## [0.0.4] - 2026-11-08
 
 ### Added

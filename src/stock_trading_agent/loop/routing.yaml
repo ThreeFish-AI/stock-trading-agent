@@ -27,7 +27,17 @@ routes:
     allowed_tools: [Read, Write, Glob, Grep, Bash]
   - kind: monitor_review
     task_kind: monitor_review
-    prompt_template: "盯盘复核 {code}"
+    prompt_template: |
+      盯盘复核 {code}（T2）。按 vibe-stock 07 盯盘子技能 T2 复核链执行：重放该股过门意见 →
+      按触发事实机械覆写 risk → adjudicate 原命令重裁决（NR-1：未重裁决不得出卡；意见数据日
+      非今日或有效意见不足 2 条时先重产意见）。输入指针（只读，缺失即如实说明、勿臆造）：
+      当日 context-pack 于 ~/.vibe-stock/agent/runs/当日/t1/{code}/context-pack.md；
+      该股当日事件于 ~/.vibe-stock/monitor/events/；最新 opinions/evidence 在 vibe-stock
+      报告工作目录自行定位。写者纪律：禁写 monitor/advice/（卡由编排写入）与
+      signals.json（写者恒为 vibe-stock 脚本）。结构化输出按 schema：能履约 NR-1 时
+      outcome=card（candidate_action 用五档枚举逐字；T+1 可卖只给百分比与档位词，
+      份额原值禁入任何输出）；无法履约时 outcome=facts_only 并给 facts_note（纯事实，
+      无候选动作）。
     schema_ref: advice
     budget_usd: 1.0
     max_turns: 12
