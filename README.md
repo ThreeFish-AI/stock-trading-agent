@@ -24,7 +24,7 @@
 - 四张架构图（archify A 档四件套）：[总览](docs/diagrams/main-agent/main-architecture/main-architecture.svg) · [Loop 时序](docs/diagrams/main-agent/agent-loop-sequence/agent-loop-sequence.svg) · [状态数据流](docs/diagrams/main-agent/state-extension-dataflow/state-extension-dataflow.svg) · [模拟盘生命周期](docs/diagrams/main-agent/paper-trading-lifecycle/paper-trading-lifecycle.svg)
 - 四页产品原型（合成数据）：[今日总览](docs/prototypes/main-agent/overview.png) · [诊股工作台](docs/prototypes/main-agent/diagnosis.png) · [盯盘与 T2 复核](docs/prototypes/main-agent/monitor-advice.png) · [模拟盘](docs/prototypes/main-agent/paper.png)
 
-## 安装与运行（M1 骨架，0.0.1）
+## 安装与运行（M1，0.0.3）
 
 前置：[uv](https://docs.astral.sh/uv/)、macOS、可选本机 `claude` CLI（无则跑 dry-run 通道）。
 
@@ -34,11 +34,12 @@ cd stock-trading-agent
 uv sync                       # 建 .venv 并按 uv.lock 锁定依赖
 uv run pytest -q              # 测试门禁（全绿才可提交）
 uv run stock-trading-agent selftest   # 仓级 selftest（与 pytest 同源判据）
-uv run stock-trading-agent serve      # 本地面板骨架（127.0.0.1:8730，dry-run 通道）
+uv run stock-trading-agent serve      # 本地面板（127.0.0.1:8730：Loop 运行时 + htmx 轮询，dry-run 通道）
 uv run stock-trading-agent probe      # CC 通道探针（骨架期即 dry-run 报告）
+uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI 消费一单（与 serve 抢 daemon 锁）
 ```
 
-面板七页（今日总览/诊股工作台/盯盘与 T2 复核/模拟盘/建议卡库/后验战绩/审计与预算）当前为禁用态导航占位，M1 实施逐页点亮（方案 §16）。
+面板①今日总览/②诊股工作台（提交入队）/③盯盘事件与 T2 复核（手动入口）/⑦审计与预算已点亮（180s htmx 轮询，本地 vendor 零 CDN）；④⑤⑥随 M2 点亮（方案 §16）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。
 
 ## 仓库结构
 
@@ -53,11 +54,12 @@ uv run stock-trading-agent probe      # CC 通道探针（骨架期即 dry-run �
 │   └── .agents/            # knowledge-map（文档统一入口）+ issue.md
 ├── src/stock_trading_agent/
 │   ├── cc_client/          # CCRequest/CCClient 契约、CLI 旗标构建、dry-run 通道
-│   ├── loop/               # 意图路由（YAML 零 LLM）、NR-3 断言器、Loop 六段骨架
+│   ├── loop/               # 意图路由（YAML 零 LLM）、NR-3 断言器、Loop 六段、T1 刷新链、
+│   │                       # monitor 监听（watchfiles）、LoopRuntime 消费者（daemon/queue 双锁）
 │   ├── state/              # ~/.vibe-stock/agent/ 状态布局、原子写、hash 链 decision log
 │   ├── paper/              # 模拟盘引擎：批状态机、严格穿价撮合、费用栈、逐笔确认
 │   ├── budget/             # 预算闸（默认关）
-│   └── server/             # FastAPI 本地面板骨架（只读态 + 静态页占位）
+│   └── server/             # FastAPI 本地面板：只读态 + 提交半边 + monitor 投影 + htmx fragment
 ├── tests/                  # unit（纯函数）+ integration（tmp 状态目录端到端）
 └── .github/workflows/ci.yml  # uv sync → ruff → pytest
 ```

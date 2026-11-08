@@ -30,7 +30,12 @@ def make_loop(layout: StateLayout) -> AgentLoop:
 def run_one(loop: AgentLoop, kind: str, code: str) -> tuple[QueueState, SessionsState]:
     queue, sessions = QueueState(), SessionsState()
     task = loop.ingest(EventEnvelope(event_id="e1", source="panel", kind=kind, code=code), queue)
-    request, result = loop.run_session(task)
+    request, result = loop.run_session(task, queue=queue)
+    # WAL 不变式：spawn 返回时盘上 queue.json 已是 running（mark_running 先于 spawn 落盘）
+    from stock_trading_agent.state.store import read_json as _read
+
+    persisted = QueueState.from_dict(_read(loop.layout.queue_path))
+    assert persisted.tasks[0].status == "running"
     assert loop.assert_and_persist(task, request, result, queue=queue, sessions=sessions) is True
     return queue, sessions
 
@@ -74,7 +79,7 @@ class TestHappyPath:
         task = loop.ingest(
             EventEnvelope(event_id="e", source="panel", kind="diagnose_quick", code="600519"), queue
         )
-        request, _ = loop.run_session(task)
+        request, _ = loop.run_session(task, queue=queue)
         assert request.schema is not None and "draft-07" in request.schema.get("$schema", "")
         assert "signal" in request.schema["properties"]
 
@@ -96,7 +101,7 @@ class TestRefusalPath:
         task = loop.ingest(
             EventEnvelope(event_id="e", source="panel", kind="diagnose_quick", code="600519"), queue
         )
-        request, _ = loop.run_session(task)
+        request, _ = loop.run_session(task, queue=queue)
         bad = CCResult(
             exit_code=0,
             envelope={"subtype": "success"},

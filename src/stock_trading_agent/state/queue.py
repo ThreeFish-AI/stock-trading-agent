@@ -60,6 +60,14 @@ class QueueState:
                 return t
         return None
 
+    def find_any(self, dedup_key: str) -> TaskRecord | None:
+        """同 dedup_key 任意状态（含终态）在队即返回之。
+
+        T1 每股每日一次判据位：t1_refresh:<code>:<date> 当日已 done/failed 也不再触发
+        （含失败不自动重试，12-orchestration §③）。
+        """
+        return next((t for t in self.tasks if t.dedup_key == dedup_key), None)
+
     def submit(self, task: TaskRecord) -> TaskRecord:
         """入队；同 dedup_key 非终态在队 → 拒（幂等键，方案 §10①）。"""
         if self.find_active(task.dedup_key) is not None:

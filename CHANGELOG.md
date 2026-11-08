@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.3] - 2026-11-08
+
+### Added
+
+- **M1 Loop 运行时接线 + T1 自动刷新 + 面板提交半边（首个实施功能 PR，规约 [12-orchestration.md](docs/specs/12-orchestration.md) 同步建立并回吸骨架现行为）**。六件：①**WAL 修复**——`mark_running` 在 spawn 前迁移 running 并落盘 queue.json（旧实现 running 态从不落盘致 `replayables()` 永远空集、崩溃重放失效），`run_session(task, *, queue)` queue 必填、`assert_and_persist` 改守卫非补迁（判据收严），消费期 build_request 被拒 → failed 终态防自旋；②**LoopRuntime**（`loop/worker.py`）——daemon.lock 单消费者不变式（serve worker 线程与 CLI run-once 二选一）+ queue.lock 串行化一切 queue.json 读-改-写 + 单 worker 线程串行 CC spawn（D-71）+ 启动期 running 残留 → abandoned + `task_abandoned` 决策（M1 人在环不自动重放）+ daemon 锁被持有时面板降级只读（`/api/monitor/status.loop.active` 可见）；③**T1 自动刷新（零 LLM，用户裁定口径）**——`loop/monitor_events.py` 事件解析与触发判据（四条件 AND：T0 ∧ 个股 ∧ 未压制 ∧ review 短语或 mech_risk≥medium）、`loop/t1.py` 调 vibe-stock 已暴露 CLI（fetch.py + diagnose.py prepare --evidence，HK 码 hk 前缀、恒不传 --cost）、`loop/watcher.py` watchfiles 监听 + 文件偏移断点（agent/watcher.json，崩溃不重放、日切清键）；触发幂等=`t1_refresh:<code>:<date>` 每股每日一次含失败不重试（`queue.find_any`）；锁在场消费期 defer 留 queued 收盘后补跑（I-005）；T0 事件=决策台账登记 only（通知唯一通道 watch.py osascript，R7 不重复）；轻量日 K 链登记为 vibe-stock 机制升级项；④**面板提交半边与 v1 页面**——POST /api/queue/submit（201/409/423/422 契约：kind 白名单六 kind + 5/6 位码 pydantic 闸 + RejectReason→HTTP 映射）、`run-once` CLI（退出码 0/1/2/3）、GET /api/monitor/events|status|reports 只读投影、htmx fragment（panel.py html.escape 全转义）与 index.html 四页点亮（①②③⑦，180s 轮询 + 任务卡 5s 快轮询、htmx 本地 vendor 零 CDN）、health 版本漂移修复；⑤**消费期资格复检**（锁/禁跑窗与 ingest 同源复检，defer 不阻塞队头）；⑥新依赖 watchfiles（uvicorn reload 默认后端）+ python-multipart（FastAPI 表单）。测试 +59 例（212 passed 全绿 <10s）：monitor 解析容错/触发矩阵/偏移断点、t1 argv 快照与 fake runner、worker 资格矩阵/崩溃恢复/消费全链/WAL 先落盘/幂等、面板提交 e2e（201/409/423/422/全链 done/fragment）、T1 e2e（种子事件入队/补跑出 pack/defer 解锁/每股每日）；selftest 16 case（+4：T1 触发判据、RejectReason 映射、资格矩阵、find_any）。规约裁定登记于 12-orchestration.md §③ 运行时裁定六条与 §⑤⑥；README/knowledge-map/AGENTS 目录速查同步。
+
 ## [0.0.2] - 2026-11-08
 
 ### Fixed
