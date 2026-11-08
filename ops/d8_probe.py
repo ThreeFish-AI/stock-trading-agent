@@ -14,6 +14,7 @@ stdlib-only（/usr/bin/python3 直跑，零依赖零 vibe-stock import——laun
 判据解读与定谳流程见 docs/ops/trading-day-verify.md。
 """
 
+import contextlib
 import datetime as dt
 import json
 import os
@@ -53,13 +54,15 @@ def session_state(now=None):
 
 
 def parse_qt_r_hk(raw_line, now=None):
-    """qt r_hk 行 → {ts_raw, price, prev_close, open, high, low, lag_min, ts_utc8}。
+    """qt r_hk 行 → {ts_raw, price, prev_close, high, low, lag_min, ts_utc8}。
 
-    字段位序对齐 vibe-stock watch.py 解析面（f[1]开/f[3]现价/f[4]昨收/f[5]高/f[6]低/
-    f[30] 时戳）；lag_min =（本地墙钟 − 行情时戳）/60，一位小数。
+    字段位序经 2026-11-08 实测钉定（r_hk 港股形态，与 A 股 qt 位序不同）：0=市场前缀、
+    1=名称（GBK）、2=代码、3=现价、4=昨收、31=涨跌额、32=涨跌%、33=高、34=低、
+    37=成交额、30=时戳（YYYY/MM/DD HH:MM:SS）；r_hk 无开盘价位（如实缺省）。
+    lag_min =（本地墙钟 − 行情时戳）/60，一位小数。
     """
     parts = raw_line.split("~")
-    if len(parts) < 31:
+    if len(parts) < 35:
         return None
     try:
         price = float(parts[3])
@@ -84,9 +87,8 @@ def parse_qt_r_hk(raw_line, now=None):
         "lag_min": lag_min,
         "price": price,
         "prev_close": prev_close,
-        "open": _f(parts, 1),
-        "high": _f(parts, 5),
-        "low": _f(parts, 6),
+        "high": _f(parts, 33),
+        "low": _f(parts, 34),
     }
 
 
@@ -109,20 +111,21 @@ def parse_sina_rt_hk(body):
 
 
 def parse_eastmoney(fields):
-    """东财 push2 字典 → {price, ts, bid1, ask1}（f43 价×1000、f124/f86 时戳秒）。"""
+    """东财 push2 字典 → {price, ts, bid1, ask1}。
+
+    实测钉定（2026-11-08）：fltt=2 时 f43 即价原值（不除 1000）；f86 为更新时戳（秒级，
+    f124 是市盈率类字段非时戳——误用会产生 1970 假时戳）；五档 f19/f20 该端点常缺席，
+    缺席如实 None（E-76 五档面非阻断，vibe-stock 全仓零消费五档）。
+    """
     try:
-        price = float(fields["f43"]) / 1000.0
+        price = float(fields["f43"])
     except (KeyError, TypeError, ValueError):
         return None
     ts = None
-    for key in ("f124", "f86"):
-        try:
-            ts = dt.datetime.fromtimestamp(
-                int(fields[key]), dt.timezone(dt.timedelta(hours=8))
-            ).isoformat(timespec="seconds")
-            break
-        except (KeyError, TypeError, ValueError, OSError):
-            continue
+    with contextlib.suppress(KeyError, TypeError, ValueError, OSError):
+        ts = dt.datetime.fromtimestamp(
+            int(fields["f86"]), dt.timezone(dt.timedelta(hours=8))
+        ).isoformat(timespec="seconds")
     return {
         "price": price,
         "ts": ts,
@@ -133,25 +136,25 @@ def parse_eastmoney(fields):
 
 def _em_depth(fields, key):
     try:
-        value = float(fields[key])
-        return value / 1000.0 if value > 0 else value
+        return float(fields[key])
     except (KeyError, TypeError, ValueError):
         return None
 
 
-def fetch_text(url, referer=None):
+def fetch_text(url, referer=None, encoding="utf-8"):
     req = urllib.request.Request(
         url, headers={"User-Agent": UA, **({"Referer": referer} if referer else {})}
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+        # qt.gtimg 是 GBK（2026-11-08 实测名称乱码钉定）；其余通道 utf-8
+        return resp.read().decode(encoding, errors="replace")
 
 
 def sample_code(code):
     """单股一轮三通道采样（通道失败逐项如实记 err）。"""
     row = {"code": code}
     try:
-        qt = fetch_text(f"https://qt.gtimg.cn/q=r_hk{code}")
+        qt = fetch_text(f"https://qt.gtimg.cn/q=r_hk{code}", encoding="gbk")
         parsed = parse_qt_r_hk(qt)
         row["qt_r_hk"] = parsed or {"err": "parse", "raw_head": qt[:80]}
     except OSError as exc:
