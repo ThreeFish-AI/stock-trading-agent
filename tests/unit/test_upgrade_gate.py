@@ -79,7 +79,7 @@ class TestDiff:
     def test_watch_flag_removed_is_fail(self):
         base = _snap(HELP_FIXTURE)
         needle = (
-            '  --system-prompt-snapshot <on|off>     '
+            "  --system-prompt-snapshot <on|off>     "
             'System prompt snapshot (choices: "on", "off")\n'
         )
         broken = HELP_FIXTURE.replace(needle, "")

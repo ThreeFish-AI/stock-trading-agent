@@ -88,7 +88,7 @@ class TestUpgradeGateCLI:
     def test_watch_flag_removed_fails(self, tmp_path: Path, monkeypatch):
         bin_dir, out_dir, state = tmp_path / "bin", tmp_path / "gate", tmp_path / "state"
         needle = (
-            '  --system-prompt-snapshot <on|off>      '
+            "  --system-prompt-snapshot <on|off>      "
             'System prompt snapshot (choices: "on", "off")\n'
         )
         broken = HELP.replace(needle, "")
