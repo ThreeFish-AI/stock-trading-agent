@@ -526,7 +526,7 @@ def panel_report_body(code_market: str, filename: str, request: Request) -> HTML
 
     layout = _layout(request)
     if not _REPORTS_DIR_RE.match(code_market) or not _re.fullmatch(
-        r"\d{4}-\d{2}-\d{2}\.md", filename
+        r"(?:\d{4}-\d{2}-\d{2}|index)\.md", filename
     ):
         raise HTTPException(status_code=404, detail="报告路径非法")
     path = (layout.reports_dir / code_market / filename).resolve()

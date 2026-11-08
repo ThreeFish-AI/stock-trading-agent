@@ -11,7 +11,7 @@
 | [docs/research/main-agent-proposal.md](../research/main-agent-proposal.md) | 产品与技术方案：上/下篇 19 节、M1/M2/M3、红线继承 13+NR-5、D1–D8、R-01~R-13 | 贡献者 / Agent |
 | [docs/diagrams/main-agent/](../diagrams/main-agent/) | 四张架构图 archify A 档四件套（总览/Loop 时序/状态数据流/模拟盘生命周期） | 贡献者 / Agent |
 | [docs/prototypes/main-agent/](../prototypes/main-agent/) | 四页产品原型（自包含 HTML + 整页 PNG，全合成数据，方案上篇 §2 借图展开） | 贡献者 |
-| [docs/specs/](../specs/) | 实施规约：[12-orchestration.md](../specs/12-orchestration.md)（0.0.5 增⑧、0.0.7 增⑨）、[13-paper.md](../specs/13-paper.md)（0.0.6 建） | 贡献者 / Agent |
+| [docs/specs/](../specs/) | 实施规约：[12-orchestration.md](../specs/12-orchestration.md)（§⑧–⑭，至 0.0.14 面板审计修复）、[13-paper.md](../specs/13-paper.md)（0.0.6 建） | 贡献者 / Agent |
 | [docs/ops/launchd.md](../ops/launchd.md) | launchd 第四槽安装与运维（面板守护；三槽并存收编不替代） | 贡献者 |
 | [docs/ops/trading-day-verify.md](../ops/trading-day-verify.md) | 交易日验证运维：D8 定谳流程与 T2 出卡真跑手册 | 贡献者 / Agent |
 | [docs/ops/tauri-gate-review.md](../ops/tauri-gate-review.md) | Tauri 桌面壳门口评审记录（结论：不做） | 贡献者 |

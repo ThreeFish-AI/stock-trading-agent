@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.14] - 2026-11-08
+
+### Fixed
+
+- **面板 UI/UX 审计修复第一 PR：P0 功能断链全量修复（规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑭；9 路对抗审计 + 逐页实走取证）**。①**htmx 交换策略修复（裁定：swap=innerHTML、挂点常驻壳层）**：①页事件流 `hx-swap="none"` 丢弃响应（卡片永不渲染）→ innerHTML；④页确认/驳回与 ⑦ 页 L2 设置区 `outerHTML` 首击自毁挂点（自动刷新与后续按钮全死）→ 壳层与 fragment 按钮两处同改 innerHTML；②**死 target 修复**：③页「盯盘复核」按钮指向不存在的 `#submit-result`（htmx targetError 请求根本不发）→ 改指 ③ 页既有 `#advice-detail` 容器（按钮文案逐字保留）；briefing「确认复核」同理 `#briefing`→`#ov-brief`；③**九处 `<table class="grid">` 撞布局类碎版**（thead/tbody 裂两列）→ 统一 `class="tbl"`（复用既有 fixed+nowrap+ellipsis 表格类）；④**状态/信号/步骤类与 CSS 对齐**：`.st.done/.failed/.abandoned/.queued/.running/.warn/.holding/.closed` 状态色规则补齐（此前裸文本零色零点）；信号五词点空 span 接活（`.sig {cls}` + `.d` dot + 信号词，①页信号表与 ②页意见板）；五段流水线 `step-dot/step-tx/step-sub`→CSS 原型类 `sc/sl/ss`；mech_risk 行高亮 `breach`→CSS 锚 `risk` + severity 补 `_esc`；⑤**报告 `index.md` 404**：文件名白名单放宽 `(?:\d{4}-\d{2}-\d{2}|index)\.md`（vibe-stock reports 索引页可达；resolve 边界与目录正则两道保险不动）。测试 +8 例（408 passed 全绿）：`TestHtmxWiring`（events/paper/briefing/l2 的 target+swap+表格类+壳层下发）、`test_index_md_served`、signals 五词点断言、新建 [tests/unit/test_panel_render.py](tests/unit/test_panel_render.py)（五段/意见板/状态 pill 渲染层单测，后续 PR 复用）。
+
 ## [0.0.13] - 2026-11-08
 
 ### Added

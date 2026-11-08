@@ -310,6 +310,12 @@ tr.open td:first-child{box-shadow:inset 4px 0 0 #F0B35C,0 0 10px rgba(240,179,92
 .st-open .d{background:var(--warn);box-shadow:0 0 7px rgba(240,179,92,.7)}
 .st-close{color:var(--t3)}
 .st-close .d{background:var(--t4)}
+.st.done{color:var(--dn2)}
+.st.failed,.st.abandoned{color:var(--up2)}
+.st.queued,.st.running{color:var(--t3)}
+.st.warn{color:var(--warn)}
+.st.holding{color:var(--t2)}
+.st.closed{color:var(--t3)}
 .tbl-note b{color:var(--t2);font-weight:600}
 /* ── 右列 ── */
 .rcol{display:flex;flex-direction:column;gap:13px;min-width:0}
@@ -382,7 +388,7 @@ tr.open td{background:var(--warnbg)}
 <div class="grid3">
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">今日事件流</span><span class="cm" id="ov-ev-count"></span></div>
-      <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="none"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">今日待办</span><span class="cm" id="ov-todo-count"></span></div>
       <div class="card-b" id="ov-todos" hx-get="/api/panel/todos" hx-trigger="every 180s, sse:decisions, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
@@ -442,7 +448,7 @@ tr.open td{background:var(--warnbg)}
 <div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div style="height:13px"></div>
-<div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="outerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 </main>
 <footer class="foot">Stock Trading Agent · 本地面板（127.0.0.1 · SSE 实时流 + 180s 轮询兜底）· API：<code>/api/health|queue|sessions|decisions|paper|budget|monitor/events|monitor/status|reports|advice|signals|todos|stats|l2|stream</code><br>
 本产品输出仅供学习与研究参考，<b>不构成投资建议</b>；不下单、不改单、不撤单、不保证收益；模拟绩效均为假设性推演（含费用与滑点）；全部产物由 AI 生成、用户复核前置。</footer>
