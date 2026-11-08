@@ -45,15 +45,23 @@
 
 方案 §11 表为快照；现行权威布局=`state/paths.py`（代码化读写矩阵）。0.0.3 增补：`agent/queue.lock`（串行闸）、`agent/runs/<date>/t1/<code>/`（T1 工作目录）、`agent/runs/<session_uuid>/`（CC 会话 cwd，随真实通道 PR 启用）、`agent/watcher.json`（监听偏移断点）、`agent/daemon.lock`（单消费者）。vibe-stock 只读消费位：`monitor/events/<date>.jsonl`、`monitor/state.json`、`outlook/<date>.md`、`reports/`、根级 `ledger.json`（仅 mtime 探测，只读）。
 
+### 决策链写拓扑裁定（0.0.15 落地）
+
+- **生产事故**：`decisions.jsonl` 出现 57 行仅 11 个唯一 seq、链断 7 处——三个叠加 bug：W1 serve 降级只读态（daemon 锁竞争失败不 load 文件）下面板写端点仍以空内存链从 seq=1/GENESIS 落盘（KeepAlive=true 常驻重启反复触发）；W2 面板侧追加立即落盘但不推进 `_persisted_lines` 游标，下一次 `_persist_all` 把已落盘行再追加一遍；W3 `acquire_daemon` 重载链对象但游标不重置，重启后首次 persist 重放全部历史；W4 `load()` 调 `verify_chain()` 丢弃返回值，断链静默续写。
+- **写者侧单一入口（无条件全局规则：文件是 SSOT、内存是缓存）**：一切落盘追加必经 `DecisionLog.append(path=...)`——`agent/decisions.lock`（最内层锁；调用序恒 queue→decisions / sim→decisions）内尾部对账：内存空/落后即采纳文件态续链；内存超前于文件即 `DecisionChainError`（fail-closed，疑似回滚/篡改）；等长但尾行不一致即拒。`_persist_all` 的 decisions 段与 `_persisted_lines` 游标删除（W2/W3 随之消失）；全部 10 处落盘调用点（loop 7 + worker 1 + routes 3）收敛到该入口。
+- **读侧 strict（判据只收严）**：`load()` 断链/坏行 raise `DecisionChainError`（含首个断点行号与修复指引）；坑位：只收严不上修复工具 = 生产断链文件让 serve 永久降级——修复 CLI 与 strict load 必须同 PR。
+- **降级配套三件**：`acquire_daemon` 捕获断链→释放 daemon 锁、记 `chain_error`、返回 False（worker/watcher 不启动）；app lifespan 把 `apply_l2_config` 包 try/except（断链上 l2_probe 决策落盘会再抛，不炸面板）；全部写端点（submit/l2/briefing_ack/paper confirm/reject）`DecisionChainError`→503 附修复命令文案；`/api/monitor/status.loop.chain_error` 与①页 syscard「决策链·待修复」行呈现。
+- **一次性修复 CLI `repair-decisions`**：纯函数 `repair_chain_lines` 保行重链（按原序保 ts/prefix/kind/payload，重算 seq/prev/hash），链尾追加 `chain_repair_started`（rows_before/old_sha256/breaks/tool）+`chain_repair_done`（rows_after）两条决策（payload 零敏感量，NR-5）；IO 壳先备份 `decisions.jsonl.bak-<ts>` 再原子写；坏 JSON 行即中止人工检查（不删行纪律下无降级路径）；完好链 noop。runbook：修复后 `launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent` 重启 serve。
+
 ## ⑤ 预算闸与降级
 
 - 预算闸默认关（人在环期仅记账，§13）；外闸在 `run_session` 前置预检（日/月 USD 信封+硬次数闸 50/日）；订阅轨 token+等效美元双口径记账写 `agent/budget.json`。
-- 降级形态（设计内非故障）：daemon 锁被持有→面板降级只读（提交仍可入队，消费由锁持有者完成；`/api/monitor/status.loop.active` 可见）；锁在场/禁跑窗→提交 423 / 消费 defer；断言违例→拒落盘+`assert_refuse`；T1 失败→终态 failed 当日不重试。
+- 降级形态（设计内非故障）：daemon 锁被持有→面板降级只读（提交仍可入队，消费由锁持有者完成；`/api/monitor/status.loop.active` 可见）；锁在场/禁跑窗→提交 423 / 消费 defer；断言违例→拒落盘+`assert_refuse`；T1 失败→终态 failed 当日不重试；决策链断裂→serve 降级只读、写端点 503 附 repair-decisions 指引（0.0.15，§④ 裁定）。
 - CLI `run-once` 退出码契约：0=done · 1=failed/被拒 · 2=队空或全部 defer · 3=daemon 锁被持有。
 
 ## ⑥ 门禁预案
 
-- `agent/` 编排件 selftest 与 pytest 同源判据（判据只收严）：现有 16 case 含 T1 触发判据、解析容错、RejectReason→HTTP 映射、消费期资格矩阵、`queue.find_any` 每股每日；新增行为必须先扩 selftest 再合入。
+- `agent/` 编排件 selftest 与 pytest 同源判据（判据只收严）：现有 16 case 含 T1 触发判据、解析容错、RejectReason→HTTP 映射、消费期资格矩阵、`queue.find_any` 每股每日；新增行为必须先扩 selftest 再合入。0.0.15 增 `state.decisions.tail_sync_repair`（空链直写续链+断链重链）；pytest 防回退族：尾部对账五象限（空链续链/双实例交替/落后重载/超前拒/等长分叉拒）、strict load 断链行号、repair 保行与备份、W1/W2/W3 端到端（未 start 提交续链、全生命周期 seq 连续、重启无历史重放）、断链降级 503+chain_error+syscard 行、CLI repair 黑盒 noop。
 - 红线扫描机器门（`tests/integration/test_redline_scan.py`）：NR-2 下单符号族、paper 禁网络库、R2 密钥变量名只许 `cc_client/cli.py`、`state/` 禁 signals/ledger 字面量。
 - HTTP 提交契约（面板半边）：kind 白名单=路由表六 kind、code=5/6 位数字（pydantic extra=forbid）；`RejectReason→HTTP`：DUPLICATE→409、LOCK/WINDOW→423、UNKNOWN_KIND→422（`server/schemas.py` 机器闸）。
 

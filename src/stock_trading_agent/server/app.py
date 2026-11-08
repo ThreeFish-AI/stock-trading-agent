@@ -89,11 +89,15 @@ def _make_lifespan(enable: bool, runtime: LoopRuntime | None, layout: StateLayou
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         rt = app.state.loop_runtime
-        if enable and not rt.start():  # daemon 锁失败：降级只读（面板照常服务）
-            print(f"[sta] daemon.lock 被持有，降级只读（root={layout.root}）")
+        if enable and not rt.start():  # daemon 锁失败/决策链断链：降级只读（面板照常服务）
+            reason = getattr(rt, "chain_error", None) or "daemon.lock 被持有"
+            print(f"[sta] 降级只读：{reason}（root={layout.root}）")
         import asyncio
 
-        rt.apply_l2_config(probe=True)  # L2 开启时探测认证态联动预算闸（决策 l2_probe）
+        try:
+            rt.apply_l2_config(probe=True)  # L2 开启时探测认证态联动预算闸（决策 l2_probe）
+        except Exception as exc:  # 断链文件上 l2_probe 决策落盘会再抛：不炸面板（0.0.15）
+            print(f"[sta] apply_l2_config 降级跳过：{exc}")
         app.state.stream_hub.bind_loop(asyncio.get_running_loop())
         app.state.dir_watcher.start()
         yield

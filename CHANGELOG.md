@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.15] - 2026-11-08
+
+### Fixed
+
+- **decisions.jsonl hash 链完整性修复（生产事故：57 行仅 11 个唯一 seq、链断 7 处；规约 [12-orchestration.md](docs/specs/12-orchestration.md) §④ 新增「决策链写拓扑裁定」）**。断因=三 bug 叠加：W1 serve 降级只读态（daemon 锁竞争失败不 load 文件）下面板写端点仍以空内存链从 seq=1 落盘；W2 面板侧追加落盘不推进 `_persisted_lines` 游标→`_persist_all` 重追加已落盘行；W3 重载链对象不重置游标→重启后重放全部历史；W4 `load()` 忽略 `verify_chain()` 返回值致断链静默续写。①**写者侧单一入口**：`DecisionLog.append(path=...)` 在新增 `agent/decisions.lock`（最内层锁）内尾部对账（内存空/落后采纳文件态、超前即拒、等长分叉即拒），文件是 SSOT；`_persist_all` decisions 段与游标删除，全部 10 处调用点收敛。②**读侧 strict**：`load()` 断链/坏行 raise `DecisionChainError`（含断点行号+修复指引）。③**降级三件**：`acquire_daemon` 断链即释放锁记 `chain_error` 返回 False（worker 不启动）、lifespan `apply_l2_config` 包 try/except 不炸面板、全部写端点 503 附修复命令、`/api/monitor/status.loop.chain_error`+①页 syscard「决策链·待修复」行。④**一次性修复 CLI `repair-decisions`**：保行重链+`chain_repair_started/done` 两条决策（payload 零敏感量）+备份不删行+完好链 noop；runbook=修复后 `launchctl kickstart` 重启 serve（升级瞬间已断链环境进入「只读+503 带指引」为设计内形态）。⑤run-once 降级消息区分链断与锁持。测试 +18 例（418 passed 全绿）：尾部对账五象限/strict load 行号/repair 保行备份/W1-W3 端到端（未 start 提交续链、全生命周期 seq 连续、重启无历史重放）/断链降级 503+syscard/CLI 黑盒；selftest 32→33 case。
+
 ## [0.0.13] - 2026-11-08
 
 ### Added

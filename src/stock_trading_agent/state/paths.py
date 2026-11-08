@@ -83,6 +83,11 @@ class StateLayout:
         return self.agent_dir / "queue.lock"
 
     @property
+    def decisions_lock(self) -> Path:
+        """decisions.jsonl 追加串行闸（尾部对账+追加整个周期；最内层锁，12-orchestration §④）。"""
+        return self.agent_dir / "decisions.lock"
+
+    @property
     def runs_dir(self) -> Path:
         """会话/任务工作目录父级（agent/runs/；CC 会话 cwd 与 T1 workdir 均落此下）。"""
         return self.agent_dir / "runs"
