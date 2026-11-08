@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.22] - 2026-11-08
+
+### Changed
+
+- **面板设计系统三层 token 化（借 ui-ux-pro-max design-system 方法论；规约新设 [14-design-system.md](docs/specs/14-design-system.md)，SSOT 仍=index.html :root）**。①**三层架构**：Primitive 48 枚（17 色板+9 档字号+5 档圆角+7 档间距+三档阴影+四枚 glow+动效 3，全库唯一 hex/px 字面落点）/ Semantic 30 个既有名**名与计算值双不动**（值改指 primitive；`rgba` 与 `color-mix` srgb 预乘逐位相等，组件类与 panel.py 241 处 var() 引用零改动）/ Component 8 枚（--inp-*/--btn-*/--step-cur-grad/--nr2-fg*/--ev-risk-fg，变体作用域覆写入口）；孤儿变量 --nr2ln 消灭（吸附 --upln）。②**裸值清剿 60 处/50 异色**（规则 R1–R6 沉淀进 14 规约）：36 rgba→color-mix(in srgb)（@keyframes pu 三帧/毛玻璃底/8 渐变色标/20 box-shadow）；近似异色归族（rgba(255,93,93,*) 红系、体系外蓝 #58a6ff→--acc）；**文本色禁 color-mix**（R5：降级环境文本永不失效）；残余异色 3+3 收编 Component token。③**标尺收敛**：字号 78 条 14 档→9 档（10.5→11、11.5→12、12.5→13、16.5→17、9.5→10、25→26）；圆角 33 条 10 档→5 档 token+50% 白名单；阴影/glow 归一（8 种 alpha→70%/35% 两档）；间距 7 档建标尺但**不回溯迁移**（防布局像素漂移；13px 密度基因字面保留）。④**四态补齐**：.tab/:not(.on) hover+active、.btn-pri brightness 1.07/.93、.mini:active、a:hover、.inp/.sel hover 边框+disabled（0.5+not-allowed）；统一 transition 120/180ms ease-in-out；@media prefers-reduced-motion 关脉冲与过渡。⑤**panel.py 28 处 inline 类化**（.note*/.verd 族/.pipe-dense/.opins-dense/.chips/.nv-chips/.w-sess-* 五列宽类/.td-tx 复用）；④权益曲线 _axis_equity_svg 裸蓝归 --acc、SVG presentation 属性统一迁 style=（修复属性位不解析 var() 的潜在缺陷）。⑥**机器门禁** tests/unit/test_design_tokens.py 22 例：(a) :root 外零裸色+SVG fill/stroke 仅 var() (b) 孤儿 var() 绝根 (c) 字号/圆角仅 token (d) panel.py inline/SVG 仅 var() (钉面) 30 兼容名+色板逐字钉死+四态/reduced-motion 存在性+hx- 计数 ≥ 基线。验证：8731 demo Playwright 前后对比（差异白名单：字号 6 组/圆角 3 组/glow 归一/归族色/权益曲线线色变亮）+ getComputedStyle 使用点探针 23 语义 token 计算值与基线逐项相等。
+
 ## [0.0.19] - 2026-11-08
 
 ### Added
