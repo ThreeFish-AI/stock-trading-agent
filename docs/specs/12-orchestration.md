@@ -131,7 +131,7 @@
 
 - **R5 重放策略**：启动期 running 残留全部先 abandoned（WAL 语义不变+task_abandoned 决策照记）；monitor 源残留按计划重放——判据纯函数 `plan_replays`（判据与 IO 分离）：monitor_review 另要求当下 l2_enabled（关则 `task_replay_skipped(l2_disabled)`，与消费期闸双保险）；**防自旋=队列派生判据**（同 dedup_key 实体数 ≥2 即 replay_cap——重放任务若再崩成 abandoned，count=3 仍 >2 拦截，同键至多两个实体任务，零新状态位）；t1_refresh（零 LLM）无条件重放；panel/cli 源维持 abandoned（M1 语义）。决策 kind 族：task_requeued / task_replay_skipped{reason_code}。重放≠保证执行——新任务消费期仍过全闸。
 - **--bg 评估（D-63，文档性判定）**：结论不引入——依据 D-06 稳定性反证（一次性+resume 比长驻管道稳，两个 open issue 属同一会话族状态面）、现形态已覆盖保活（超时状态机+AbandonProcessGroup+R5 重放）、成本收益未证（L2 事件频率远未触达冷启动瓶颈）；触发再评条件见 [docs/ops/bg-session-eval.md](../ops/bg-session-eval.md)。
-- **SDK 对照（D6，R7 只交脚本+模板不真跑）**：`ops/d6_sdk_compare.py`（--real 旗标+STA_ALLOW_REAL_CC 环境门；cli_path 钉同二进制+preset 对齐+setting_sources=[]，D-16/D-17）；记录模板 [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md) 初始行「未跑，待用户触发」。
+- **SDK 对照（D6，2026-11-08 用户授权真跑完成）**：`ops/d6_sdk_compare.py`（--real 旗标+STA_ALLOW_REAL_CC 环境门；cli_path 钉同二进制，D-16/D-17）；结果与四条结论见 [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md)——CLI p50 5.94s vs SDK 21.18s（包装层 +15s/spawn，主通道裁定实证加固）；SDK 0.2.179 API 漂移实锤（preset/setting_sources 形参已删，D-14 同族）；session uuid 改 uuid4 每跑新鲜（uuid5 同日重跑撞 already-in-use，§② 坑位③延伸）。
 
 ## ⑫ 面板七页重构裁定（0.0.11 落地）
 
@@ -183,7 +183,7 @@
 | §15「预测 vs 实际」校准分桶表 | 机制侧阻塞 | 披露形态复用 outlook calibration——阻塞方：outlook 侧形态定义（vibe-stock）；本仓 stats.py 待其对齐 |
 | ~~③页「导出脱敏卡片/标记已复核」按钮（原型对账项）~~ | ✅ 0.0.25 落地 | 用户 2026-11-08 裁定立项（不登记原型差异）；§⑧「已复核与导出裁定」节（advice_reviewed 决策 kind+导出只读端点+mount 双挂点） |
 | D5 watch.py exit 2 接管时点 | 机制侧阻塞 | 07 坑位④协调评审未发生（§⑩ 已采 events 台账驱动替代路线）；触发：vibe-stock 侧 exit 2 实施重启评审 |
-| D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | docs/ops/trading-day-verify.md 承载（D8 周一 2026-11-10、T2 盘后唤起、D6 用户触发）；不属代码悬空项 |
+| D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | D6 ✅ 2026-11-08 真跑完成（[docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md)；用户授权）；D8 周二定谳、T2 周一盘后唤起仍由 docs/ops/trading-day-verify.md 承载 |
 | 流式 stdout 改造 | 不立项 | §⑬ 超远期不立项（案 a 已满足观测诉求） |
 | D-72 waitingFor 轮询 / F-56 PreToolUse hook deny | 条件触发 | §⑩ 升级位原文（触发条件已登记，不重复） |
 
