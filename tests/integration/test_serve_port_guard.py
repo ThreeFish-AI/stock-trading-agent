@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import http.server
 import socket
+import subprocess
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -136,3 +137,16 @@ class TestServePreflight:
 def test_listener_pid_free_port_none() -> None:
     """弱断言：空闲端口无 LISTEN → None（lsof 缺失/CI 环境亦恒绿）。"""
     assert server_app.listener_pid(_free_port()) is None
+
+
+def test_listener_pid_filters_fd_lines_and_takes_first_pid(monkeypatch) -> None:
+    """正测解析契约：-Fp 输出混 f<fd> 行须按 p 前缀过滤，多 PID 双栈取首个。"""
+    seen: dict = {}
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="p1041\nf12\np2048\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert server_app.listener_pid(8730) == "1041"
+    assert any("8730" in part for part in seen["cmd"])

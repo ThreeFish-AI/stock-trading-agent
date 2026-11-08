@@ -10,6 +10,7 @@ on_event 已 deprecated，统一 lifespan 上下文（I-33）。
 from __future__ import annotations
 
 import contextlib
+import http.client
 import json
 import socket
 import urllib.request
@@ -45,12 +46,12 @@ def port_is_listening(host: str, port: int, timeout_s: float = 0.5) -> bool:
     不采用试 bind：探测结果依赖探测者自身 socket 选项栈（SO_REUSEADDR×TIME_WAIT 交互），
     与 uvicorn 选项栈对不齐即漂移，且探测 bind-close 自造残留态。
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout_s)
-        try:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout_s)
             return sock.connect_ex((host, port)) == 0
-        except OSError:
-            return False
+    except OSError:  # 构造期（EMFILE 等 fd 耗尽）与带超时 connect 阶段一律视同空闲
+        return False
 
 
 def _is_panel_health(payload: object) -> bool:
@@ -61,12 +62,14 @@ def _is_panel_health(payload: object) -> bool:
 def probe_panel(host: str, port: int, timeout_s: float = 1.5) -> dict | None:
     """GET /api/health 探占口者身份：本面板返回 health dict，其余一律 None（宁拒不误认）。
 
-    HTTPError/URLError/Timeout 均 ⊂ OSError，JSONDecodeError ⊂ ValueError——一族 except 兜底。
+    HTTPError/URLError/Timeout ⊂ OSError、JSONDecode ⊂ ValueError、getresponse 阶段
+    BadStatusLine 等 ⊂ HTTPException（非 HTTP 占口者触发，stdlib 不包装原样穿透）
+    ——一族 except 兜底。
     """
     try:
         with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=timeout_s) as resp:
             payload = json.loads(resp.read(65536))
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return None
     return payload if _is_panel_health(payload) else None
 
