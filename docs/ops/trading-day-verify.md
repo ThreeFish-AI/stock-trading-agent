@@ -1,12 +1,14 @@
 # 交易日验证运维 · D8 定谳与 T2 出卡真跑
 
+> **当前待办（2026-11-10 周一，完成即删本节）**：①盘后唤起 Agent 执行 T2 出卡路径真跑（约 $0.3–0.8，见下文手册）；②D8 采样自动执行无需操作，建议周二盘后再唤起 Agent 读两天样本定谳（下文流程）并停采样 job。
+
 两项「需交易日」的遗留验证的操作手册。D8 采样由 launchd 自动执行（`ops/launchd/com.threefish.stocktrading.d8-probe.plist`，周一至五 09:36/13:06 两对照时点）；T2 出卡真跑按约定由用户在交易日盘后唤起 Agent 执行（花订阅额度约 $0.3–0.8，不自动化）。
 
 ## D8 港股时戳重探（E-25 vs E-76 定谳）
 
 ### 采样机制（自动）
 
-- 采样器：`ops/d8_probe.py`（stdlib-only `/usr/bin/python3` 直跑）。每轮对标的集（`monitor/universe.json` hk 行，缺席回落 00700/00005/00388）逐股采：qt r_hk（f[30] 时戳→lag_min，E-25 主张面）、新浪 rt_hk（交叉价，无时戳）、东财 push2（价格+自带时戳+五档 bid1/ask1，E-76「与东财同步」锚）。
+- 采样器：`ops/d8_probe.py`（stdlib-only `/usr/bin/python3` 直跑）。每轮对标的集（`monitor/universe.json` hk 行，缺席回落 00700/00005/00388）逐股采：qt r_hk（f[30] 时戳→lag_min，E-25 主张面）、新浪 rt_hk（交叉价，无时戳）、东财 push2（价格+自带时戳+五档 bid1/ask1，E-76「与东财同步」锚）。字段位序经 2026-11-08 实测钉定（qt GBK、高/低位 33/34；东财 f43 原值/f86 秒级时戳）。
 - 输出：`~/.vibe-stock/agent/logs/d8-samples-YYYYMMDD.jsonl`（append-only；每行含 local_ts 与 session 态——非盘中如实标 `session_closed`）。
 - 时点纪律：09:36（隔夜陈旧延续面）与 13:06（午休时戳解冻基线）；12:00–13:00 时戳冻结窗样本保留但定谳不采信（07:26）；多日采样（建议 ≥2 个交易日）后定谳。
 - 收盘锚：任一交易日 16:10 后 `cd ~/Documents/projects/aurelius/vibe-stock && uv run --no-project --with 'akshare==1.20.*' --with efinance --with yfinance python batch/monitor/watch.py --verify-hk`（三方价格对照写 `monitor/state.json hk_source`；注意其 16:10 前交易日守卫与 exit 3 锁语义）。
