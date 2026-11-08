@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.17] - 2026-11-08
+
+### Added
+
+- **面板 UI/UX 审计修复第三 PR：P1 交互与壳层（规约 [12-orchestration.md](docs/specs/12-orchestration.md) §⑭ 升级位第二项落地）**。①**首屏 load 触发**：全部 20 个轮询容器 `hx-trigger` 首位追加 `load,`——首屏立即拉取，不再最长空转 180s 假「加载中」（裁定不动 sse.py multi init：SSE 单流 + 180s 兜底契约钉死，load 触发零契约变更同效且避免连接风暴）；②**全局错误条**：header 尾 `#global-err` riskchip（role=status aria-live=polite）+ body 级 `htmx:responseError/sendError` 监听显错（HTTP 码/网络）、任一 `afterSwap` 自动隐藏——后端 500/断网从零感知变为可见 + 「显示可能过期」提示；③**提交防重**：六按钮 + ②表单统一 `hx-disabled-elt`（请求期间禁用至响应），`button:disabled` 样式承载进行中态；④**②表单行式重写**（用户裁定，全局表单规范）：证券代码/诊股模式两字段行（label 与控件同行、`flex:0 0 calc(100%/12)`、label title Tooltip 承载说明文案、for/id 显式关联）、删全部 inline style（.frm/.frm-row/.dg-result 类化）、`inputmode=numeric`；`pattern/required/name` POST 契约字段零改动；⑤**a11y 基线**：nav `role="tablist"` + 七 tab `role="tab"`/`aria-selected` 同步（activate() 内）、全局 `:focus-visible` token 环（替代默认蓝环）、`.inp:focus` 光晕、hash 切页 `scrollTo(0,0)`；⑥**对比度**：`--t4:#66718A`→`#7E8AA5`（token 单点，四底 4.59–5.58:1 全过 WCAG AA）——全站最小字号辅文（10.5-11.5px 注释位）此前 3.25–3.95:1 不达标；⑦删 `.sel::after` 死规则（原生 select 无伪元素）。测试 +3 例（451 passed 全绿）：壳层 load×20/tablist×7/aria-selected/:focus-visible/--t4/global-err 断言、dgform 行式 label/无 inline style/防重断言、render_diag_form 单测。
+
 ## [0.0.16] - 2026-11-08
 
 ### Added
