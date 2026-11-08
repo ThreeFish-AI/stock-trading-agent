@@ -132,7 +132,7 @@ class LoopRuntime:
             cc=self.cc,
             layout=layout,
             table=self.table,
-            decisions=decisions or DecisionLog(),
+            decisions=decisions or DecisionLog(path=layout.decisions_path),  # W1 绑定唯一落盘口
             budget=budget,
         )
         self.poll_interval_s = poll_interval_s
@@ -160,7 +160,9 @@ class LoopRuntime:
         """获取 daemon.lock（失败返回 False——serve 降级只读，run-once 由 CLI 转 exit 3）。
 
         决策链 strict 载入（0.0.15）：断链即释放锁、记 chain_error、返回 False——
-        worker/watcher 不启动（防在断链文件上续写），修复走 CLI repair-decisions。
+        worker/watcher 不启动（防在断链文件上续写），修复走 CLI repair-decisions；
+        坑位：失败路径 decisions 重绑纯内存链（降级防毒）——降级期任一 append 不得向
+        已有多行文件写 seq=1/GENESIS 毒行（repair 后再毒化、下次启动再次拒载）。
         """
         if self._daemon_stack is not None:
             return True
@@ -168,7 +170,9 @@ class LoopRuntime:
             stack = contextlib.ExitStack()
             stack.enter_context(FileLock(self.layout.daemon_lock, timeout_s=timeout_s))
         except LockTimeout:
+            self.loop.decisions = DecisionLog()  # 降级防毒：内存链，append 不落盘
             return False
+        # strict 载入：断链拒载入（fail-closed），修复走 CLI repair-decisions
         try:
             self.loop.decisions = DecisionLog.load(self.layout.decisions_path)
         except DecisionChainError as exc:
@@ -180,10 +184,11 @@ class LoopRuntime:
         return True
 
     def start(self) -> bool:
-        """启动运行时：daemon 锁 → 崩溃恢复 → 泄漏巡检 → worker/watcher 线程。"""
+        """启动运行时：daemon 锁 → 崩溃恢复 → paper 孤儿清理 → 泄漏巡检 → worker/watcher 线程。"""
         if not self.acquire_daemon():
             return False
         self.recover_orphans()
+        self.purge_confirmed_orphans()  # W5：确认流崩溃窗口脏态启动自愈
         self.scan_cc_leaks()  # D-08：启动先扫一次（孤儿检测 log-only）
         self._stop.clear()
         self._worker_thread = threading.Thread(
@@ -411,6 +416,39 @@ class LoopRuntime:
                 )
             if orphans:
                 atomic_write_json(self.layout.queue_path, queue.to_dict())
+        return orphans
+
+    # --- paper 确认流孤儿清理（W5：崩溃窗口脏态「已确认未走完链」启动自愈） ---
+    def purge_confirmed_orphans(self) -> list[dict]:
+        """清出 pending 中 state=confirmed 残留（正常流该状态是瞬态：confirm 后立即 remove）。
+
+        语义：残留即崩溃证据（portfolio 落账与 pending 移除非原子窗口）；Operation 无
+        request_id 锚、无法判定已落/未落，故不重放落账——逐笔决策留痕
+        （paper_orphan_purged）供人工补账；sim.lock 内读-改-写（13-paper §⑤ 同纪律）。
+        """
+        from stock_trading_agent.paper import pending as paper_pending
+
+        with FileLock(self.layout.sim_lock):
+            queue = paper_pending.load(self.layout.sim_pending_fills_path)
+            orphans = [
+                {
+                    "request_id": r.request_id,
+                    "code": r.code,
+                    "leg": r.tranche_leg,
+                    "side": r.side,
+                }
+                for r in queue.requests
+                if r.state == "confirmed"
+            ]
+            if not orphans:
+                return []
+            queue.requests = [r for r in queue.requests if r.state != "confirmed"]
+            paper_pending.save(queue, self.layout.sim_pending_fills_path)
+        for r in orphans:
+            self._decide(
+                "paper_orphan_purged",
+                {**r, "note": "confirmed 残留清理（崩溃窗口）；如需落账请人工复核"},
+            )
         return orphans
 
     # --- 消费（worker 线程与 run-once 共用；两段式锁：锁内选task+running落盘，锁外执行） ---

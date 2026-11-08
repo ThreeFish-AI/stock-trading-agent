@@ -24,10 +24,12 @@ class DirWatcher:
         roots: tuple[Path, ...],
         on_change: Callable[[set[str]], None],
         to_event: Callable[[Path], str | None],
+        skip: Callable[[Path], bool] | None = None,
     ) -> None:
         self.roots = tuple(roots)
         self._on_change = on_change
         self._to_event = to_event
+        self._skip = skip  # R5'：快照扫描跳过谓词（monitor/ticks 高频写与 O(总文件数) 解耦）
         self._snapshot: dict[Path, float] = {}
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -40,6 +42,8 @@ class DirWatcher:
                 continue
             for path in sorted(root.rglob("*")):
                 if path.is_file():
+                    if self._skip is not None and self._skip(path):
+                        continue
                     try:
                         current[path] = path.stat().st_mtime
                     except OSError:

@@ -9,6 +9,7 @@
 | [CHANGELOG.md](../../CHANGELOG.md) | 版本登记（Keep a Changelog，0.0.x patch 序列） | 贡献者 |
 | [docs/research/main-agent.md](../research/main-agent.md) | 前期技术与产品调研报告：159-agent 流水线、646 findings、14 章 + 拒绝引入清单 | 贡献者 / Agent |
 | [docs/research/main-agent-proposal.md](../research/main-agent-proposal.md) | 产品与技术方案：上/下篇 19 节、M1/M2/M3、红线继承 13+NR-5、D1–D8、R-01~R-13 | 贡献者 / Agent |
+| [docs/research/storage-db-decision.md](../research/storage-db-decision.md) | 存储选型决策记录：不引入 SQLite/PostgreSQL/seekdb（重申 §13）、触发判据 T1-T5 与 queryindex 只读索引投影蓝图、四痛点修法映射 | 贡献者 / Agent |
 | [docs/diagrams/main-agent/](../diagrams/main-agent/) | 四张架构图 archify A 档四件套（总览/Loop 时序/状态数据流/模拟盘生命周期） | 贡献者 / Agent |
 | [docs/prototypes/main-agent/](../prototypes/main-agent/) | 四页产品原型（自包含 HTML + 整页 PNG，全合成数据，方案上篇 §2 借图展开） | 贡献者 |
 | [docs/specs/](../specs/) | 实施规约：[12-orchestration.md](../specs/12-orchestration.md)（编排，随实施 PR 增节，现 §①–⑮）、[13-paper.md](../specs/13-paper.md)（paper，0.0.6 建）、[14-design-system.md](../specs/14-design-system.md)（设计系统，0.0.19 建） | 贡献者 / Agent |

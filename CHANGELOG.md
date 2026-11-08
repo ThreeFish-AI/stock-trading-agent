@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.24] - 2026-11-08
+
+### Added
+
+- **状态归档与巡检补齐（[存储选型决策记录](docs/research/storage-db-decision.md) §5/§6 G 族落地；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑯；与 main 0.0.14–0.0.23 并轨合流）**。①**`archive-state [--apply]` 六桶归档（G1）**：归档非删除，档案 `agent/archive/`（queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分带 14 天尾随保底窗——外仓 agent_postmortem T+5 回看不受裁；不可解析行随归档迁出；档案按月聚合单次批量写），默认 dry-run，daemon.lock 守卫；热链重建+`state_archived` 留痕。②**`ops/state_probe.py` 巡检（G2）**：stdlib 只读三源分列体量+T1/T3 判据状态（决策记录 §4 数据源）。③**W5 写序收敛**：任务终态 budget→decisions→sessions→queue 最后落；paper `confirmed` 残留启动期清出留痕。④**DirWatcher skip**：roots 单根化+跳过 monitor/ticks（O(总文件数) 与外仓增长解耦）。**并轨说明**：决策链修复主题两线同源（本线 0.0.14 决策记录/取证为共同源头），代码以 main 0.0.15「决策链写拓扑裁定」版为准收敛（`DecisionChainError`/锁内尾部对账/repair-decisions 保行重链）；本 PR 相对 main 的净增量即上述 G/W5/R5' 项；SSE 建连 multi 初始快照按 main 0.0.17 裁定不采纳（load 触发同效、SSE 契约钉死）。
+
 ## [0.0.23] - 2026-11-08
 
 ### Changed

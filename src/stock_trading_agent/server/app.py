@@ -127,19 +127,18 @@ def create_app(
     app.include_router(routes.router)
     app.include_router(routes.root_router)
     app.include_router(sse_router)
-    # SSE 装配（只读桥，不依赖 daemon 锁）：hub 绑事件循环 + DirWatcher 盯台账目录
+    # SSE 装配（只读桥，不依赖 daemon 锁）：hub 绑事件循环 + DirWatcher 盯状态根
+    # R5'：roots 收敛为单根（原 4 根互相包含——白起 3 条 FSEvents 流白扫 3 遍）；
+    # monitor/ticks 高频写子树经 skip 谓词出扫描面（外仓增长与 SSE 桥成本解耦）。
     hub = StreamHub()
     app.state.stream_hub = hub
     app.state.sse_layout = layout
+    ticks_dir = layout.monitor_dir / "ticks"
     watcher = DirWatcher(
-        roots=(
-            layout.agent_dir,
-            layout.monitor_dir,
-            layout.outlook_dir,
-            layout.root,
-        ),
+        roots=(layout.root,),
         on_change=hub.publish_threadsafe,
         to_event=lambda path: to_event_name(path, layout),
+        skip=lambda path: path.is_relative_to(ticks_dir),
     )
     app.state.dir_watcher = watcher
     app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")

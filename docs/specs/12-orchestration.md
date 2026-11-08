@@ -174,3 +174,10 @@
 | D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | docs/ops/trading-day-verify.md 承载（D8 周一 2026-11-10、T2 盘后唤起、D6 用户触发）；不属代码悬空项 |
 | 流式 stdout 改造 | 不立项 | §⑬ 超远期不立项（案 a 已满足观测诉求） |
 | D-72 waitingFor 轮询 / F-56 PreToolUse hook deny | 条件触发 | §⑩ 升级位原文（触发条件已登记，不重复） |
+
+## ⑯ 状态归档与巡检裁定（0.0.24 落地；决策链写拓扑见 §④ 0.0.15，两线同源以彼为准）
+
+- **六桶归档 `archive-state [--apply]`（G1，[存储选型决策记录](../research/storage-db-decision.md) §5/§6）**：归档非删除，档案 `agent/archive/<桶>-YYYYMM.jsonl`（queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分）；默认 dry-run，--apply 才落盘且要求 daemon 空闲（daemon.lock 守卫）。坑位三条：①decisions 月度切分带 **14 天尾随保底窗**——外仓 [agent_postmortem.py](https://github.com/ThreeFish-AI/vibe-stock/blob/main/scripts/agent_postmortem.py) 硬编码单文件+键控 last-wins+T+5 回看，纯月前缀比较月初跨界会裁掉回看窗内的上一月行；②不可解析行随归档迁出（留 keep 会让热链重建在 apply 中途崩溃）；③档案追加按月聚合单次批量写（逐行 append 的中断-重跑窗口随行数放大，重跑档案双份）。热文件重建链用 `plan_repair`（保 payload 重排序号重算 hash）+ `state_archived` 留痕。
+- **巡检 `ops/state_probe.py`（G2）**：stdlib 只读巡检——三源分列体量（reports md / reports _scans / monitor ticks / audit）+ 台账行数 + 触发判据 T1/T3 状态（阈值与决策记录 §4 同源，判据只收严）；`--json` 机读形态。适用条件：存储选型触发判据的唯一自动采集口（T2/T4/T5 需端到端计时/实测报告/检索端点计数，另途采集）。
+- **写序收敛（W5）**：任务终态落账序固定为 budget→decisions→sessions→**queue 最后**（`_persist_all` sessions 先落、queue 终态最后落）——状态机权威崩残由启动期 `recover_orphans` 兜底自愈，脏态窗口从「永久残留」收敛为「毫秒级+下次启动自愈」；paper 确认流 `confirmed` 残留启动期 `purge_confirmed_orphans` 清出+`paper_orphan_purged` 逐笔留痕（Operation 无 request_id 锚不重放落账，人工补账）。
+- **DirWatcher skip 谓词（R5'）**：roots 收敛单根（原 4 根互相包含白扫 3 遍）+ skip 谓词出 `monitor/ticks` 子树——快照扫描 O(总文件数) 与外仓最大增长源解耦；坑位：watchfiles 变更集仍会唤醒 poll_once（skip 只出扫描面，被跳过子树变更经快照 diff 自然无事件）。

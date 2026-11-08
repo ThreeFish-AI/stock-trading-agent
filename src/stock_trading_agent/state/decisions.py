@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -90,11 +91,48 @@ def _parse_lines(raw_lines: list[str], *, origin: str) -> list[DecisionLine]:
     return lines
 
 
-class DecisionLog:
-    """内存态链 + 落盘追加；verify_chain() 检测任何篡改 / 删除 / 乱序。"""
+def plan_repair(lines: list[DecisionLine]) -> tuple[list[DecisionLine], int]:
+    """链修复计划（W2 纯函数）：按 seq 保留首个出现行、丢弃后续重复，重排序号并重算全链 hash。
 
-    def __init__(self, lines: list[DecisionLine] | None = None) -> None:
+    坑位：重复行是「同内容重灌」（payload 逐字相同），保首行不丢信息；重排后 seq 连续，
+    原 hash/prev_hash 全部作废重算——外仓消费只认 agent: 前缀与 payload，视图不变
+    （键控 last-wins，vibe-stock scripts/agent_postmortem.py 已核实）。
+    """
+    seen: set[int] = set()
+    kept: list[DecisionLine] = []
+    dropped = 0
+    for line in lines:
+        if line.seq in seen:
+            dropped += 1
+            continue
+        seen.add(line.seq)
+        kept.append(line)
+    rebuilt: list[DecisionLine] = []
+    prev = GENESIS
+    for seq, line in enumerate(kept, start=1):
+        fresh = DecisionLine.make(
+            seq=seq, ts=line.ts, kind=line.kind, payload=line.payload, prev_hash=prev
+        )
+        rebuilt.append(fresh)
+        prev = fresh.hash
+    return rebuilt, dropped
+
+
+class DecisionLog:
+    """内存态链 + 落盘追加；verify_chain() 检测任何篡改 / 删除 / 乱序。
+
+    W1 唯一入口（I-003 根治）：绑定 path 后 append 自动落盘（内存链与盘上链同一行），
+    旁路 atomic_append_jsonl 直写自此禁绝。
+    """
+
+    def __init__(
+        self, lines: list[DecisionLine] | None = None, *, path: Path | None = None
+    ) -> None:
         self.lines: list[DecisionLine] = list(lines or [])
+        self.path = path  # 绑定落盘路径（None=纯内存，测试/纯函数用）
+        # 进程内 append 串行：worker/watcher 线程与 FastAPI 线程池 handler 共享同一实例，
+        # seq=len+1 与 append 非原子，交错即产重复 seq（W3 下次启动即 ChainBroken）。
+        self._append_lock = threading.Lock()
 
     @classmethod
     def load(cls, path: Path) -> DecisionLog:
