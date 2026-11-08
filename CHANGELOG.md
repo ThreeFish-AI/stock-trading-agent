@@ -4,11 +4,19 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.15] - 2026-11-08
+
+### Fixed
+
+- **decisions.jsonl hash 链完整性修复（生产事故：57 行仅 11 个唯一 seq、链断 7 处；规约 [12-orchestration.md](docs/specs/12-orchestration.md) §④ 新增「决策链写拓扑裁定」）**。断因=三 bug 叠加：W1 serve 降级只读态（daemon 锁竞争失败不 load 文件）下面板写端点仍以空内存链从 seq=1 落盘；W2 面板侧追加落盘不推进 `_persisted_lines` 游标→`_persist_all` 重追加已落盘行；W3 重载链对象不重置游标→重启后重放全部历史；W4 `load()` 忽略 `verify_chain()` 返回值致断链静默续写。①**写者侧单一入口**：`DecisionLog.append(path=...)` 在新增 `agent/decisions.lock`（最内层锁）内尾部对账（内存空/落后采纳文件态、超前即拒、等长分叉即拒），文件是 SSOT；`_persist_all` decisions 段与游标删除，全部 10 处调用点收敛。②**读侧 strict**：`load()` 断链/坏行 raise `DecisionChainError`（含断点行号+修复指引）。③**降级三件**：`acquire_daemon` 断链即释放锁记 `chain_error` 返回 False（worker 不启动）、lifespan `apply_l2_config` 包 try/except 不炸面板、全部写端点 503 附修复命令、`/api/monitor/status.loop.chain_error`+①页 syscard「决策链·待修复」行。④**一次性修复 CLI `repair-decisions`**：保行重链+`chain_repair_started/done` 两条决策（payload 零敏感量）+备份不删行+完好链 noop；runbook=修复后 `launchctl kickstart` 重启 serve（升级瞬间已断链环境进入「只读+503 带指引」为设计内形态）。⑤run-once 降级消息区分链断与锁持。测试 +18 例（426 passed 全绿）：尾部对账五象限/strict load 行号/repair 保行备份/W1-W3 端到端（未 start 提交续链、全生命周期 seq 连续、重启无历史重放）/断链降级 503+syscard/CLI 黑盒；selftest 32→33 case。
+
 ## [0.0.14] - 2026-11-08
 
 ### Fixed
 
 - **面板 UI/UX 审计修复第一 PR：P0 功能断链全量修复（规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑭；9 路对抗审计 + 逐页实走取证）**。①**htmx 交换策略修复（裁定：swap=innerHTML、挂点常驻壳层）**：①页事件流 `hx-swap="none"` 丢弃响应（卡片永不渲染）→ innerHTML；④页确认/驳回与 ⑦ 页 L2 设置区 `outerHTML` 首击自毁挂点（自动刷新与后续按钮全死）→ 壳层与 fragment 按钮两处同改 innerHTML；②**死 target 修复**：③页「盯盘复核」按钮指向不存在的 `#submit-result`（htmx targetError 请求根本不发）→ 改指 ③ 页既有 `#advice-detail` 容器（按钮文案逐字保留）；briefing「确认复核」同理 `#briefing`→`#ov-brief`；③**九处 `<table class="grid">` 撞布局类碎版**（thead/tbody 裂两列）→ 统一 `class="tbl"`（复用既有 fixed+nowrap+ellipsis 表格类）；④**状态/信号/步骤类与 CSS 对齐**：`.st.done/.failed/.abandoned/.queued/.running/.warn/.holding/.closed` 状态色规则补齐（此前裸文本零色零点）；信号五词点空 span 接活（`.sig {cls}` + `.d` dot + 信号词，①页信号表与 ②页意见板）；五段流水线 `step-dot/step-tx/step-sub`→CSS 原型类 `sc/sl/ss`；mech_risk 行高亮 `breach`→CSS 锚 `risk` + severity 补 `_esc`；⑤**报告 `index.md` 404**：文件名白名单放宽 `(?:\d{4}-\d{2}-\d{2}|index)\.md`（vibe-stock reports 索引页可达；resolve 边界与目录正则两道保险不动）。测试 +8 例（408 passed 全绿）：`TestHtmxWiring`（events/paper/briefing/l2 的 target+swap+表格类+壳层下发）、`test_index_md_served`、signals 五词点断言、新建 [tests/unit/test_panel_render.py](tests/unit/test_panel_render.py)（五段/意见板/状态 pill 渲染层单测，后续 PR 复用）。
+
+
 
 ## [0.0.13] - 2026-11-08
 
