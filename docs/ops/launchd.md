@@ -35,4 +35,5 @@ launchctl bootout gui/$(id -u)/com.threefish.stocktrading.agent          # 卸�
 - **AbandonProcessGroup=true（D3 已裁定）**：launchd 重启面板时不连杀同 process group 的在跑 CC 子进程（R-12）；产品侧另有 `start_new_session=True` 使 CC 子进程独立进程组（双保险）。
 - **ExitTimeOut=20 > uvicorn 优雅关停 10s**（`serve --graceful-shutdown`，默认 10）：保证「关停在杀之前完成」，在途任务留给断点恢复（启动期 running 残留 → abandoned）。
 - **单实例**：`agent/daemon.lock`（flock）；被持有时面板降级只读（`/api/monitor/status.loop.active=false`），CLI `run-once` 则 exit 3。
+- **端口冲突预检（0.0.11）**：适用条件 = serve 启动期端口（127.0.0.1:8730 或 `--port` 指定值）已被占用；做法 = connect 探测 + `GET /api/health` component 判占口者身份——本面板已在跑则打印 URL/version/PID 与 kickstart 指引后 exit 0（幂等成功：面板在线即目标达成；`KeepAlive=true` 为无条件 30s 节流重启，退出码不影响 launchd 行为），异构进程则打印 PID 与排查指引 exit 1；坑位 = 不做自动换端口回落（8730 是面板 SSOT 地址）、lsof 缺失时 PID 位留空不阻塞、预检通过到 uvicorn bind 间仍有理论竞态窗（罕见情形仍裸 errno 48 兜底，属常见路径改善非绝对保证）。
 - 模板关键属性由 selftest/单测以 plistlib 钉死（KeepAlive/AbandonProcessGroup/ExitTimeOut/ThrottleInterval/RunAtLoad），模板漂移即测试红。

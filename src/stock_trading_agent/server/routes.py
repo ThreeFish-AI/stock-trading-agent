@@ -35,6 +35,9 @@ from stock_trading_agent.state.paths import StateLayout
 router = APIRouter(prefix="/api")
 root_router = APIRouter()  # 无前缀（favicon 等根级路由）
 
+# 组件身份 SSOT：health 端点与 serve 端口预检（app.probe_panel）同源，防两处字面量漂移
+PANEL_COMPONENT = "stock-trading-agent-panel"
+
 _REPORTS_DIR_RE = re.compile(r"^\d{5,6}\.(cn|hk)$")
 
 
@@ -61,7 +64,7 @@ def favicon() -> FileResponse:
 
 @router.get("/health")
 def health() -> dict:
-    return {"ok": True, "component": "stock-trading-agent-panel", "version": __version__}
+    return {"ok": True, "component": PANEL_COMPONENT, "version": __version__}
 
 
 @router.get("/queue")

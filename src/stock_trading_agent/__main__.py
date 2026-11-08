@@ -12,13 +12,36 @@ import sys
 def _cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
-    from stock_trading_agent.server.app import HOST, PORT, create_app
+    from stock_trading_agent.server.app import (
+        HOST,
+        PORT,
+        create_app,
+        listener_pid,
+        port_is_listening,
+        probe_panel,
+    )
 
+    port = args.port or PORT
+    if port_is_listening(HOST, port):  # 端口冲突预检：替代裸 errno 48
+        info = probe_panel(HOST, port)
+        pid = listener_pid(port)
+        if info is not None:  # 本面板已在跑：幂等退出（退出码不影响 KeepAlive 节流重启）
+            ver = info.get("version", "?")
+            print(f"[sta] 面板已在运行：http://{HOST}:{port}/")
+            print(f"[sta] version={ver}，pid={pid or '未知'}")
+            print("[sta] 面板在线即目标达成，本次幂等退出（exit 0）；重启面板：")
+            print("      launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent")
+            if pid:
+                print(f"      或 kill {pid}（launchd KeepAlive 30s 内自动重拉）")
+            return 0
+        print(f"[sta] 端口 {HOST}:{port} 被未知进程占用（pid={pid or '未知'}），面板无法启动。")
+        print(f"[sta] 排查：lsof -nP -iTCP:{port} -sTCP:LISTEN；停占口者或换 --port 后重试。")
+        return 1
     # enable_loop_runtime：lifespan 起 worker/watcher 线程；daemon 锁被持有时面板降级只读
     uvicorn.run(
         create_app(enable_loop_runtime=True),
         host=HOST,
-        port=args.port or PORT,
+        port=port,
         workers=1,
         log_level="info",
         timeout_graceful_shutdown=args.graceful_shutdown,
@@ -800,6 +823,15 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         assert q.find_active("t1_refresh:600519:2026-11-08") is None
 
     check_case("state.queue.find_any", queue_find_any)
+
+    def port_guard_probe():
+        from stock_trading_agent.server.app import _is_panel_health
+
+        assert _is_panel_health({"ok": True, "component": "stock-trading-agent-panel", "v": "x"})
+        assert not _is_panel_health({"ok": True, "component": "other-service"})
+        assert not _is_panel_health("stock-trading-agent-panel")  # 非 dict 判否
+
+    check_case("server.port_guard.probe", port_guard_probe)
 
     return results
 
