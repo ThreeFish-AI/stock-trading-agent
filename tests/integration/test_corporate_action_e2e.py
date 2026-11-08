@@ -148,7 +148,7 @@ class TestFeed:
             )
 
     def test_panel_form_variant_and_registry_table(self, tmp_path: Path):
-        app, _, layout = _make(tmp_path)
+        app, _, _layout = _make(tmp_path)
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
             frag = client.get("/api/panel/paper").text
             assert "/api/panel/paper/corporate-action" in frag and "馈送入账" in frag
