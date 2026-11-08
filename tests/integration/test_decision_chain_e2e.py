@@ -129,7 +129,7 @@ def test_assert_refuse_carries_reason_codes(tmp_path: Path):
     from stock_trading_agent.cc_client.contract import CCRequest
     from stock_trading_agent.state.queue import QueueState, TaskRecord
 
-    app, rt, layout = _make_app(tmp_path)
+    _app, rt, layout = _make_app(tmp_path)
     queue = QueueState()
     task = TaskRecord(
         task_id="diagnose_quick:600519:2026-11-08:100000",
