@@ -66,27 +66,26 @@ def health() -> dict:
 @router.get("/queue")
 def queue(request: Request) -> dict:
     from stock_trading_agent.state.queue import QueueState
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
-    data = read_json(_layout(request).queue_path)
+    data = read_json_cached(_layout(request).queue_path)
     return data if data is not None else QueueState().to_dict()
 
 
 @router.get("/sessions")
 def sessions(request: Request) -> dict:
     from stock_trading_agent.state.sessions import SessionsState
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
-    data = read_json(_layout(request).sessions_path)
+    data = read_json_cached(_layout(request).sessions_path)
     return data if data is not None else SessionsState().to_dict()
 
 
 @router.get("/decisions")
 def decisions(request: Request, tail: int = Query(default=20, ge=1, le=200)) -> list[dict]:
-    path = _layout(request).decisions_path
-    if not path.exists():
-        return []
-    lines = [json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines() if raw]
+    from stock_trading_agent.state.store import read_jsonl_lines_cached
+
+    lines = [json.loads(raw) for raw in read_jsonl_lines_cached(_layout(request).decisions_path)]
     return lines[-tail:]
 
 
@@ -103,9 +102,9 @@ def paper(request: Request) -> dict:
 
 @router.get("/budget")
 def budget(request: Request) -> dict:
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
-    data = read_json(_layout(request).budget_path)
+    data = read_json_cached(_layout(request).budget_path)
     return (
         data
         if data is not None
@@ -130,49 +129,50 @@ def monitor_events(
 
 
 def _monitor_events_payload(request: Request, *, date: str | None, tail: int) -> dict:
-    """核心载荷（HTTP 端点与 fragment 复用；tail 夹紧 1..500）。"""
+    """核心载荷（HTTP 端点与 fragment 复用；tail 夹紧 1..500；R2 缓存读）。"""
+    from stock_trading_agent.state.store import read_jsonl_lines_cached
+
     tail = max(1, min(int(tail), 500))
     day = date or market_today()
     path = _layout(request).monitor_events_file(day)
     events: list[dict] = []
     skipped = 0
-    if path.exists():
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            if not raw.strip():
-                continue
-            ev = parse_line(raw)
-            if ev is None:
-                skipped += 1
-                continue
-            events.append(
-                {
-                    "ts": ev.ts,
-                    "code": ev.code,
-                    "market": ev.market,
-                    "kind": ev.kind,
-                    "rule": ev.rule,
-                    "level": ev.level,
-                    "notify": ev.notify,
-                    "mech_risk": ev.mech_risk,
-                    "facts": ev.facts,  # 0.0.11 透出：现价/距线等机械事实（①③两页呈现源）
-                    "review": ev.review,
-                    "suppress_reason": ev.suppress_reason,
-                }
-            )
+    for raw in read_jsonl_lines_cached(path):
+        if not raw.strip():
+            continue
+        ev = parse_line(raw)
+        if ev is None:
+            skipped += 1
+            continue
+        events.append(
+            {
+                "ts": ev.ts,
+                "code": ev.code,
+                "market": ev.market,
+                "kind": ev.kind,
+                "rule": ev.rule,
+                "level": ev.level,
+                "notify": ev.notify,
+                "mech_risk": ev.mech_risk,
+                "facts": ev.facts,  # 0.0.11 透出：现价/距线等机械事实（①③两页呈现源）
+                "review": ev.review,
+                "suppress_reason": ev.suppress_reason,
+            }
+        )
     return {"date": day, "count": len(events), "skipped": skipped, "events": events[-tail:]}
 
 
 @router.get("/monitor/status")
 def monitor_status(request: Request) -> dict:
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
     layout = _layout(request)
     day = market_today()
-    watch_state = read_json(layout.monitor_state_path) or {}
+    watch_state = read_json_cached(layout.monitor_state_path) or {}
     runtime = _runtime(request)
 
     queued = running = 0
-    q = read_json(layout.queue_path) or {"tasks": []}
+    q = read_json_cached(layout.queue_path) or {"tasks": []}
     for t in q.get("tasks", []):
         if t.get("status") == "queued":
             queued += 1
@@ -290,12 +290,9 @@ def notifications(request: Request, tail: int = 20) -> list[dict]:
 
     layout = _layout(request)
     events = _monitor_events_payload(request, date=None, tail=500).get("events", [])
-    import contextlib
+    from stock_trading_agent.state.store import read_text_cached
 
-    log_text = ""
-    log_path = layout.monitor_dir / "logs" / "watch.out.log"
-    with contextlib.suppress(OSError):
-        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    log_text = read_text_cached(layout.monitor_dir / "logs" / "watch.out.log")
     names = load_name_map(layout)
     rows = rebuild_notifications(events, log_text, names)
     return rows[-tail:]
@@ -331,7 +328,7 @@ def signals(request: Request) -> dict:
     from stock_trading_agent.server.panel_data import load_name_map
 
     snap["name_map"] = build_name_map(reports(request).get("reports", []))
-    snap["names"] = load_name_map(layout)
+    snap["names"] = load_name_map(layout, signals=entries)  # R4：signals 单请求单读（原先 2 次）
     return snap
 
 
@@ -567,10 +564,8 @@ class L2ToggleRequest(BaseModel):  # L2 开关请求契约（局部）
 
 @router.post("/l2")
 def l2_toggle(payload: L2ToggleRequest, request: Request) -> dict:
-    from dataclasses import asdict
-
     from stock_trading_agent.state.agent_config import load_agent_config, save_agent_config
-    from stock_trading_agent.state.store import FileLock, atomic_append_jsonl
+    from stock_trading_agent.state.store import FileLock
 
     runtime = _runtime(request)
     if runtime is None or not runtime.is_active:
@@ -581,12 +576,11 @@ def l2_toggle(payload: L2ToggleRequest, request: Request) -> dict:
         cfg.l2_enabled = payload.enabled
         save_agent_config(layout.agent_config_path, cfg)
         cfg = runtime.apply_l2_config(probe=payload.enabled)  # 开启即探测认证态并联动预算闸
-        line = runtime.loop.decisions.append(
+        runtime.loop.decisions.append(  # W1 唯一入口：绑定 path 落盘
             _now_iso(),
             "l2_toggled",
             {"enabled": payload.enabled, "by": "panel", "billing_mode": cfg.billing_mode},
         )
-        atomic_append_jsonl(layout.decisions_path, asdict(line))
     return {
         "l2_enabled": cfg.l2_enabled,
         "billing_mode": cfg.billing_mode,
@@ -674,20 +668,17 @@ def panel_briefing_ack(
     request: Request, date: str = Form(...), code: str = Form(...)
 ) -> HTMLResponse:
     """确认状态走 decision log（hash 链防篡改；降级只读态 503）。"""
-    from dataclasses import asdict
-
     from stock_trading_agent.loop.monitor_events import market_today
     from stock_trading_agent.server.panel import render_briefing_fragment
-    from stock_trading_agent.state.store import atomic_append_jsonl
 
     runtime = _runtime(request)
     if runtime is None or not runtime.is_active:
         raise HTTPException(status_code=503, detail="运行时未持锁（briefing_ack 需 daemon 持有者）")
-    layout = _layout(request)
     if date != market_today():
         raise HTTPException(status_code=422, detail="仅当日卡可确认")
-    line = runtime.loop.decisions.append(_now_iso(), "briefing_ack", {"date": date, "code": code})
-    atomic_append_jsonl(layout.decisions_path, asdict(line))
+    runtime.loop.decisions.append(  # W1 唯一入口：绑定 path 落盘
+        _now_iso(), "briefing_ack", {"date": date, "code": code}
+    )
     return HTMLResponse(render_briefing_fragment(_briefing_payload(request)))
 
 
@@ -803,12 +794,7 @@ def _paper_decide(request: Request, payload: dict, *, action: str) -> dict:
                     "paper_fill_rejected",
                     {"request_id": request_id, "code": queue.find(request_id).code},
                 )
-            from dataclasses import asdict
-
-            from stock_trading_agent.state.store import atomic_append_jsonl
-
-            if runtime.loop.decisions.lines:
-                atomic_append_jsonl(layout.decisions_path, asdict(runtime.loop.decisions.lines[-1]))
+            # W1 唯一入口：decisions.append 经绑定 path 即时落盘，无旁路重写
             queue = queue.remove(request_id)
             paper_pending.save(queue, layout.sim_pending_fills_path)
     except HTTPException:

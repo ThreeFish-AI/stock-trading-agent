@@ -4,6 +4,18 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.16] - 2026-11-08
+
+### Fixed
+
+- **0.0.15 对抗评审收口（13-agent 评审 8 findings 全量修复，[12-orchestration.md §⑭](docs/specs/12-orchestration.md) 坑位同步）**：①**W6 别名 bug**——`watcher.json` 条件保存快照直嵌 `self._offsets` 引用，与 `_last_saved` 别名同一 dict 后值比较恒等，基线写入后偏移永不落盘、daemon 重启重放当日全部 monitor 事件（重复决策行 + T2 确认卡因 request_id 盐跨进程必变而重复，人工双确认即模拟盘双落账）——改拷贝快照（回归钉：同实例二次消费偏移必落盘）；②**降级防毒**——`acquire_daemon` 失败路径（LockTimeout/ChainBroken）把 `decisions` 重绑纯内存链，降级 serve 的任一 append（提交入队/paper 确认/l2_probe）不再向已有多行文件写 `seq=1/GENESIS` 毒行（原会致 repair 后再毒化、「修复不生效」循环）；③**decisions 月度切分加 14 天尾随保底窗**——月初跑归档不再把外仓 agent_postmortem T+5 回看窗内的上一月行移出热文件（T+3/T+5 后验静默跳过）；④**DecisionLog append 进程内串行**（`_append_lock`）——worker/watcher 线程与线程池 handler 并发追加不再可能产重复 seq（回归钉：8 线程×25 条并发后链完整）；⑤**archive-state 修三处**——不可解析行随归档迁出（原会让热链重建在 apply 中途崩溃、重跑档案双份）、audit/runs 两桶 dry-run 同样统计（六桶全量预览）、档案追加按月聚合单次批量写（中断-重跑窗口收窄）；⑥**repair-decisions 坏行守护**——无法解析的行报行号 exit 4 拒碰（原裸 traceback exit 1，违反自身声明的 0/3 退出码契约）。测试 +4 例（410 passed 全绿）、selftest 强化 2 case（40/40）。
+
+## [0.0.15] - 2026-11-08
+
+### Added
+
+- **状态层健壮性与读侧修复（I-003 收口轮；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑭；执行 [存储选型决策记录](docs/research/storage-db-decision.md) §3/§6 全量修法）**。**写侧 W 族**：①**决策落盘唯一入口（W1 根治）**——`DecisionLog` 绑定 path 后 append 自动原子追加，`_persisted_lines` 增量游标整体删除，`worker._decide` 与 routes 三处旁路（l2/briefing_ack/paper）全部收编，重灌 bug 类结构性消灭；②**载入 fail-loud（W3）**——`load(strict=True)` 破链抛 `ChainBroken` 拒启（serve 降级只读），修复工具走 `strict=False`；③**`repair-decisions [--apply]` 子命令（W2）**——按 seq 保首行去重+重排重算全链+`chain_repaired` 留痕，daemon.lock 守卫；④**`archive-state [--apply]` 六桶归档（G1）**——queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分（热链重建+`state_archived` 留痕），档案 `agent/archive/`（归档非删除）；⑤**写序收敛（W5）**——任务终态 queue 最后落；paper `confirmed` 残留启动期清出+`paper_orphan_purged` 留痕；⑥watcher.json 偏移零变化不重写（W6，消 ~4.3 万次/日无效 fsync）；⑦audit 裸写点收编 `store.atomic_append_lines`（W7，flock+单次 fsync）。**读侧 R 族**：21 处 fragment `hx-trigger` 加 `load,` 前缀（修 htmx every=setTimeout 首延 180s 首屏空转）；SSE 建连即推 `multi` 初始快照（断线重连同覆盖）；`store` mtime+size 短路缓存三件（json/jsonl/text——SSE 扇出重复读消除）；DirWatcher roots 收敛单根+skip 谓词出 monitor/ticks（O(总文件数) 解耦外仓增长）；`/api/signals` 单请求 signals 单读。**巡检 G2**：`ops/state_probe.py` stdlib 只读巡检（三源分列+T1/T3 判据状态）。生产升级手册见 [issue.md I-003](docs/.agents/issue.md)；盘上链已被先行修复（59 行全唯一），0.0.15 部署后根因不再复发。测试 +6 例（406 passed 全绿）：跨 daemon 双代重启无重复 seq 回归（W4 主钉）、破链拒启、repair CLI dry-run/apply、confirmed 孤儿清出、六桶归档端到端、dry-run 零落盘；selftest +8 case（40/40）。
+
 ## [0.0.14] - 2026-11-08
 
 ### Added

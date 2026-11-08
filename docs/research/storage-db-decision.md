@@ -51,7 +51,7 @@ NR-3/NR-5 产物断言器是落盘前内存态扫描（敏感键正则 + 渲染 
 
 | 痛点 | 真实成因 | 修法 |
 | :--- | :--- | :--- |
-| 面板体验变慢 | 协议与扫描实现：htmx 首延 180s + DirWatcher 全树扫 + 零缓存全量读（时段性，非 IO 瓶颈） | **R1'** 20 处 fragment 的 `hx-trigger` 前缀加 `load,`（一行属性，立即消除首屏空转，零服务端代码）；**R1''** SSE 建连初始快照（第二段，覆盖断线重连）；**R5'** DirWatcher roots 去重 + 快照循环跳过 monitor/ticks 谓词（~5 行）；**R2** 进程内 mtime 短路缓存；**R3** tail 字节偏移增量读；**R4** 请求内 memo + task_id→uuid 索引（消三跳反查被 5s 轮询放大） |
+| 面板体验变慢 | 协议与扫描实现：htmx 首延 180s + DirWatcher 全树扫 + 零缓存全量读（时段性，非 IO 瓶颈） | **R1'** 20 处 fragment 的 `hx-trigger` 前缀加 `load,`（一行属性，立即消除首屏空转，零服务端代码）；**R1''** SSE 建连初始快照（第二段，覆盖断线重连）；**R5'** DirWatcher roots 去重 + 快照循环跳过 monitor/ticks 谓词（~5 行）；**R2** 进程内 mtime 短路缓存；**R3** mtime+size 缓存读（T1 触达后升级字节偏移续读）；**R4** 请求内 memo + task_id→uuid 索引（消三跳反查被 5s 轮询放大） |
 | 状态无限增长 | 策略缺失（全仓零 retention）；大头在外仓（reports/_scans + ticks），本仓写区 ~11MB/年 | **G1** 六桶 retention（归档非删除，月度 JSONL append 复用 store.py 纪律，恢复=cat+jq）：queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天、budget daily 桶 180 天、decisions 月度切分（切分契约已核实安全，实施时登记 CHANGELOG 并知会外仓）；**G2** ops 巡检脚本（d8_probe 同形 stdlib 直跑）按三源分列自动采集——判据数据源，不能靠人肉盯 |
 | 一致性/可靠性疑虑 | 游标 bug（已破链）+ 跨文件写序 + 绕入口写点；历史上三起状态层缺陷均在文件范式内修好（WAL 不落盘 0.0.3、锁存在性误判 0.0.4、预算分桶 0.0.9，CHANGELOG 可查） | **W1** 游标修复（最小形态 3 行：worker.py:169 载入后置 `_persisted_lines = len(decisions.lines)`；彻底形态=决策落盘唯一入口化收编 4 处旁路）；**W2** repair-decisions 链修复子命令；**W3** verify_chain fail-loud；**W4** 双写路径回归测试；**W5** 写序调整（queue 终态最后落）+ paper confirmed 孤儿启动清理；**W6** watcher 条件写；**W7** audit 收编 store.py |
 | 历史检索困难 | 唯一真正的数据结构缺口；但当前 2k 决策/年量级 jq/grep 亚秒级，且这正是支柱③承诺的审计形态 | 近期：G1 归档 + jq 查询配方；**触发判据 T1-T5 任一达成后**：queryindex 只读索引投影（§6），SSOT 不迁、跨仓契约不动 |
@@ -95,7 +95,9 @@ NR-5 不对索引二次扫描的论证：索引所有列逐字节源自断言器
 
 实施期坑位清单：sqlite3 连接默认 `check_same_thread=True`，FastAPI 同步端点走线程池——必须每线程连接或单连接加锁（写进 design，不留白）；WAL 三件套（db/-wal/-shm）非原子，Time Machine/cp 单拷主库得旧态——文档明示「备份只须备份台账文件，agent/index/ 整目录可丢」；双源漂移——索引只承诺最终一致，查询响应带 as-of 元数据、UI 标注「索引投影非实时」；防范围蔓延——模块不暴露任何写台账函数，评审门禁盯「读侧先富起来变双 SSOT」。
 
-## 6 修复路线（独立 PR 推进，拆序即优先级）
+## 6 修复路线（0.0.15 已全量落地；拆序即优先级）
+
+> 2026-11-08 状态：W1-W7 / R1'-R5' / R1''-R4 / G1 / G2 全部实施（规约 [12-orchestration.md §⑭](../specs/12-orchestration.md)）；R3 以 mtime+size 短路缓存形态落地（当前量级整读即最优，字节偏移续读登记为 T1 触达后升级位）；生产 decisions.jsonl 破链已被先行修复（59 行全唯一），升级 0.0.15 后根因不再复发（升级手册见 [issue.md I-003](../.agents/issue.md)）。
 
 1. **P0（先于一切读侧工作）**：W1 最小形态 + W3（含「拒启 vs 只读降级」裁定——生产文件已破链，直接拒启会让 daemon 起不来，须与 W2 同 PR 或先 W2）+ W2 生产链修复 + W4 回归测试。缺陷拖延会让范式背锅，反方向加固「不引数据库」的裁定。
 2. **读侧速效（~25 行）**：R1'（htmx `load,` × 20 处）+ R5'（roots 去重 + 跳过 ticks 谓词），消除首屏空转与扫描无界增长。

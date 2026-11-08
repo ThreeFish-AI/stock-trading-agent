@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 from pathlib import Path
 
 from stock_trading_agent.loop.events import MARKET_TZ
@@ -17,11 +16,10 @@ MIN_SHOW_DAYS = 0  # 全部在册信号展示（无隐藏）
 
 
 def load_root_json(path: Path) -> list | dict | None:
-    """薄读取器：缺席/坏 JSON → None（调用方降级空态）。"""
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    """薄读取器：缺席/坏 JSON → None（调用方降级空态）；R2 走 store 的 mtime+size 短路缓存。"""
+    from stock_trading_agent.state.store import read_json_cached
+
+    return read_json_cached(path)
 
 
 NOTIFY_TAIL = (
@@ -30,9 +28,10 @@ NOTIFY_TAIL = (
 NOTIFY_TITLE_DEFAULT = "vibe-stock 盯盘"
 
 
-def load_name_map(layout) -> dict[str, str]:
+def load_name_map(layout, *, signals: list | dict | None = None) -> dict[str, str]:
     """名称源回退链（产品仓只读；12-orchestration §⑫ 升级位落地）：
     names.json（主，report 写穿）→ signals.json 最新 stock_name → universe rows name。
+    signals 参数：调用方已读入的 signals.json 内容注入（R4 单请求去重复读；None 才自读）。
     """
     names: dict[str, str] = {}
     primary = load_root_json(layout.root / "names.json")
@@ -42,7 +41,8 @@ def load_name_map(layout) -> dict[str, str]:
                 _, _, code = str(key).rpartition(":")
                 if code:
                     names[code] = value
-    signals = load_root_json(layout.root / "signals.json")
+    if signals is None:
+        signals = load_root_json(layout.root / "signals.json")
     if isinstance(signals, list):
         for entry in signals:
             if not isinstance(entry, dict):

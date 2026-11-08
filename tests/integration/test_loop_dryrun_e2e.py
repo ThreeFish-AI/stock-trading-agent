@@ -23,7 +23,8 @@ def make_loop(layout: StateLayout) -> AgentLoop:
         cc=DryRunCCClient(audit_dir=layout.audit_dir),
         layout=layout,
         table=load_default_table(),
-        decisions=DecisionLog(),
+        # W1 唯一入口契约：落盘须绑定 path（裸 DecisionLog 仅内存态，纯函数测试用）
+        decisions=DecisionLog(path=layout.decisions_path),
     )
 
 

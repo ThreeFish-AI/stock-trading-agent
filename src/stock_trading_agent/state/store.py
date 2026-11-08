@@ -10,6 +10,7 @@ import errno
 import fcntl
 import json
 import os
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -81,6 +82,96 @@ def atomic_append_jsonl(path: Path, obj: dict, *, makedirs: bool = True) -> None
             os.fsync(fh.fileno())
         finally:
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def atomic_append_lines(path: Path, lines: list[str], *, makedirs: bool = True) -> None:
+    """批量追加多行文本（flock 串行 + 单次 fsync；audit 转录归档专用，W7 收编裸写点）。
+
+    坑位：lines 须为不含换行的完整行（调用方保证）；空列表零 IO。
+    """
+    if not lines:
+        return
+    if makedirs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    text = "".join(line + "\n" for line in lines)
+    with path.open("a", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+# --- 读缓存（R2/R3：mtime+size 短路；面板热文件与 SSE 扇出的重复读消除） ---
+# 坑位：写者经 os.replace（inode 更换、mtime 必变）或 flock 追加（mtime 变）落盘，
+# (mtime_ns, size) 变更即失效；极端同 mtime 同 size 改写在原子写纪律下不存在。
+# 返回值为缓存共享对象——调用方只读不写（routes 全部只读消费）。
+_CACHE_LOCK = threading.Lock()
+_JSON_CACHE: dict[Path, tuple[tuple[int, int], object]] = {}
+_JSONL_CACHE: dict[Path, tuple[tuple[int, int], list[str]]] = {}
+_TEXT_CACHE: dict[Path, tuple[tuple[int, int], str]] = {}
+
+
+def read_json_cached(path: Path):
+    """缓存读 JSON（缺席/坏 JSON → None，与 panel_data.load_root_json 同降级语义）。"""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = (st.st_mtime_ns, st.st_size)
+    with _CACHE_LOCK:
+        hit = _JSON_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    with _CACHE_LOCK:
+        _JSON_CACHE[path] = (key, value)
+    return value
+
+
+def read_jsonl_lines_cached(path: Path) -> list[str]:
+    """缓存读 JSONL 原始行（非空行；变更即整重读——当前量级整读即最优，T1 触达后再升级偏移续读）。"""
+    try:
+        st = path.stat()
+    except OSError:
+        return []
+    key = (st.st_mtime_ns, st.st_size)
+    with _CACHE_LOCK:
+        hit = _JSONL_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    try:
+        lines = [raw for raw in path.read_text(encoding="utf-8").splitlines() if raw]
+    except OSError:
+        return []
+    with _CACHE_LOCK:
+        _JSONL_CACHE[path] = (key, lines)
+    return lines
+
+
+def read_text_cached(path: Path) -> str:
+    """缓存读纯文本（watch.out.log 等外仓只读日志；缺席 → 空串）。"""
+    try:
+        st = path.stat()
+    except OSError:
+        return ""
+    key = (st.st_mtime_ns, st.st_size)
+    with _CACHE_LOCK:
+        hit = _TEXT_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    with _CACHE_LOCK:
+        _TEXT_CACHE[path] = (key, text)
+    return text
 
 
 class LockTimeout(RuntimeError):
