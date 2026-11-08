@@ -1145,6 +1145,60 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("ops.state_probe.report", state_probe_report)
 
+    def advice_review_lookup():
+        from stock_trading_agent.loop.advice import has_review
+
+        lines = [
+            {"kind": "advice_reviewed", "payload": {"date": "2026-11-09", "code": "600519"}},
+            {"kind": "briefing_ack", "payload": {"date": "2026-11-09", "code": "600519"}},
+        ]
+        assert has_review(lines, date="2026-11-09", code="600519") is True
+        assert has_review(lines, date="2026-11-08", code="600519") is False
+
+    check_case("loop.advice.review_lookup", advice_review_lookup)
+
+    def price_merge_cases():
+        from stock_trading_agent.server.panel_data import (
+            PriceFact,
+            asof_stale,
+            merge_price_facts,
+            parse_ticks_prices,
+            t1_price,
+        )
+
+        merged = merge_price_facts(
+            {"A": PriceFact(9.0, "2026-11-09T09:00:00+08:00", "sim")},
+            {"A": PriceFact(9.6, "2026-11-09 10:05:00", "ticks")},  # 空间隔形态新者胜
+        )
+        assert merged["A"].price == 9.6 and merged["A"].source == "ticks"
+        merged2 = merge_price_facts(
+            {"A": PriceFact(9.0, "", "sim")}, {"A": PriceFact(9.1, "", "x")}
+        )
+        assert merged2["A"].price == 9.1  # 双无 asof 后到覆盖
+        ticks = parse_ticks_prices(
+            ['{"code":"600519","price":9.4}', '{"code":"600519","price":9.6}', "{bad"]
+        )
+        assert ticks["600519"].price == 9.6  # 尾扫后行覆盖、坏行跳过
+        assert t1_price({"blocks": {"quote": {"price": 9.5, "state": "available"}}}) is not None
+        assert t1_price({"blocks": {"quote": {"price": 9.5, "state": "stale"}}}) is None
+        assert asof_stale("2026-11-08 15:00:00", "2026-11-09") is True
+        assert asof_stale("2026-11-09T01:00:00+00:00", "2026-11-09") is False
+
+    check_case("server.panel.price_merge", price_merge_cases)
+
+    def phase_lunch_matrix():
+        from stock_trading_agent.loop.events import MARKET_TZ
+        from stock_trading_agent.server.panel_data import market_phase
+
+        def at(h: int, m: int) -> dt.datetime:
+            return dt.datetime(2026, 11, 9, h, m, tzinfo=MARKET_TZ)  # 周一
+
+        assert market_phase(at(12, 0))["overall"] == "lunch"  # 双市同休显午休
+        assert market_phase(at(11, 45))["overall"] == "live"  # CN 午休 HK 盘中 → 盘中
+        assert market_phase(at(13, 0))["overall"] == "live"  # 端点不含复牌
+
+    check_case("server.panel.phase_lunch", phase_lunch_matrix)
+
     return results
 
 

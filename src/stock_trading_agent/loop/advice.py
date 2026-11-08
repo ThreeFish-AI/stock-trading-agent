@@ -20,6 +20,8 @@ from stock_trading_agent.state.store import atomic_write_text
 
 MONITOR_REVIEW_KIND = "monitor_review"
 ADVICE_SCHEMA_ID = "monitor-advice/1"
+# 面板「标记已复核」决策 kind（0.0.25；沿 briefing_ack 先例）
+ADVICE_REVIEWED_KIND = "advice_reviewed"
 
 # vibe-stock references/04 持仓者五档（含「等回踩」变体）逐字枚举——单测钉死防漂移
 ADVICE_ACTIONS: tuple[str, ...] = (
@@ -178,6 +180,20 @@ def write_advice_card(layout: StateLayout, date: str, code: str, md: str) -> Pat
     path = layout.advice_card_path(date, code)
     atomic_write_text(path, md)
     return path
+
+
+def has_review(decision_lines: list[dict], *, date: str, code: str) -> bool:
+    """已复核状态走 decision log（advice_reviewed payload 命中 date+code；沿 has_ack 同构）。
+
+    无槽位维度（T2 建议卡每日每股一卡，路径即唯一键）；存在即已复核（幂等重记不回退呈现）。
+    """
+    for line in decision_lines:
+        if line.get("kind") != ADVICE_REVIEWED_KIND:
+            continue
+        payload = line.get("payload") or {}
+        if payload.get("date") == date and payload.get("code") == code:
+            return True
+    return False
 
 
 def read_last_signal(root: Path, code: str) -> tuple[str | None, bool]:

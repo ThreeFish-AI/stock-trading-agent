@@ -7,12 +7,110 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from stock_trading_agent.loop.events import MARKET_TZ
 
 VALID_SIGNALS = ("strong_buy", "buy", "hold", "sell", "strong_sell")
 MIN_SHOW_DAYS = 0  # 全部在册信号展示（无隐藏）
+
+
+# --- 现价源三族纯函数（12-orchestration §⑫ 现价源升级位 0.0.25：零网络，三源本地台账/产物） ---
+
+
+@dataclass(frozen=True)
+class PriceFact:
+    """单源现价事实：价 + asof 时戳（ISO，缺席 ""）+ 源标签。"""
+
+    price: float
+    asof: str = ""
+    source: str = ""
+
+
+def parse_ticks_prices(raw_lines: list[str]) -> dict[str, PriceFact]:
+    """monitor/ticks/<date>.jsonl 尾扫现价：坏行跳过、同 code 后行覆盖（台账即时间序）。
+
+    行 schema（watch.py 写者）：{code, price, ts_utc8, local_ts, ...}；ts_utc8 优先作 asof。
+    """
+    out: dict[str, PriceFact] = {}
+    for line in raw_lines or []:
+        try:
+            row = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        code = str(row.get("code") or "")
+        price = row.get("price")
+        if not code or not isinstance(price, (int, float)) or isinstance(price, bool):
+            continue
+        out[code] = PriceFact(
+            price=float(price),
+            asof=str(row.get("ts_utc8") or row.get("local_ts") or ""),
+            source="ticks",
+        )
+    return out
+
+
+def t1_price(payload: dict) -> PriceFact | None:
+    """T1 evidence 价：blocks.quote.price（state=available 才取）+ generated_at asof。"""
+    if not isinstance(payload, dict):
+        return None
+    quote = ((payload.get("blocks") or {}).get("quote")) or {}
+    price = quote.get("price")
+    state = quote.get("state")
+    if not isinstance(price, (int, float)) or isinstance(price, bool) or state != "available":
+        return None
+    return PriceFact(price=float(price), asof=str(payload.get("generated_at") or ""), source="t1")
+
+
+def _asof_dt(asof: str) -> dt.datetime | None:
+    """asof 宽松解析：ISO（含 T）与「YYYY-MM-DD HH:MM:SS」皆可；无时区按市场钟面；坏串 None。"""
+    if not asof:
+        return None
+    try:
+        ts = dt.datetime.fromisoformat(asof)
+    except ValueError:
+        return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=MARKET_TZ)
+
+
+def merge_price_facts(*maps: dict[str, PriceFact]) -> dict[str, PriceFact]:
+    """多源合并：asof 时序最新者优先（按 datetime 解析比较——空间隔与 ISO T 两种形态
+    字典序不可比）；asof 缺席排最后、组内按实参序后到覆盖；坏串 asof 视同缺席。
+
+    时间序即正确性（ticks 轮询价最即时、t1 取证时价次之、sim 确认 bar 价最滞后）；
+    固定源序会在「T1 刚刷新而 ticks 停更」场景给出旧价。调用方按任意序传入皆可。
+    """
+
+    def _wins(cand: PriceFact, cur: PriceFact) -> bool:
+        cand_ts, cur_ts = _asof_dt(cand.asof), _asof_dt(cur.asof)
+        if (cand_ts is None) != (cur_ts is None):
+            return cand_ts is not None  # 可解析者恒胜
+        if cand_ts is None:
+            return True  # 双不可解析：后到覆盖
+        return cand_ts >= cur_ts  # 新者胜、平手后到胜
+
+    out: dict[str, PriceFact] = {}
+    for m in maps:
+        for code, fact in (m or {}).items():
+            cur = out.get(code)
+            if cur is None or _wins(fact, cur):
+                out[code] = fact
+    return out
+
+
+def asof_stale(asof: str, market_date: str) -> bool:
+    """陈旧判定：asof 换算市场钟面后非市场今日；坏串/缺席保守视陈旧。
+
+    无时区串（ticks ts_utc8「YYYY-MM-DD HH:MM:SS」）按市场钟面解读——CI 时区无关。
+    """
+    ts = _asof_dt(asof)
+    if ts is None:
+        return True
+    return ts.astimezone(MARKET_TZ).strftime("%Y-%m-%d") != market_date
 
 
 def load_root_json(path: Path) -> list | dict | None:
@@ -172,33 +270,44 @@ def rebuild_notifications(
 
 
 def market_phase(now: dt.datetime | None = None) -> dict:
-    """盘态判定（连续窗简化：CN 09:30–15:00 / HK 09:30–16:00，午休并入盘中——登记升级位）。"""
+    """盘态判定（午休分态 0.0.25：CN 11:30–13:00 / HK 12:00–13:00，纯呈现粒度、闸与调度零影响）。"""
     if now is None:
         now = dt.datetime.now(tz=dt.UTC)
     local = now.astimezone(MARKET_TZ)
     minute = local.hour * 60 + local.minute
     weekday = local.weekday()
 
-    def phase_of(open_m: int, close_m: int) -> str:
+    def phase_of(open_m: int, close_m: int, lunch: tuple[int, int]) -> str:
         if weekday >= 5:
             return "closed"
         if minute < open_m:
             return "pre"
         if minute >= close_m:
             return "post"
+        if lunch[0] <= minute < lunch[1]:
+            return "lunch"
         return "live"
 
-    cn = phase_of(9 * 60 + 30, 15 * 60)
-    hk = phase_of(9 * 60 + 30, 16 * 60)
+    cn = phase_of(9 * 60 + 30, 15 * 60, (11 * 60 + 30, 13 * 60))
+    hk = phase_of(9 * 60 + 30, 16 * 60, (12 * 60, 13 * 60))
     if "live" in (cn, hk):
         label = "盘中"
+    elif "lunch" in (cn, hk):
+        label = "午休"
     elif cn == hk == "closed":
         label = "休市"
     elif "pre" in (cn, hk):
         label = "盘前"
     else:
         label = "盘后"
-    overall = "live" if "live" in (cn, hk) else ("closed" if cn == hk == "closed" else cn)
+    if "live" in (cn, hk):
+        overall = "live"
+    elif "lunch" in (cn, hk):
+        overall = "lunch"
+    elif cn == hk == "closed":
+        overall = "closed"
+    else:
+        overall = cn
     return {
         "cn": cn,
         "hk": hk,
@@ -220,10 +329,16 @@ def build_name_map(reports_index: list[dict]) -> dict[str, dict]:
     return out
 
 
-def signals_snapshot(entries: list | None, price_map: dict[str, float | None]) -> dict:
+def signals_snapshot(
+    entries: list | None,
+    price_map: dict[str, PriceFact | float | None],
+    *,
+    market_date: str = "",
+) -> dict:
     """signals.json 条目 → 每股末条快照（read_last_signal 同序语义）。
 
-    现价优先级：price_map（sim last_price / facts.price 组装方注入）→ 缺省 None（呈现「—」）；
+    现价入参双形态：PriceFact（三源合并产物，带 asof/source/stale）或裸 float（无 asof，
+    price_asof/price_source 为空、price_stale=False）→ 缺省 None（呈现「—」）；
     信号词非法行降级标 invalid（呈现层降级非闸——宁拒不漏只约束出卡）。
     """
     rows: list[dict] = []
@@ -246,7 +361,16 @@ def signals_snapshot(entries: list | None, price_map: dict[str, float | None]) -
         signal = entry.get("signal")
         valid = signal in VALID_SIGNALS
         stop = ((entry.get("key_levels") or {}).get("stop")) or entry.get("stop")
-        price = price_map.get(code)
+        fact = price_map.get(code)
+        if isinstance(fact, PriceFact):
+            price: float | None = fact.price
+            price_asof, price_source = fact.asof, fact.source
+        elif isinstance(fact, (int, float)) and not isinstance(fact, bool):
+            price = float(fact)
+            price_asof, price_source = "", ""
+        else:
+            price = None
+            price_asof, price_source = "", ""
         to_stop = None
         if isinstance(stop, (int, float)) and stop and isinstance(price, (int, float)) and price:
             to_stop = round((price / stop - 1) * 100, 2)
@@ -262,6 +386,11 @@ def signals_snapshot(entries: list | None, price_map: dict[str, float | None]) -
                 "date": entry.get("date", ""),
                 "stop": stop,
                 "price": price,
+                "price_asof": price_asof,
+                "price_source": price_source,
+                "price_stale": (
+                    asof_stale(price_asof, market_date) if price_asof and market_date else False
+                ),
                 "to_stop_pct": to_stop,
             }
         )
