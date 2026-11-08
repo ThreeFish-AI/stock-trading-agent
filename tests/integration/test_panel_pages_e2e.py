@@ -376,14 +376,38 @@ class TestHtmxWiring:
         assert 'hx-target="#l2-settings" hx-swap="innerHTML"' in frag
         html = client.get("/").text
         assert (
-            'id="ov-events" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:monitor,'
-            ' sse:multi" hx-swap="innerHTML"' in html
+            'id="ov-events" hx-get="/api/panel/overview" hx-trigger="load, every 180s,'
+            ' sse:monitor, sse:multi" hx-swap="innerHTML"' in html
         )
         assert (
-            'id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions,'
-            ' sse:multi" hx-swap="innerHTML"' in html
+            'id="l2-settings" hx-get="/api/panel/l2" hx-trigger="load, every 180s,'
+            ' sse:decisions, sse:multi" hx-swap="innerHTML"' in html
         )
         assert ".st.done" in html  # 状态 pill 色规则随壳下发
+
+    def test_shell_interaction_and_a11y(self, tmp_path: Path):
+        """0.0.16：load 首绘 / 全局错误条 / tablist a11y / :focus-visible / --t4 AA。"""
+        client, _ = _make_client(tmp_path)
+        html = client.get("/").text
+        assert html.count('hx-trigger="load, every 180s') == 20  # 全部轮询容器首绘
+        assert 'id="global-err" class="riskchip" role="status" aria-live="polite" hidden' in html
+        assert "htmx:responseError" in html and "htmx:sendError" in html
+        assert 'role="tablist"' in html and html.count('role="tab"') == 7
+        assert "aria-selected" in html  # activate() 同步
+        assert ":focus-visible" in html
+        assert "--t4:#7E8AA5" in html  # 对比度 token 提亮（四底过 AA）
+        assert "scrollTo(0,0)" in html
+
+    def test_dgform_row_labels(self, tmp_path: Path):
+        """0.0.16：②表单行式（label 同行 for 关联 + Tooltip + 无 inline style + 防重）。"""
+        client, _ = _make_client(tmp_path)
+        frag = client.get("/api/panel/dgform").text
+        assert '<label for="dg-code"' in frag and '<label for="dg-kind"' in frag
+        assert 'id="dg-code"' in frag and 'id="dg-kind"' in frag
+        assert "证券代码" in frag and "诊股模式" in frag
+        assert 'hx-disabled-elt="find button"' in frag
+        assert "style=" not in frag
+        assert 'pattern="[0-9]{5,6}"' in frag and "required" in frag  # POST 契约不动
 
 
 class TestP2Endpoints:
