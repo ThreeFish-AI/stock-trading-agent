@@ -430,7 +430,8 @@ class TestHtmxWiring:
         """0.0.16：load 首绘 / 全局错误条 / tablist a11y / :focus-visible / --t4 AA。"""
         client, _ = _make_client(tmp_path)
         html = client.get("/").text
-        assert html.count('hx-trigger="load, every 180s') == 20  # 全部轮询容器首绘
+        # 全部轮询容器首绘（0.0.16 增⑦会话登记卡）
+        assert html.count('hx-trigger="load, every 180s') == 21
         assert 'id="global-err" class="riskchip" role="status" aria-live="polite" hidden' in html
         assert "htmx:responseError" in html and "htmx:sendError" in html
         assert 'role="tablist"' in html and html.count('role="tab"') == 7

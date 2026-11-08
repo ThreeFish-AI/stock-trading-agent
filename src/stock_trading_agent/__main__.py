@@ -804,6 +804,14 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("panel.phase_trend", panel_phase_and_trend)
 
+    def paper_totals_anchor():
+        from stock_trading_agent.server.stats import paper_totals
+
+        t = paper_totals([{"market_value": 1100.0}, {"market_value": 460.0}], 60_000.0, 100_000.0)
+        assert t == {"market_value": 1560.0, "cash": 60000.0, "total": 61560.0, "nav": 0.6156}
+
+    check_case("panel.paper_totals", paper_totals_anchor)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 
