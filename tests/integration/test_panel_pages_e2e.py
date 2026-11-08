@@ -149,6 +149,8 @@ class TestSignalsAndTodos:
         assert body["rows"][0]["to_stop_pct"] == round(10.5 / 9.5 * 100 - 100, 2)
         todos = client.get("/api/todos").json()["todos"]
         assert any(t["source"] == "mech_risk" for t in todos)
+        frag = client.get("/api/panel/signals").text  # 0.0.14：五词点 dot 接活
+        assert 'class="sig sig-b"' in frag and '<span class="d"></span>' in frag
 
     def test_facts_passthrough(self, tmp_path: Path):
         client, layout = _make_client(tmp_path)
@@ -190,6 +192,18 @@ class TestReportFragment:
         listing = client.get("/api/panel/reports").text
         assert "600519" in listing
 
+    def test_index_md_served(self, tmp_path: Path):
+        """vibe-stock reports 目录含 index.md 索引页——0.0.14 前白名单外全 404。"""
+        client, layout = _make_client(tmp_path)
+        d = layout.reports_dir / "600519.cn"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "index.md").write_text(
+            "# 诊股报告索引\n\n历史报告列表。本报告不构成投资建议。\n", encoding="utf-8"
+        )
+        resp = client.get("/api/panel/report/600519.cn/index.md")
+        assert resp.status_code == 200
+        assert "诊股报告索引" in resp.text
+
     def test_path_traversal_404(self, tmp_path: Path):
         client, _ = _make_client(tmp_path)
         for bad in [
@@ -225,6 +239,67 @@ class TestSevenPageSkeleton:
             resp = client.get(frag_path)
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"], frag_path
+
+
+class TestHtmxWiring:
+    """0.0.14 P0 回归：htmx 生命周期修复（swap 策略/target 落点/表格类对齐/状态色）。"""
+
+    def test_events_review_button_target(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        _seed_events(layout)
+        frag = client.get("/api/panel/events").text
+        assert 'hx-target="#advice-detail"' in frag
+        assert "盯盘复核 600519" in frag  # 按钮文案逐字保留（钉死断言）
+        assert 'class="tbl"' in frag and 'class="grid"' not in frag
+
+    def test_paper_confirm_buttons_innerhtml(self, tmp_path: Path):
+        from stock_trading_agent.paper import pending as paper_pending
+        from stock_trading_agent.paper.confirm import PendingFillRequest
+        from stock_trading_agent.paper.fills import Bar
+
+        client, layout = _make_client(tmp_path)
+        _seed_paper(layout)
+        queue = paper_pending.load(layout.sim_pending_fills_path)
+        queue.enqueue(
+            PendingFillRequest(
+                request_id="rid-1",
+                code="600519",
+                tranche_leg="T2_limit",
+                side="buy",
+                lots=1,
+                ref_price=10.0,
+                bar=Bar(date="2026-11-06", open=10.0, high=10.2, low=9.9, close=9.98),
+                ts="2026-11-06T09:31:00Z",
+            )
+        )
+        paper_pending.save(queue, layout.sim_pending_fills_path)
+        frag = client.get("/api/panel/paper").text
+        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 2
+
+    def test_briefing_ack_target(self, tmp_path: Path):
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        card = layout.briefing_card_path(market_today(), "600519")
+        card.parent.mkdir(parents=True, exist_ok=True)
+        card.write_text("- [ ] 复核：止损线复核\n", encoding="utf-8")
+        frag = client.get("/api/panel/briefing").text
+        assert 'hx-target="#ov-brief"' in frag and 'hx-swap="innerHTML"' in frag
+
+    def test_l2_fragment_and_index_shell_wiring(self, tmp_path: Path):
+        client, _ = _make_client(tmp_path)
+        frag = client.get("/api/panel/l2").text
+        assert 'hx-target="#l2-settings" hx-swap="innerHTML"' in frag
+        html = client.get("/").text
+        assert (
+            'id="ov-events" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:monitor,'
+            ' sse:multi" hx-swap="innerHTML"' in html
+        )
+        assert (
+            'id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions,'
+            ' sse:multi" hx-swap="innerHTML"' in html
+        )
+        assert ".st.done" in html  # 状态 pill 色规则随壳下发
 
 
 class TestP2Endpoints:

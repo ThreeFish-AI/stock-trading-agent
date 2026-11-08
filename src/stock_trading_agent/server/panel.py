@@ -89,7 +89,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             action = (
                 f'<button class="mini" hx-post="/api/panel/submit" '
                 f'hx-vals=\'{{"kind": "monitor_review", "code": "{_esc(code)}"}}\' '
-                f'hx-target="#submit-result" hx-swap="innerHTML">盯盘复核 {_esc(code)}</button>'
+                f'hx-target="#advice-detail" hx-swap="innerHTML">盯盘复核 {_esc(code)}</button>'
             )
         rows.append(
             "<tr>"
@@ -103,7 +103,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             "</tr>"
         )
     return (
-        '<table class="grid"><thead><tr>'
+        '<table class="tbl"><thead><tr>'
         "<th>ts</th><th>code</th><th>rule</th><th>level</th><th>复核短语</th><th>压制</th><th></th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
@@ -125,7 +125,7 @@ def render_tasks_table(queue: dict) -> str:
             "</tr>"
         )
     return (
-        '<table class="grid"><thead><tr>'
+        '<table class="tbl"><thead><tr>'
         "<th>kind</th><th>code</th><th>status</th><th>enqueued</th><th>error</th>"
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
     )
@@ -181,7 +181,7 @@ def render_audit(decisions: list[dict], budget: dict) -> str:
             "</tr>"
         )
     table = (
-        '<table class="grid"><thead><tr><th>seq</th><th>ts</th><th>kind</th>'
+        '<table class="tbl"><thead><tr><th>seq</th><th>ts</th><th>kind</th>'
         "<th>摘要</th><th>hash 链</th></tr>" + f"</thead><tbody>{''.join(rows)}</tbody></table>"
         if rows
         else '<p class="muted">decision log 为空。</p>'
@@ -231,7 +231,7 @@ def render_settings_fragment(state: dict) -> str:
         "预算闸联动开启、probe 认证态判定计费形态）。关闭仅封 monitor 源自动任务，"
         "面板手动提交不受影响。</p>",
     ]
-    target = 'hx-target="#l2-settings" hx-swap="outerHTML"'
+    target = 'hx-target="#l2-settings" hx-swap="innerHTML"'
     if enabled:
         off_vals = 'hx-vals=\'{"enabled": "false"}\''
         parts.append(
@@ -267,7 +267,7 @@ def render_stats_fragment(payload: dict) -> str:
     parts = [
         "<h3>任务画像（全样本登记，含失败与弃单）</h3>",
         f'<p class="muted">{summary}</p>',
-        '<table class="grid"><thead><tr><th>决策 kind</th><th>计数</th></tr></thead>'
+        '<table class="tbl"><thead><tr><th>决策 kind</th><th>计数</th></tr></thead>'
         f"<tbody>{rows}</tbody></table>",
         "<h3>预算曲线（token + 等效美元双口径，F-34）</h3>",
     ]
@@ -281,7 +281,7 @@ def render_stats_fragment(payload: dict) -> str:
             for p in curve
         )
         parts.append(
-            '<table class="grid"><thead><tr><th>日</th><th>会话</th><th>token</th>'
+            '<table class="tbl"><thead><tr><th>日</th><th>会话</th><th>token</th>'
             f"<th>等效 USD</th></tr></thead><tbody>{crows}</tbody></table>"
         )
     else:
@@ -308,7 +308,7 @@ def render_briefing_fragment(payload: dict) -> str:
                 action = (
                     '<button class="mini" hx-post="/api/panel/briefing/ack" '
                     f"hx-vals='{vals}' "
-                    'hx-target="#briefing" hx-swap="outerHTML">确认复核</button>'
+                    'hx-target="#ov-brief" hx-swap="innerHTML">确认复核</button>'
                 )
             body = _esc(str(card.get("md", ""))[:1200])
             parts.append(
@@ -379,9 +379,11 @@ def render_event_feed(payload: dict) -> str:
         facts = ev.get("facts") or {}
         price = facts.get("price") or facts.get("pct")
         mech = ev.get("mech_risk") or {}
-        risk_cls = " breach" if mech else ""
+        risk_cls = " risk" if mech else ""
         riskchip = (
-            f'<span class="riskchip">mech_risk {mech.get("severity", "")}</span>' if mech else ""
+            f'<span class="riskchip">mech_risk {_esc(mech.get("severity", ""))}</span>'
+            if mech
+            else ""
         )
         price_txt = f"现价 {price}" if price is not None else ""
         review_txt = f" · {ev['review']}" if ev.get("review") else ""
@@ -454,9 +456,9 @@ def render_session_obs(body: dict) -> str:
     for st in stages:
         cls = {"done": "done", "current": "cur", "pending": "pend"}.get(st.get("state"), "pend")
         steps.append(
-            f'<div class="step {cls}"><div class="step-dot"></div>'
-            f'<div class="step-tx">{st["stage"]}·{_esc(st["name"])}</div>'
-            f'<div class="step-sub num">{_esc(st.get("note", ""))}</div></div>'
+            f'<div class="step {cls}"><div class="sc">{int(st["stage"])}</div>'
+            f'<div class="sl">{_esc(st["name"])}</div>'
+            f'<div class="ss num">{_esc(st.get("note", ""))}</div></div>'
         )
     parts = ['<div class="pipe" style="display:flex;gap:4px;flex-wrap:wrap">']
     parts.append("".join(steps))
@@ -473,7 +475,8 @@ def render_session_obs(body: dict) -> str:
     if default_cards:
         cards = "".join(
             f'<div class="op"><div class="op-src num">{_esc(c["source"])}</div>'
-            f'<div><span class="{sig_map.get(c.get("signal"), "")}"></span> '
+            f'<div><span class="sig {sig_map.get(c.get("signal"), "")}">'
+            f'<span class="d"></span>{_esc(c.get("signal") or "")}</span> '
             f'<span class="num">{_esc(c.get("confidence"))}</span></div></div>'
             for c in default_cards[:16]
         )
@@ -549,7 +552,8 @@ def render_signals_table(payload: dict) -> str:
         trs.append(
             "<tr>"
             f'<td><span class="code num">{_esc(row["code"])}</span>{name_html}</td>'
-            f'<td><span class="{sig_cls}"></span> {_esc(signal or row.get("signal_raw"))}</td>'
+            f'<td><span class="sig {sig_cls}"><span class="d"></span>'
+            f"{_esc(signal or row.get('signal_raw'))}</span></td>"
             f'<td class="num">{_fmt(row.get("confidence"))}</td>'
             f'<td class="num {_esc(dist_cls)}">{_fmt(to_stop, "%")}</td>'
             f"<td>{_esc('中线' if row.get('profile') == 'position' else '短线')}</td>"
@@ -757,7 +761,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 "</tr>"
             )
         parts.append(
-            '<table class="grid"><thead><tr><th>code</th><th>状态</th><th>建仓批</th>'
+            '<table class="tbl"><thead><tr><th>code</th><th>状态</th><th>建仓批</th>'
             "<th>手数/可卖</th><th>成本价</th><th>现价</th><th>盈亏%</th><th>市值</th>"
             f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
         )
@@ -775,12 +779,12 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             confirm_btn = (
                 f'<button class="mini" hx-post="/api/panel/paper/confirm" '
                 f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
-                'hx-swap="outerHTML">确认成交</button>'
+                'hx-swap="innerHTML">确认成交</button>'
             )
             reject_btn = (
                 f'<button class="mini" hx-post="/api/panel/paper/reject" '
                 f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
-                'hx-swap="outerHTML">驳回</button>'
+                'hx-swap="innerHTML">驳回</button>'
             )
             rows.append(
                 "<tr>"
@@ -795,7 +799,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 "</tr>"
             )
         parts.append(
-            '<table class="grid"><thead><tr><th>ts</th><th>code</th><th>批</th><th>方向</th>'
+            '<table class="tbl"><thead><tr><th>ts</th><th>code</th><th>批</th><th>方向</th>'
             "<th>手数</th><th>参考价</th><th>bar 日</th><th></th></tr></thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
@@ -836,7 +840,7 @@ def render_advice_library(payload: dict) -> str:
                 "</tr>"
             )
         parts.append(
-            '<table class="grid"><thead><tr><th>code</th><th>候选动作</th><th>终判</th>'
+            '<table class="tbl"><thead><tr><th>code</th><th>候选动作</th><th>终判</th>'
             "<th>上一裁决</th><th>T+1 可卖</th><th>落盘</th></tr></thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
@@ -857,7 +861,7 @@ def render_advice_library(payload: dict) -> str:
                 "</tr>"
             )
         parts.append(
-            '<table class="grid"><thead><tr><th>ts</th><th>code</th><th>origin</th>'
+            '<table class="tbl"><thead><tr><th>ts</th><th>code</th><th>origin</th>'
             "<th>reason</th><th>通报</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
         )
     else:
