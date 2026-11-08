@@ -179,10 +179,13 @@ class LockTimeout(RuntimeError):
 
 
 @contextlib.contextmanager
-def FileLock(path: Path, *, timeout_s: float = 1.0) -> Iterator[None]:
+def FileLock(path: Path, *, timeout_s: float = 5.0) -> Iterator[None]:
     """fcntl flock 互斥锁（macOS/Linux；Windows 非目标平台，AGENTS.md 已声明）。
 
     用途：agent/daemon.lock 单实例、跨进程串行写；坑位：锁文件不删除（避免删除-重建竞态）。
+    默认超时 5s（0.0.25 自 1s 上调）：flock 无公平性，多线程数据锁（queue/decisions/sim）
+    高争抢下单线程可饿过 1s——LockTimeout 误杀正常写者；daemon 快速失败路径由调用方
+    显式传 timeout_s=1.0 保持原语义。
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fh = path.open("w")

@@ -8,9 +8,12 @@
 | agent/sessions.json | 会话登记 | 写 | 读 | — |
 | agent/decisions.jsonl | decision log（hash 链） | 追加写 | 读 | postmortem 消费 |
 | agent/audit/<date>/ | stream-json 归档 | 写 | 读 | — |
-| agent/budget.json | 预算台账 | 写 | 读写 | — |
+| agent/budget.json | 预算台账 | 写 | 读 | — |
 | sim-portfolio.json | 模拟账本（根级） | paper 引擎写 | 读 | — |
 | monitor/advice/<date>/<code>.md | T2 建议卡（写者例外） | 断言器放行后原子写 | 读 | — |
+
+注：面板对 budget 的写影响经 POST /api/l2 联动达成（runtime.apply_l2_config →
+budget.enabled），非直写 budget.json——矩阵面板列 0.0.25 勘误为只读（12-orchestration §⑮）。
 
 铁律：既有 SSOT（signals.json / ledger.json 等）对本层全部只读或零接触——本模块不暴露任何
 signals/ledger 写 API（vibe-stock 红线 R3/R8 的状态层实现）；monitor/ 其余产物写者仍是

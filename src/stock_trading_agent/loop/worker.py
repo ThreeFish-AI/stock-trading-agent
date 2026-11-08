@@ -4,8 +4,8 @@
 （server worker 线程或 CLI run-once 二选一）；queue.json 一切读-改-写 =
 agent/queue.lock 内「重载→变更→落盘」；worker 执行 spawn/T1 子进程期间零锁持有；
 单 worker 线程串行 CC spawn（D-71 OAuth 竞争防护）。
-崩溃恢复：启动期 running 残留 → abandoned + task_abandoned 决策（M1 人在环不自动重放，
-M3 预留 replayables 消费方）。
+崩溃恢复：启动期 running 残留 → abandoned + task_abandoned 决策（monitor 源按 R5 计划重放
+plan_replays——§⑪ 0.0.10 落地；panel/cli 源维持 abandoned 人在环语义）。
 """
 
 from __future__ import annotations
