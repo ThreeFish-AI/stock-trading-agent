@@ -88,6 +88,18 @@ class TestPerfGrid:
         assert empty.count("—") >= 3
 
 
+class TestDiagForm:
+    def test_row_labels_no_inline_style(self):
+        """0.0.16：行式 label（for/id 成对 + title Tooltip）+ 零 inline style。"""
+        from stock_trading_agent.server.panel import render_diag_form
+
+        html = render_diag_form()
+        assert '<label for="dg-code"' in html and '<label for="dg-kind"' in html
+        assert 'id="dg-code" name="code"' in html and 'id="dg-kind" name="kind"' in html
+        assert "style=" not in html
+        assert 'hx-disabled-elt="find button"' in html
+
+
 class TestTableNorms:
     """0.0.15 表格规范：中文列头 + colgroup + scope + 空值 —。"""
 

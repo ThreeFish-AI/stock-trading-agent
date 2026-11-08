@@ -11,7 +11,7 @@
 :root {
 --bg0:#0B0E14; --bg1:#12161F; --bg2:#171C27; --bg3:#1C2230;
   --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
-  --t1:#E9EDF5; --t2:#A9B4C8; --t3:#8792A6; --t4:#66718A;
+  --t1:#E9EDF5; --t2:#A9B4C8; --t3:#8792A6; --t4:#7E8AA5;
   --up:#FF6B6B; --up2:#FF8A80; --upbg:rgba(255,107,107,.11); --upln:rgba(255,107,107,.34);
   --dn:#3DCE96; --dn2:#5EE0AC; --dnbg:rgba(61,206,150,.11); --dnln:rgba(61,206,150,.34);
   --hold:#9AA6BC; --holdbg:rgba(154,166,188,.11); --holdln:rgba(154,166,188,.3);
@@ -158,7 +158,6 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
   font:600 13px var(--mono);padding:0 11px;outline:none;box-shadow:0 0 0 3px rgba(108,158,255,.0)}
 .sel{position:relative;width:max-content;min-width:150px;height:34px;background:var(--bg3);border:1px solid var(--line2);border-radius:8px;
   display:flex;align-items:center;white-space:nowrap;padding:0 28px 0 11px;font-size:12.5px;color:var(--t1)}
-.sel::after{content:'';position:absolute;right:11px;top:50%;width:7px;height:7px;border-right:1.5px solid var(--t3);border-bottom:1.5px solid var(--t3);transform:translateY(-65%) rotate(45deg);pointer-events:none}
 .btn{height:34px;padding:0 18px;border-radius:8px;border:none;cursor:default;font-size:13px;font-weight:600;white-space:nowrap}
 .btn-pri{background:linear-gradient(180deg,#7EABFF,#5F92F2);color:#0B0E14;box-shadow:0 4px 14px rgba(108,158,255,.28),inset 0 1px 0 rgba(255,255,255,.25)}
 .innote{margin-left:auto;font-size:11.5px;color:var(--t3);text-align:right;line-height:1.5;max-width:330px}
@@ -375,51 +374,64 @@ main h3{font-size:13px;font-weight:600;color:var(--t1);margin:14px 0 6px;letter-
 .w-st{width:96px}.w-op{width:150px}.w-sup{width:110px}.w-batch{width:150px}
 .w-seq{width:52px}.w-hash{width:110px}
 
+/* ── 0.0.16 交互与可达性 ── */
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button:disabled{opacity:.55;cursor:not-allowed}
+.inp:focus{box-shadow:0 0 0 3px rgba(108,158,255,.25);border-color:var(--accln)}
+.frm{display:flex;flex-direction:column;gap:12px}
+.frm-row{display:flex;align-items:center;gap:10px;min-width:0}
+.frm-row label{flex:0 0 calc(100%/12);min-width:86px;font-size:12px;color:var(--t3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:help}
+.frm-row .inp,.frm-row .sel{flex:1}
+.frm-tip{font-size:11px;color:var(--t4);line-height:1.6}
+.dg-result{margin-top:10px}
+
 </style>
 </head>
 <body hx-ext="sse" sse-connect="/api/stream">
 <header class="top">
   <div class="brand"><svg width="18" height="18" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#1C2230"/><path d="M7 22 L13 14 L17 18 L25 9" stroke="#FF6B6B" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9 H25 V14" stroke="#FF6B6B" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Stock Trading Agent</div>
-  <nav class="tabs">
-<button class="tab" data-page="overview" onclick="location.hash='#/overview'">① 今日总览</button>
-<button class="tab" data-page="diagnosis" onclick="location.hash='#/diagnosis'">② 诊股工作台</button>
-<button class="tab" data-page="monitor" onclick="location.hash='#/monitor'">③ 盯盘事件与 T2 复核</button>
-<button class="tab" data-page="paper" onclick="location.hash='#/paper'">④ 模拟盘</button>
-<button class="tab" data-page="advice" onclick="location.hash='#/advice'">⑤ 建议卡库</button>
-<button class="tab" data-page="stats" onclick="location.hash='#/stats'">⑥ 后验战绩</button>
-<button class="tab" data-page="audit" onclick="location.hash='#/audit'">⑦ 审计与预算</button>
+  <nav class="tabs" role="tablist" aria-label="面板七页">
+<button class="tab" role="tab" data-page="overview" onclick="location.hash='#/overview'">① 今日总览</button>
+<button class="tab" role="tab" data-page="diagnosis" onclick="location.hash='#/diagnosis'">② 诊股工作台</button>
+<button class="tab" role="tab" data-page="monitor" onclick="location.hash='#/monitor'">③ 盯盘事件与 T2 复核</button>
+<button class="tab" role="tab" data-page="paper" onclick="location.hash='#/paper'">④ 模拟盘</button>
+<button class="tab" role="tab" data-page="advice" onclick="location.hash='#/advice'">⑤ 建议卡库</button>
+<button class="tab" role="tab" data-page="stats" onclick="location.hash='#/stats'">⑥ 后验战绩</button>
+<button class="tab" role="tab" data-page="audit" onclick="location.hash='#/audit'">⑦ 审计与预算</button>
   </nav>
-  <div class="top-r" id="topbar-r" hx-get="/api/panel/phase" hx-trigger="every 180s, sse:status" hx-swap="innerHTML"></div>
+  <div class="top-r" id="topbar-r" hx-get="/api/panel/phase" hx-trigger="load, every 180s, sse:status" hx-swap="innerHTML"></div>
+  <span id="global-err" class="riskchip" role="status" aria-live="polite" hidden></span>
 </header>
 <main>
 <section class="page" id="page-overview" data-page="overview">
 <div class="hero"><div><h1>今日总览</h1><div class="sub" id="ov-sub">加载中……</div></div>
-<div class="hero-r" id="ov-hero-r" hx-get="/api/panel/topbar" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
+<div class="hero-r" id="ov-hero-r" hx-get="/api/panel/topbar" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="grid3">
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">今日事件流</span><span class="cm" id="ov-ev-count"></span></div>
-      <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">今日待办</span><span class="cm" id="ov-todo-count"></span></div>
-      <div class="card-b" id="ov-todos" hx-get="/api/panel/todos" hx-trigger="every 180s, sse:decisions, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-todos" hx-get="/api/panel/todos" hx-trigger="load, every 180s, sse:decisions, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm">adjudicate 产出 · 盘中以收盘复核为准 R9</span></div>
-      <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm">披露/解禁/公告 · evidence 聚合</span></div>
-      <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">晨报 / 复盘行动项</span><span class="cm">briefing 投影</span></div>
-      <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="load, every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">模拟盘净值</span><span class="cm">含费用与滑点</span></div>
-      <div class="card-b" id="ov-nav" hx-get="/api/panel/navcard" hx-trigger="every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-nav" hx-get="/api/panel/navcard" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">系统状态</span><span class="cm">launchd 三槽 · 并存收编不替代</span></div>
-      <div class="card-b" id="ov-sys" hx-get="/api/panel/syscard" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+      <div class="card-b" id="ov-sys" hx-get="/api/panel/syscard" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
 </div></section>
 <section class="page" id="page-diagnosis" data-page="diagnosis">
 <div class="hero"><div><h1>诊股工作台</h1><div class="sub">五段流水线经本机 CC 大脑 · LLM 只产意见 · 聚合一律确定性裁决（NR-1/NR-3）</div></div>
-<div class="hero-r" id="dg-hero-r" hx-get="/api/panel/dgmeta" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
+<div class="hero-r" id="dg-hero-r" hx-get="/api/panel/dgmeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="grid" style="grid-template-columns:1fr 1fr;gap:13px">
   <div class="card"><div class="card-h"><span class="ct">发起诊股</span><span class="cm">六 kind 白名单</span></div>
     <div class="card-b" id="dg-form" hx-get="/api/panel/dgform" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
@@ -429,36 +441,36 @@ main h3{font-size:13px;font-weight:600;color:var(--t1);margin:14px 0 6px;letter-
       <div class="card-b" id="dg-session"><div class="loadmsg">提交任务后于此观测五段推进（真实 CC 会话）。</div></div></div>
 </div>
 <div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="cm">vibe-stock reports 目录 · 04 规约结构</span></div>
-  <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="load, every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div id="dg-report-body"></div></section>
 <section class="page" id="page-monitor" data-page="monitor">
 <div class="hero"><div><h1>盯盘事件与 T2 复核</h1><div class="sub">watch.py 机械判据族 · 零 LLM 轮询 · 监控永不写 signals.json（R8）</div></div>
-<div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
+<div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm">T0 机械事实 · 短语措辞限定「复核」（R7）</span></div>
-  <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm">osascript 通道 · 只读</span></div>
-  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div id="advice-detail"></div></section>
 <section class="page" id="page-paper" data-page="paper">
 <div class="hero"><div><h1>模拟盘</h1><div class="sub">paper 引擎 · 严格穿价撮合 + 静态费用栈 + 逐笔人工确认 · 撮合零 LLM</div></div>
 <div class="hero-r"><span class="metachip">台账 append-only · hash 链</span></div></div>
 <div class="nr2"><b>NR-2</b> 模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
-<div id="paper" hx-get="/api/panel/paper" hx-trigger="every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="paper" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-advice" data-page="advice">
 <div class="hero"><div><h1>建议卡库</h1><div class="sub">monitor-advice/1 · 卡面落盘脱敏（百分比与档位词）· 面板呈现态给原值（NR-5/R2 豁免面）</div></div>
 <div class="hero-r"><span class="metachip">候选动作 · 04 五档分类学措辞</span></div></div>
-<div id="advice" hx-get="/api/panel/advice" hx-trigger="every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div id="advice" hx-get="/api/panel/advice" hx-trigger="load, every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div id="advice-detail-2"></div></section>
 <section class="page" id="page-stats" data-page="stats">
 <div class="hero"><div><h1>后验战绩</h1><div class="sub">全样本登记含亏损 · 不挑样对比 · 样本 &lt;30 只观察不记分（MIN_SAMPLES=30）</div></div>
 <div class="hero-r"><span class="metachip">agent: 前缀独立画像</span></div></div>
-<div id="stats" hx-get="/api/panel/stats" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="stats" hx-get="/api/panel/stats" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-audit" data-page="audit">
 <div class="hero"><div><h1>审计与预算</h1><div class="sub">decisions hash 链防篡改 · 预算双口径记账（token + 等效美元，F-34）· L2 总闸</div></div>
-<div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
-<div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
+<div id="audit" hx-get="/api/panel/audit" hx-trigger="load, every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div style="height:13px"></div>
-<div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 </main>
 <footer class="foot">Stock Trading Agent · 本地面板（127.0.0.1 · SSE 实时流 + 180s 轮询兜底）· API：<code>/api/health|queue|sessions|decisions|paper|budget|monitor/events|monitor/status|reports|advice|signals|todos|stats|l2|stream</code><br>
 本产品输出仅供学习与研究参考，<b>不构成投资建议</b>；不下单、不改单、不撤单、不保证收益；模拟绩效均为假设性推演（含费用与滑点）；全部产物由 AI 生成、用户复核前置。</footer>
@@ -468,13 +480,26 @@ main h3{font-size:13px;font-weight:600;color:var(--t1);margin:14px 0 6px;letter-
   function activate(){
     var h=(location.hash||'#/overview').replace('#/','');
     if(!document.getElementById('page-'+h))h='overview';
-    tabs.forEach(function(t){t.classList.toggle('on',t.dataset.page===h)});
+    tabs.forEach(function(t){
+      var on=t.dataset.page===h;
+      t.classList.toggle('on',on);
+      t.setAttribute('aria-selected',on?'true':'false');
+    });
     document.querySelectorAll('.page').forEach(function(s){s.classList.toggle('on',s.dataset.page===h)});
+    window.scrollTo(0,0);
   }
   window.addEventListener('hashchange',activate);
   activate();
-  document.body.addEventListener('htmx:afterSwap',function(e){
-    if(e.detail&&e.detail.target&&(e.detail.target.id==='dg-form'))return;
+  // 全局错误条：请求/网络错误显示，任一 swap 成功后隐藏（三态完备之错误态）
+  var err=document.getElementById('global-err');
+  function showErr(e){
+    var code=(e.detail&&e.detail.xhr&&e.detail.xhr.status)||'网络';
+    if(err){err.textContent='数据通道异常（HTTP '+code+'）· 显示可能过期';err.hidden=false;}
+  }
+  document.body.addEventListener('htmx:responseError',showErr);
+  document.body.addEventListener('htmx:sendError',showErr);
+  document.body.addEventListener('htmx:afterSwap',function(){
+    if(err&&!err.hidden)err.hidden=true;
   });
 })();
 </script>
