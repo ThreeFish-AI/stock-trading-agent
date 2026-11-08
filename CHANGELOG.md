@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.21] - 2026-11-08
+
+### Added
+
+- **audit/ 归档只读端点与三件套互查闭合（读写矩阵 §④ 面板对 audit/「读」承诺兑现；此前写侧 0.0.4 落地、读侧零端点——三件套的 audit 腿在面板侧不可见）**。①**端点**：`GET /api/audit/dates`（有归档日期倒序）、`GET /api/audit/{date}`（当日归档索引 file/size/mtime，不读内容）、`GET /api/audit/{date}/{name}?tail=`（转录行级原文，tail 夹紧 1..500 缺省 100）；路径安全三保险（日期正则+文件名正则——覆盖真实 uuid 与 dryrun-<task_id> 含冒号形态+resolve is_relative_to 边界），转录内容 `_esc` 全转义后呈现。②**⑦页归档索引卡**：`/api/panel/audit-archive`（缺省最新日期、日期带切换、行级「查看」按钮填 `#au-transcript`）+ 转录 tail fragment（`共 N 行/尾 K 行`标注）；index.html ⑦ 增卡位（load 首绘，计数钉 22）。③**sessions 表互查链接**：transcript_path 位于 audit/ 下时转录列改 hx-get 直达查看（decisions×sessions×audit 三腿全通，方案 §11/§15 承诺闭合）。④spec §④ 新增「audit 归档只读裁定」节（含 F-38 30 天清理坑位：缺席日期如实 404/空态）。测试 +4 例（498 passed 全绿）：日期索引与 dryrun 文件名/tail 夹紧/路径遍历 404×4/⑦卡 fragment+sessions 互查链接+骨架。
+
 ## [0.0.20] - 2026-11-08
 
 ### Added

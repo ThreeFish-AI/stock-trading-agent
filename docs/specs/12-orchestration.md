@@ -45,6 +45,11 @@
 
 方案 §11 表为快照；现行权威布局=`state/paths.py`（代码化读写矩阵）。0.0.3 增补：`agent/queue.lock`（串行闸）、`agent/runs/<date>/t1/<code>/`（T1 工作目录）、`agent/runs/<session_uuid>/`（CC 会话 cwd，随真实通道 PR 启用）、`agent/watcher.json`（监听偏移断点）、`agent/daemon.lock`（单消费者）。vibe-stock 只读消费位：`monitor/events/<date>.jsonl`、`monitor/state.json`、`outlook/<date>.md`、`reports/`、根级 `ledger.json`（仅 mtime 探测，只读）。
 
+### audit 归档只读裁定（0.0.21 落地）
+
+- **读半边闭合（读写矩阵 §④ 面板对 audit/ 标「读」的兑现）**：`GET /api/audit/dates|/{date}|/{date}/{name}?tail=`（tail 夹紧 1..500 缺省 100）+ ⑦页归档索引卡（`/api/panel/audit-archive` 日期带 + 行级查看 → `#au-transcript` 转录 tail fragment）+ sessions 表转录列改互查链接（transcript_path 在 audit/ 下时 hx-get 直达）——三件套互查（decisions×sessions×audit）三腿全通。
+- **路径安全三保险**：日期正则 `^\d{4}-\d{2}-\d{2}$` + 文件名正则 `^[A-Za-z0-9:_-]+\.jsonl$`（覆盖真实 uuid 与 dryrun-<task_id> 含冒号形态）+ resolve is_relative_to 边界；转录内容全文本 `_esc` 转义后 `<pre>` 呈现（XSS 防线）。坑位：官方转录默认 30 天清理（F-38）——归档索引对缺席日期如实 404/空态。
+
 ### 决策链写拓扑裁定（0.0.15 落地）
 
 - **生产事故**：`decisions.jsonl` 出现 57 行仅 11 个唯一 seq、链断 7 处——三个叠加 bug：W1 serve 降级只读态（daemon 锁竞争失败不 load 文件）下面板写端点仍以空内存链从 seq=1/GENESIS 落盘（KeepAlive=true 常驻重启反复触发）；W2 面板侧追加立即落盘但不推进 `_persisted_lines` 游标，下一次 `_persist_all` 把已落盘行再追加一遍；W3 `acquire_daemon` 重载链对象但游标不重置，重启后首次 persist 重放全部历史；W4 `load()` 调 `verify_chain()` 丢弃返回值，断链静默续写。
