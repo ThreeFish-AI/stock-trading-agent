@@ -399,7 +399,7 @@ class TestHtmxWiring:
         )
         paper_pending.save(queue, layout.sim_pending_fills_path)
         frag = client.get("/api/panel/paper").text
-        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 2
+        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 3  # 0.0.20 +馈送表单
 
     def test_briefing_ack_target(self, tmp_path: Path):
         from stock_trading_agent.loop.monitor_events import market_today

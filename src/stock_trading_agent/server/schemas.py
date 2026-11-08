@@ -55,3 +55,21 @@ REJECT_STATUS: dict[RejectReason, int] = {
     RejectReason.BUDGET: 500,
     RejectReason.INTERNAL: 500,
 }
+
+
+class CorporateActionRequest(BaseModel):
+    """POST /api/paper/corporate-action 请求体（13-paper §④「面板手动馈送」0.0.20 落地）。
+
+    split：ratio_num/ratio_den 全口径比（10送5 → 15/10，须 >1）必填、pay_date/per_share 缺席；
+    dividend：per_share_cash>0 与 pay_date 必填。同日除权除息先送转后分红由调用方保序（§④）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["split", "dividend"]
+    code: str = Field(pattern=r"^\d{6}$|^\d{5}$")
+    ex_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    pay_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    ratio_num: int | None = Field(default=None, gt=0)
+    ratio_den: int | None = Field(default=None, gt=0)
+    per_share_cash: float | None = Field(default=None, gt=0)

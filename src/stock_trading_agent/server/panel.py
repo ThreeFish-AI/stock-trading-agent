@@ -1118,7 +1118,76 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     parts.append("<h3>权益曲线（NAV = 权益 / 预算）</h3>")
     history = payload.get("equity_history") or []
     parts.append(_axis_equity_svg(history))
+
+    # 公司行动登记表 + 手动馈送表单（13-paper §④ M2 承诺 0.0.20 闭合）
+    records = payload.get("corporate_actions") or []
+    parts.append("<h3>公司行动登记（先送转后分红；不产 Operation 行）</h3>")
+    if records:
+        rows = "".join(
+            "<tr>"
+            f'<td><span class="code num">{_esc(r.get("code", ""))}</span></td>'
+            f"<td>{'送转' if r.get('kind') == 'split' else '分红'}</td>"
+            f'<td class="num">{_esc(r.get("ex_date", ""))}</td>'
+            f'<td class="num" title="{_esc(r.get("note", ""))}">{_esc(_ca_basis(r))}</td>'
+            f'<td class="num">{_fmt(r.get("cash_delta"))}</td>'
+            "</tr>"
+            for r in records[-10:]
+        )
+        parts.append(
+            '<table class="tbl"><colgroup><col class="w-code"><col><col class="w-ts">'
+            '<col><col class="w-num"></colgroup><thead><tr><th scope="col">代码</th>'
+            '<th scope="col">类型</th><th scope="col">除权日</th><th scope="col">口径</th>'
+            f'<th scope="col">现金变动</th></tr></thead><tbody>{rows}</tbody></table>'
+        )
+    else:
+        parts.append('<p class="muted">暂无公司行动登记。</p>')
+    parts.append(
+        '<form class="frm" hx-post="/api/panel/paper/corporate-action" hx-target="#paper" '
+        'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        '<div class="frm-row">'
+        '<label for="ca-kind" title="送转=股数重算（10送5 填 15/10）；分红=每股税前现金'
+        '（FIFO 分档红利税自动计）。同日除权除息请先提交送转、再提交分红">类型</label>'
+        '<select class="sel" id="ca-kind" name="kind">'
+        '<option value="split">送转（split）</option>'
+        '<option value="dividend">分红（dividend）</option>'
+        "</select></div>"
+        '<div class="frm-row">'
+        '<label for="ca-code" title="须为在持仓位代码（无持仓 422）">代码</label>'
+        '<input class="inp num" id="ca-code" name="code" pattern="[0-9]{5,6}" required '
+        'inputmode="numeric"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-ex" title="除权除息日（YYYY-MM-DD）">除权日</label>'
+        '<input class="inp num" id="ca-ex" name="ex_date" pattern="\d{4}-\d{2}-\d{2}" required '
+        'placeholder="2026-11-20"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-rn" title="送转全口径比分子（10送5 → 15）；split 必填">比率分子</label>'
+        '<input class="inp num" id="ca-rn" name="ratio_num" inputmode="numeric" '
+        'placeholder="15"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-rd" title="送转全口径比分母（10送5 → 10）；split 必填">比分母</label>'
+        '<input class="inp num" id="ca-rd" name="ratio_den" inputmode="numeric" '
+        'placeholder="10"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-pay" title="派息日（YYYY-MM-DD）；dividend 必填">派息日</label>'
+        '<input class="inp num" id="ca-pay" name="pay_date" pattern="\d{4}-\d{2}-\d{2}" '
+        'placeholder="2026-11-27"></div>'
+        '<div class="frm-row">'
+        '<label for="ca-ps" title="每股税前现金（元/股）；dividend 必填">每股派息</label>'
+        '<input class="inp num" id="ca-ps" name="per_share_cash" inputmode="decimal" '
+        'placeholder="0.35"></div>'
+        '<div class="frm-row"><label></label>'
+        '<button class="btn btn-pri" type="submit">馈送入账</button></div>'
+        '<p class="tbl-note">写者=paper 引擎（sim.lock 内直调）· 幂等：同口径重复馈送 409 · '
+        "决策 payload 零敏感量（NR-5）</p></form>"
+    )
     return "".join(parts)
+
+
+def _ca_basis(r: dict) -> str:
+    """登记表口径列：split 比率 / dividend 每股额（公开公告参数，呈现态）。"""
+    if r.get("kind") == "split":
+        return f"{r.get('ratio_num')}:{r.get('ratio_den')}"
+    return f"{r.get('per_share_cash')} 元/股"
 
 
 def _perf_grid(perf: dict) -> str:

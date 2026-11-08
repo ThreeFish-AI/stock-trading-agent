@@ -156,7 +156,8 @@ class TestPaperPageSix:
         assert 'class="leg filled"' in frag  # 批徽章 .leg 形态
         assert "pf" in frag and "+10.00%" in frag  # 盈亏红涨绿跌
         assert "Sharpe" in frag and "最大回撤" in frag and "胜率" in frag  # 绩效三格
-        assert frag.count("现金") == 1  # 旧 muted 行已删，汇总条唯一
+        assert "（假设性 · 含费用与滑点）" not in frag  # 旧 muted 权益行已删（汇总条唯一）
+        assert frag.count("总市值 ") == 1  # 汇总条唯一
         assert "<text" in frag and "1.010" in frag  # 带轴 SVG 刻度 + 末点标签
 
     def test_totals_pure_function_anchor(self):

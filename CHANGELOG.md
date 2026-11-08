@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.20] - 2026-11-08
+
+### Added
+
+- **模拟盘公司行动手动馈送入口（13-paper §④「M2 纯函数+面板手动馈送」承诺闭合——纯函数 0.0.6 落地后馈送入口一直缺失，公司行动对真实用户唯一触达是恒空只读数组）**。①**端点**：POST `/api/paper/corporate-action`（+htmx 变体 `/api/panel/paper/corporate-action`）——`CorporateActionRequest`（extra=forbid；code 5/6 位闸；split 需 ratio_num>ratio_den、dividend 需 pay_date+per_share_cash>0）；sim.lock 内 ledger load→无持仓/账本未建 422→幂等查重（corporate_actions 同 code+kind+ex_date+口径 409）→`apply_corporate_action`→persist，写者恒为 paper 引擎进程内直调（无第二写者）。②**决策 kind `paper_corporate_action`**：payload 只带 code/action_kind/ex_date/ratio（每股额/税/现金找零禁入，NR-5 零敏感量）；DecisionChainError→503。③**④页**：公司行动馈送表单（行式 label+Tooltip 全局表单规范；同日除权除息先送转后分红的保序提示）+ 登记表（代码/类型/除权日/口径/现金变动，note 走 title）。④**13-paper §④⑤ 登记**：决策 kind 族补 paper_corporate_action；M3 自动化（公告源对接）裁不立项——外部公告数据源不在本仓面。测试 +5 例（494 passed 全绿）：split/dividend 全链入账（lots/税额/cash 数值锚）、同口径 409、无持仓/缺参/非法码 422、面板表单变体+登记表呈现；两处既有计数钉随表单增量更新（#paper target 3、旧 muted 权益行负断言改语义锚）；selftest 36→37 case（paper.corporate.split Decimal 取整锚）。
+
 ## [0.0.19] - 2026-11-08
 
 ### Added
