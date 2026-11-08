@@ -57,6 +57,15 @@ def assess_result(
         reasons.append(
             "subtype=success 但 structured_output 缺失（strict 静默回退不可自证，F-14/F-15）"
         )
+    if result.envelope is not None and result.envelope.get("subtype") != "success":
+        # 收严（0.0.4）：运行内失败打印为 result（D-01，退出码不可单独判定）
+        reasons.append(f"result subtype 非 success：{result.envelope.get('subtype')!r}")
+    if result.mcp_server_errors:
+        # 收严（0.0.4）：坏 mcp 配置被静默跳过，以 init.mcp_server_errors 非空为门禁（F-23）
+        reasons.append(
+            "init.mcp_server_errors 非空（F-23）："
+            + str([e.get("server") for e in result.mcp_server_errors])
+        )
 
     structured = result.structured_output
     if structured is not None:

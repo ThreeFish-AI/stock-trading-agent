@@ -55,28 +55,35 @@ class TestSubmitContract:
         assert resp.status_code == 409 and "幂等" in resp.json()["detail"]
 
     def test_lock_present_returns_423(self, client: TestClient):
+        from conftest import hold_lock
+
         layout_root = Path(client.app.state.state_root)
         (layout_root / "agent").mkdir(parents=True, exist_ok=True)
-        (layout_root / "fetch_state.lock").touch()
-        resp = client.post("/api/queue/submit", json={"kind": "diagnose_quick", "code": "600519"})
-        assert resp.status_code == 423 and "fetch_state.lock" in resp.json()["detail"]
-        (layout_root / "fetch_state.lock").unlink()
+        (layout_root / "fetch_state.lock").touch()  # 陈旧锁文件：不误判（本机实测坑）
         assert (
             client.post(
                 "/api/queue/submit", json={"kind": "diagnose_quick", "code": "600519"}
             ).status_code
             == 201
         )
+        with hold_lock(layout_root / "fetch_state.lock"):  # 真实持锁：423
+            resp = client.post(
+                "/api/queue/submit", json={"kind": "diagnose_quick", "code": "600519"}
+            )
+            assert resp.status_code == 423 and "fetch_state.lock" in resp.json()["detail"]
 
-    def test_window_returns_423(self, app, tmp_path: Path):
-        # 禁跑窗注入：runtime now_fn 不可注入（ingest 用真实钟面），改用直接锁面：
-        # 本用例以 watch.lock 在场覆盖 LOCK 拒绝路径（WINDOW 路径判据与 selftest window_lock 同源）
+    def test_watch_lock_held_returns_423(self, app, tmp_path: Path):
+        # watch.lock 真实持有（flock）覆盖 LOCK 拒绝路径（WINDOW 判据与 selftest window_lock 同源）
+        from conftest import hold_lock
+
         layout_root = Path(app.state.state_root)
         (layout_root / "monitor").mkdir(parents=True, exist_ok=True)
-        (layout_root / "monitor" / "watch.lock").touch()
-        with TestClient(app) as c:
-            resp = c.post("/api/queue/submit", json={"kind": "diagnose_quick", "code": "600519"})
-            assert resp.status_code == 423 and "watch.lock" in resp.json()["detail"]
+        with hold_lock(layout_root / "monitor" / "watch.lock"):
+            with TestClient(app) as c:
+                resp = c.post(
+                    "/api/queue/submit", json={"kind": "diagnose_quick", "code": "600519"}
+                )
+                assert resp.status_code == 423 and "watch.lock" in resp.json()["detail"]
 
     def test_bad_kind_and_code_422(self, client: TestClient):
         assert (

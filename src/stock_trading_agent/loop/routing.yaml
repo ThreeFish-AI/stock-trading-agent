@@ -31,7 +31,7 @@ routes:
     schema_ref: advice
     budget_usd: 1.0
     max_turns: 12
-    allowed_tools: [Read, Glob, Grep]
+    allowed_tools: [Read, Write, Glob, Grep, Bash]  # NR-1 硬前置：adjudicate 重裁决需 Bash、risk 覆写需 Write（0.0.4 修错，见 12-orchestration §②）
   - kind: batch_wave
     task_kind: batch_wave
     prompt_template: "批量波次 {code}"

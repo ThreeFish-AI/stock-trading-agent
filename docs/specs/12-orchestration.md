@@ -14,7 +14,13 @@
 
 - 契约签名与旗标面以 `src/stock_trading_agent/cc_client/contract.py` 与 `cli.py` 现行为准（方案 §9 签名级细化已代码化）：`CCRequest(task_id, session_uuid=UUIDv5(ns, f"{date}:{code}:{kind}"), prompt="/vibe-stock <code>" 形态, schema, budget_usd, max_turns, allowed_tools, permission_mode="dontAsk", mcp="strict-empty", timeout_s=900, autocompact)`；`CCResult(exit_code, envelope, structured_output, result_line_present, transcript_path, usage_tokens)`。
 - NR-4 双闸位：`validate_request`（budget_usd/max_turns 必填>0）+ 路由表解析闸（模板缺 NR-4 字段即 `RoutingError`）。
-- 禁跑纪律（无条件全局规则：编排器永不主动向 CC 子进程发 SIGTERM）：SIGTERM=143 语义为外部弃轮、SIGINT 才是收轮正道（D-01）；退出码归一化 `-sig → 128+sig`（130 收轮 / 137 SIGKILL 兜底 / 143 弃轮）。坑位：完整状态机随真实通道 PR 落地，届时回写本节。
+- 禁跑纪律（无条件全局规则：编排器永不主动向 CC 子进程发 SIGTERM）：SIGTERM=143 语义为外部弃轮、SIGINT 才是收轮正道（D-01）；退出码归一化 `-sig → 128+sig`（130 收轮 / 137 SIGKILL 兜底 / 143 弃轮）。
+- **真实通道完整版（0.0.4 落地）**：per-call `asyncio.run`（线程内无 loop 主路径、async 误用回退单线程池）；`create_subprocess_exec` + `start_new_session=True` 独立进程组 + `_live_procs` 持引用防 GC（I-37）；超时状态机 = `timeout_s`（首次消费）→ `killpg(SIGINT)` 收轮（宽限 `SIGINT_GRACE_S=10`）→ `killpg(SIGKILL)`，最坏总时长 = timeout_s+10s；坏行/未知行型不炸、原样进 raw 缓存（审计保真，R-03 版本漂移容错）；无 result 行 → result_line_present=False（D-05）。**实测坑位三则（2.1.319 真跑）**：①子进程 stdin 必须显式 DEVNULL——继承父进程 stdin 时 claude -p 等待 3s 且在部分宿主环境（pytest）下直接 exit 1 无输出；②`--mcp-config` 空配置必须是带 `mcpServers` 键的合法 JSON 文件（`/dev/null` 与裸 `{}` 均报 Invalid MCP configuration，D-53 优化不回退）；③`--session-id` 复用已存在会话——重复值会接续旧上下文（探针/调试须每次新鲜 uuid，生产路径由 UUIDv5 日期键天然防重）。
+- **probe 认证态启发式**（F-31/D2）：环境密钥名在场→api；`~/.claude/.credentials.json` 在场→subscription；其余→api（判不准收紧）；`billing_mode_from_probe` 联动 BudgetConfig（subscription 透传、其余一律 api）。坑位：只判密钥名在场永不取值（R2）；macOS Keychain 形态未覆盖属启发式，deep 探针（mini spawn 读 capabilities）真实花钱默认关。
+- **断言器收严两条（0.0.4）**：result subtype 非 success（运行内失败打印为 result，D-01）；init.mcp_server_errors 非空（F-23）。
+- **归档命名**：真实通道 `agent/audit/<date>/<session_uuid>.jsonl`、dry-run `dryrun-<task_id>.jsonl`（两通道产物可辨）；spawn 期 raw 行只驻内存、断言器放行后 archive() 落盘（NR-3 次序在通道层同样成立）。
+- **routing.yaml monitor_review 修错裁定（0.0.4）**：allowed_tools 由 [Read,Glob,Grep] 修正为 [Read,Write,Glob,Grep,Bash]。论证：NR-1 无条件要求 T2 会话跑 adjudicate 原命令（需 Bash）与 risk.json 机械覆写（需 Write），旧值使该会话物理不可能履约（每次运行必违例或永久降级）——属修错非放宽；修正集是 diagnose_full 工具面的严格子集且为满足 NR-1 的最小集；budget_usd/max_turns 不动；机器钉 `test_monitor_review_has_nr1_tools`（⊇{Bash,Write} 且 ⊂diagnose_full）防回退。用户覆盖表的只收严闸管「覆盖 vs 默认」，默认表自身修正走新裁定+CHANGELOG 登记程序。
+- **CCRequest.cwd**：会话工作目录注入（`agent/runs/<session_uuid>/`，spawn 前建）；DryRun 通道忽略该字段，契约两通道同构。
 - `--json-schema` 只喂 draft-07 扁平子集（`to_draft07` 遇 2020-12 方言直接 raise，F-12）；喂 CC 与本地复验同一份 schema（NR-3）。
 
 ## ③ 主 Loop 六段
@@ -50,3 +56,10 @@
 - `agent/` 编排件 selftest 与 pytest 同源判据（判据只收严）：现有 16 case 含 T1 触发判据、解析容错、RejectReason→HTTP 映射、消费期资格矩阵、`queue.find_any` 每股每日；新增行为必须先扩 selftest 再合入。
 - 红线扫描机器门（`tests/integration/test_redline_scan.py`）：NR-2 下单符号族、paper 禁网络库、R2 密钥变量名只许 `cc_client/cli.py`、`state/` 禁 signals/ledger 字面量。
 - HTTP 提交契约（面板半边）：kind 白名单=路由表六 kind、code=5/6 位数字（pydantic extra=forbid）；`RejectReason→HTTP`：DUPLICATE→409、LOCK/WINDOW→423、UNKNOWN_KIND→422（`server/schemas.py` 机器闸）。
+
+## ⑦ launchd 第四槽守护（0.0.4 落地）
+
+- 模板 `ops/launchd/com.threefish.stocktrading.agent.plist`（占位符 `__UV_PATH__/__REPO_PATH__/__HOME__`，安装见 [docs/ops/launchd.md](../ops/launchd.md)）：Label `com.threefish.stocktrading.agent`；ProgramArguments=`<repo>/.venv/bin/stock-trading-agent serve`（直接调 console script；坑位：uv run 包装会使 launchd 盯错进程、python 成孤儿占端口——本机实测；前置 `uv sync` 建 .venv）；RunAtLoad=true（随登录自起）；KeepAlive=true 常驻自愈（坑位实测：KeepAlive={Crashed} 的 after-crash 信号量在本 macOS 挂起不触发，kill -9 后 90s 无重启——故取常驻形态，ThrottleInterval=30 节流，停机走 bootout，daemon 锁冲突重试至锁释放后自动回归）；AbandonProcessGroup=true（D3：守护重启不连杀在跑 CC 子进程，与 start_new_session 双保险）；ExitTimeOut=20 > `serve --graceful-shutdown` 默认 10（关停在杀之前完成，R-12）；ThrottleInterval=30；日志 `~/.vibe-stock/agent/logs/panel.{out,err}.log`。
+- 模板**不带** STA_ALLOW_REAL_CC（出厂 dry-run 安全）；启用真实通道由用户安装时注入 EnvironmentVariables（文档明示后果与预算闸建议）。
+- WatchPaths/StartCalendarInterval 不用（I-52 race-prone；常驻服务非日历槽）；三份 vibe-stock plist 零接触。
+- 模板关键属性由 selftest/单测 plistlib 钉死（KeepAlive/AbandonProcessGroup/ExitTimeOut/ThrottleInterval/RunAtLoad/占位符），漂移即测试红。

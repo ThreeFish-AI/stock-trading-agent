@@ -35,11 +35,22 @@ uv sync                       # 建 .venv 并按 uv.lock 锁定依赖
 uv run pytest -q              # 测试门禁（全绿才可提交）
 uv run stock-trading-agent selftest   # 仓级 selftest（与 pytest 同源判据）
 uv run stock-trading-agent serve      # 本地面板（127.0.0.1:8730：Loop 运行时 + htmx 轮询，dry-run 通道）
-uv run stock-trading-agent probe      # CC 通道探针（骨架期即 dry-run 报告）
+STA_ALLOW_REAL_CC=1 uv run stock-trading-agent probe   # 真实 CC 通道探针（不带 env 即 dry-run 报告）
 uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI 消费一单（与 serve 抢 daemon 锁）
 ```
 
-面板①今日总览/②诊股工作台（提交入队）/③盯盘事件与 T2 复核（手动入口）/⑦审计与预算已点亮（180s htmx 轮询，本地 vendor 零 CDN）；④⑤⑥随 M2 点亮（方案 §16）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。
+面板①今日总览/②诊股工作台（提交入队）/③盯盘事件与 T2 复核（手动入口）/⑦审计与预算已点亮（180s htmx 轮询，本地 vendor 零 CDN）；④⑤⑥随 M2 点亮（方案 §16）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。真实 CC 通道（headless CLI 子进程：超时 SIGINT→SIGKILL 状态机、stream-json 解析、audit 归档）经 `STA_ALLOW_REAL_CC=1` 放行，默认 dry-run。
+
+### launchd 第四槽（面板守护，可选）
+
+```bash
+mkdir -p ~/.vibe-stock/agent/logs
+sed -e "s|__UV_PATH__|$(command -v uv)|g" -e "s|__REPO_PATH__|$(pwd)|g" -e "s|__HOME__|$HOME|g" \
+    ops/launchd/com.threefish.stocktrading.agent.plist > ~/Library/LaunchAgents/com.threefish.stocktrading.agent.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktrading.agent.plist
+```
+
+与 vibe-stock 三槽并存收编不替代；逐键取值与运维见 [docs/ops/launchd.md](docs/ops/launchd.md)。
 
 ## 仓库结构
 
@@ -50,7 +61,8 @@ uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI �
 │   ├── research/           # 调研报告与产品技术方案（自 vibe-stock 0.0.28 迁入）
 │   ├── diagrams/main-agent/  # 四张架构图 archify A 档四件套
 │   ├── prototypes/main-agent/  # 四页产品原型（自包含 HTML + 整页 PNG，全合成数据）
-│   ├── specs/              # 实施规约落位（12-orchestration / 13-paper，随实施 PR 建）
+│   ├── specs/              # 实施规约：12-orchestration.md（已建）；13-paper 随 M2 建
+│   ├── ops/launchd/        # 第四槽 LaunchAgent 模板（面板守护）
 │   └── .agents/            # knowledge-map（文档统一入口）+ issue.md
 ├── src/stock_trading_agent/
 │   ├── cc_client/          # CCRequest/CCClient 契约、CLI 旗标构建、dry-run 通道

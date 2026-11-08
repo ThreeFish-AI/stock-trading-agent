@@ -42,10 +42,11 @@
 | docs/prototypes/main-agent/ | 四页产品原型（自包含 HTML + 整页 PNG，1440px，全合成数据） |
 | docs/specs/ | 实施规约落位：[12-orchestration.md](docs/specs/12-orchestration.md)（0.0.3 建，主 Agent 编排规约）；13-paper.md 随 M2 建 |
 | docs/.agents/ | [knowledge-map](docs/.agents/knowledge-map.md) 与 [issue.md](docs/.agents/issue.md) |
-| src/stock_trading_agent/cc_client/ | CCRequest/CCResult/ProbeReport 契约、CLI 旗标构建、dry-run 通道 |
+| src/stock_trading_agent/cc_client/ | CCRequest/CCResult/ProbeReport 契约、CLI 旗标构建、dry-run 与真实 headless 通道（STA_ALLOW_REAL_CC=1 门） |
 | src/stock_trading_agent/loop/ | 事件信封、YAML 意图路由、NR-3 断言器、Loop 六段、T1 刷新链、monitor 监听、LoopRuntime 消费者 |
 | src/stock_trading_agent/state/ | StateLayout 状态布局、原子写与锁、queue/sessions/decisions 台账 |
 | src/stock_trading_agent/paper/ | 模拟盘引擎：批状态机、严格穿价撮合、费用栈、逐笔确认、账本 |
 | src/stock_trading_agent/budget/ | 预算闸（默认关，订阅/计费双形态） |
 | src/stock_trading_agent/server/ | FastAPI 面板（只读态 + 提交半边 + monitor 投影 + htmx fragment） |
-| tests/ | unit（纯函数）+ integration（tmp 状态目录、红线扫描机器门） |
+| ops/launchd/ | 第四槽 LaunchAgent 模板（KeepAlive.Crashed + AbandonProcessGroup，安装见 docs/ops/launchd.md） |
+| tests/ | unit（纯函数）+ integration（tmp 状态目录、红线扫描机器门、fake claude 真实通道族） |

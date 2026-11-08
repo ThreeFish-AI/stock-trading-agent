@@ -30,6 +30,7 @@ class CCRequest:
     mcp: str = "strict-empty"  # --strict-mcp-config + 空 --mcp-config（D-53：429k→2.8k tokens）
     timeout_s: int = 900
     autocompact: str | None = None
+    cwd: str | None = None  # 会话工作目录（agent/runs/<session_uuid>/；缺省当前目录）
 
 
 @dataclass
@@ -42,6 +43,7 @@ class CCResult:
     result_line_present: bool
     transcript_path: Path
     usage_tokens: dict[str, int] = field(default_factory=dict)
+    mcp_server_errors: list[dict[str, Any]] = field(default_factory=list)  # init 透传（F-23）
 
 
 @dataclass

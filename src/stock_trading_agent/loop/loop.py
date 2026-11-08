@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 from enum import StrEnum
+from pathlib import Path
 
 from stock_trading_agent.budget.gate import BudgetConfig, check, record_dual_axis
 from stock_trading_agent.cc_client.contract import (
@@ -22,6 +24,7 @@ from stock_trading_agent.loop.events import (
     EventEnvelope,
     dedup_key,
     gate_report_event,
+    lock_is_held,
     lock_precheck,
 )
 from stock_trading_agent.loop.router import RoutingTable
@@ -84,7 +87,8 @@ class AgentLoop:
         if reason := gate_report_event(now, event.kind):
             raise LoopReject(reason, RejectReason.WINDOW)
         if reason := lock_precheck(
-            fetch_lock=self.layout.fetch_lock.exists(), watch_lock=self.layout.watch_lock.exists()
+            fetch_lock=lock_is_held(self.layout.fetch_lock),
+            watch_lock=lock_is_held(self.layout.watch_lock),
         ):
             raise LoopReject(reason, RejectReason.LOCK)
         key = dedup_key(event, date=now.strftime("%Y-%m-%d"))
@@ -107,6 +111,12 @@ class AgentLoop:
         request = self.build_request(task)
         self.mark_running(task, queue, session_uuid=request.session_uuid)
         return request, self.cc.spawn_once(request)
+
+    def _session_dir(self, session_uuid: str) -> Path:
+        """CC 会话 cwd（agent/runs/<session_uuid>/；spawn 前建，12-orchestration §④）。"""
+        session_dir = self.layout.runs_dir / session_uuid
+        session_dir.mkdir(parents=True, exist_ok=True)
+        return session_dir
 
     def build_request(self, task: TaskRecord) -> CCRequest:
         """②③ 前半：路由查表 → 预算外闸 → schema 注入 → CCRequest 组装与校验（不 spawn 不迁移）。
@@ -146,6 +156,7 @@ class AgentLoop:
             allowed_tools=template.allowed_tools,
         )
         validate_request(request)
+        request = dataclasses.replace(request, cwd=str(self._session_dir(request.session_uuid)))
         return request
 
     def mark_running(

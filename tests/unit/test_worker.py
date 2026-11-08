@@ -103,16 +103,37 @@ class TestConsumeOne:
     def test_consume_empty_returns_none(self, make_runtime):
         assert make_runtime().consume_one() is None
 
+    def test_session_request_carries_runs_cwd(self, make_runtime):
+        # CC 会话 cwd=agent/runs/<session_uuid>/（spawn 前建目录，12-orchestration §④）
+        rt = make_runtime()
+        queue = QueueState()
+        from stock_trading_agent.loop.events import EventEnvelope
+
+        task = rt.loop.ingest(
+            EventEnvelope(event_id="e", source="panel", kind="diagnose_quick", code="600519"), queue
+        )
+        request = rt.loop.build_request(task)
+        assert request.cwd is not None
+        assert request.cwd.startswith(str(rt.layout.runs_dir))
+        from pathlib import Path as _P
+
+        assert _P(request.cwd).is_dir() and request.session_uuid in request.cwd
+
     def test_lock_present_defers_leaving_queued(self, make_runtime):
+        from conftest import hold_lock
+
         rt = make_runtime()
         rt.submit(kind="diagnose_quick", code="600519")
         rt.layout.agent_dir.mkdir(parents=True, exist_ok=True)
-        rt.layout.fetch_lock.touch()
-        assert rt.consume_one() is None  # defer：不消费
-        q = QueueState.from_dict(json.loads(rt.layout.queue_path.read_text(encoding="utf-8")))
-        assert q.tasks[0].status == "queued"
-        rt.layout.fetch_lock.unlink()
+        rt.layout.fetch_lock.touch()  # 陈旧锁文件：不误判
         task = rt.consume_one()
+        assert task is not None and task.status == "done"
+        rt.submit(kind="diagnose_quick", code="601919")
+        with hold_lock(rt.layout.fetch_lock):  # 真实持锁：defer 留 queued
+            assert rt.consume_one() is None
+            q = QueueState.from_dict(json.loads(rt.layout.queue_path.read_text(encoding="utf-8")))
+            assert q.tasks[1].status == "queued"
+        task = rt.consume_one()  # 锁释放：自动补跑
         assert task is not None and task.status == "done"
 
     def test_t1_zero_llm_task_runs_runner(self, make_runtime):

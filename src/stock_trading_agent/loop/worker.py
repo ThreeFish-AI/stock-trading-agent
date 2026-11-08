@@ -19,7 +19,12 @@ from dataclasses import asdict
 from stock_trading_agent.budget.gate import BudgetConfig
 from stock_trading_agent.cc_client.contract import CCClient
 from stock_trading_agent.cc_client.dryrun import DryRunCCClient
-from stock_trading_agent.loop.events import EventEnvelope, gate_report_event, lock_precheck
+from stock_trading_agent.loop.events import (
+    EventEnvelope,
+    gate_report_event,
+    lock_is_held,
+    lock_precheck,
+)
 from stock_trading_agent.loop.loop import AgentLoop, LoopReject
 from stock_trading_agent.loop.monitor_events import MonitorEvent, market_today, t1_trigger
 from stock_trading_agent.loop.router import load_default_table
@@ -239,8 +244,8 @@ class LoopRuntime:
                     continue
                 reason = task_eligible(
                     task,
-                    fetch_lock=self.layout.fetch_lock.exists(),
-                    watch_lock=self.layout.watch_lock.exists(),
+                    fetch_lock=lock_is_held(self.layout.fetch_lock),
+                    watch_lock=lock_is_held(self.layout.watch_lock),
                     now=now,
                 )
                 if reason is not None:
