@@ -902,13 +902,17 @@ def _advice_refused(request: Request, day: str) -> list[dict]:
         if ts.astimezone(tz).strftime("%Y-%m-%d") != day:
             continue
         payload = line.get("payload") or {}
+        local_ts = ts.astimezone(tz)
         out.append(
             {
                 "code": payload.get("code", ""),
                 "origin": payload.get("origin", ""),
                 "reason_code": payload.get("reason_code", ""),
-                "facts_note": payload.get("facts_note", ""),
+                # 写侧多数路径只带 reasons 数组（gate/assert/render_scan/write_failure），
+                # facts_note 仅 session_degraded 路径在场——回退拼接保通报列非空
+                "facts_note": payload.get("facts_note") or "；".join(payload.get("reasons") or []),
                 "ts": line.get("ts", ""),
+                "ts_short": local_ts.strftime("%m-%d %H:%M"),
             }
         )
     return out
@@ -1013,7 +1017,15 @@ def panel_events(request: Request) -> HTMLResponse:
 
 @router.get("/panel/audit")
 def panel_audit(request: Request) -> HTMLResponse:
-    return HTMLResponse(render_audit(decisions(request, tail=20), budget(request)))
+    """⑦审计：经 DecisionLog.load 读侧防线（断链不抛异常仍可渲染）+ verify_chain 呈现。"""
+    from dataclasses import asdict
+
+    from stock_trading_agent.state.decisions import DecisionLog
+
+    layout = _layout(request)
+    log = DecisionLog.load(layout.decisions_path)
+    lines = [asdict(line) for line in log.lines][-20:]
+    return HTMLResponse(render_audit(lines, budget(request), chain_ok=log.verify_chain()))
 
 
 @router.get("/panel/task/{task_id}")
