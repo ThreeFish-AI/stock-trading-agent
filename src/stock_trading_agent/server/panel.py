@@ -252,28 +252,37 @@ def _axis_equity_svg(history: list[dict], *, width: int = 470, height: int = 150
         gy = y(val)
         parts.append(
             f'<line x1="{pad_l}" y1="{gy:.1f}" x2="{pad_l + plot_w}" y2="{gy:.1f}" '
-            'stroke="var(--line)" stroke-dasharray="3 4"/>'
-            f'<text x="{pad_l + plot_w + 4}" y="{gy + 3.5:.1f}" font-size="9.5" '
-            'fill="var(--t4)" font-family="var(--mono)">{val:.3f}</text>'
+            'style="stroke:var(--line)" stroke-dasharray="3 4"/>'
+            f'<text x="{pad_l + plot_w + 4}" y="{gy + 3.5:.1f}" '
+            'style="font-size:var(--fs-10);fill:var(--t4);font-family:var(--mono)">'
+            f"{val:.3f}</text>"
         )
     coords = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(navs))
     area = f"{pad_l},{pad_t + plot_h} " + coords + f" {pad_l + plot_w},{pad_t + plot_h}"
-    parts.append(f'<polygon fill="rgba(88,166,255,.10)" points="{area}"/>')
-    parts.append(f'<polyline fill="none" stroke="#58a6ff" stroke-width="1.6" points="{coords}"/>')
+    parts.append(
+        f'<polygon style="fill:color-mix(in srgb,var(--acc) 10%,transparent)" points="{area}"/>'
+    )
+    parts.append(
+        f'<polyline fill="none" style="stroke:var(--acc)" stroke-width="1.6" points="{coords}"/>'
+    )
     dates = [str(p.get("date") or "") for p in history]
     for idx, anchor in ((0, "start"), (len(dates) - 1, "end")):
         if dates[idx]:
             tx = min(max(x(idx), pad_l), pad_l + plot_w)
             parts.append(
-                f'<text x="{tx:.1f}" y="{height - 4}" font-size="9.5" fill="var(--t4)" '
-                f'text-anchor="{anchor}" font-family="var(--mono)">{_esc(dates[idx][5:])}</text>'
+                f'<text x="{tx:.1f}" y="{height - 4}" '
+                'style="font-size:var(--fs-10);fill:var(--t4)" '
+                f'text-anchor="{anchor}" style="font-family:var(--mono)">'
+                f"{_esc(dates[idx][5:])}</text>"
             )
     lx, ly = x(len(navs) - 1), y(navs[-1])
-    parts.append(f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3" fill="#58a6ff"/>')
+    parts.append(f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3" style="fill:var(--acc)"/>')
     parts.append(
-        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="6" fill="rgba(88,166,255,.25)"/>'
-        f'<text x="{lx - 8:.1f}" y="{ly - 8:.1f}" font-size="10.5" fill="var(--t1)" '
-        f'text-anchor="end" font-family="var(--mono)">{navs[-1]:.4f}</text>'
+        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="6" '
+        'style="fill:color-mix(in srgb,var(--acc) 25%,transparent)"/>'
+        f'<text x="{lx - 8:.1f}" y="{ly - 8:.1f}" '
+        'style="font-size:var(--fs-11);fill:var(--t1)" '
+        f'text-anchor="end" style="font-family:var(--mono)">{navs[-1]:.4f}</text>'
     )
     parts.append("</svg>")
     return "".join(parts)
@@ -494,11 +503,7 @@ def render_briefing_fragment(payload: dict) -> str:
             )
             if value is not None
         )
-        chip_html = (
-            f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">{chips}</div>'
-            if chips
-            else ""
-        )
+        chip_html = f'<div class="chips">{chips}</div>' if chips else ""
         body = _esc(str(card.get("md", ""))[:1200])
         return (
             f'<div class="task-card"><p><strong>{code}</strong> {slot_tag} · {state} {action}</p>'
@@ -516,13 +521,11 @@ def render_briefing_fragment(payload: dict) -> str:
     for slot_key, title in (("am", "盘前晨报"), ("pm", "盘后复盘")):
         group = [c for c in cards if c.get("session") == slot_key]
         if group:
-            parts.append(f'<h4 style="margin:10px 0 4px;font-size:12.5px">{title}</h4>')
+            parts.append(f'<h4 class="slot-h">{title}</h4>')
             parts.extend(_card_html(c) for c in group)
     legacy = [c for c in cards if not c.get("session")]
     if legacy:
-        parts.append(
-            '<h4 style="margin:10px 0 4px;font-size:12.5px">通用（legacy briefing_review）</h4>'
-        )
+        parts.append('<h4 class="slot-h">通用（legacy briefing_review）</h4>')
         parts.extend(_card_html(c) for c in legacy)
     return "".join(parts)
 
@@ -644,18 +647,17 @@ def render_notifications(payload: dict) -> str:
         cards = '<p class="loadmsg">暂无已发通知（watch.py osascript 历史；产品仓永不发通知）。</p>'
     else:
         cards = "".join(
-            f'<div class="card" style="margin-bottom:8px"><div class="card-b" '
-            'style="display:flex;gap:10px;align-items:flex-start">'
-            '<svg width="16" height="16" viewBox="0 0 16 16" style="flex:none;margin-top:2px">'
+            '<div class="card note"><div class="card-b note-b">'
+            '<svg class="note-ico" width="16" height="16" viewBox="0 0 16 16">'
             '<path d="M8 1a4 4 0 0 0-4 4v3l-1.5 2.5h11L12 8V5a4 4 0 0 0-4-4z'
             'M6.5 12.5a1.5 1.5 0 0 0 3 0" '
-            'stroke-width="1.3" fill="none" style="stroke:var(--t3)"/></svg>'
-            f'<div style="flex:1;min-width:0">'
-            f'<div class="num" style="font-size:11px;color:var(--t4)">'
+            'stroke-width="1.3" fill="none"/></svg>'
+            '<div class="note-main">'
+            f'<div class="num note-time">'
             f"{_esc(row.get('ts', ''))} · 现在</div>"
-            f'<div style="font-size:12.5px;font-weight:600">'
+            '<div class="note-title">'
             f"{_esc(row.get('title', ''))}</div>"
-            f'<div style="font-size:12px;color:var(--t2)">'
+            '<div class="note-text">'
             f"{_esc(row.get('body', ''))}</div></div></div></div>"
             for row in rows
         )
@@ -680,7 +682,7 @@ def render_session_obs(body: dict) -> str:
             f'<div class="sl">{_esc(st["name"])}</div>'
             f'<div class="ss num">{_esc(st.get("note", ""))}</div></div>'
         )
-    parts = ['<div class="pipe" style="display:flex;gap:4px;flex-wrap:wrap">']
+    parts = ['<div class="pipe pipe-dense">']
     parts.append("".join(steps))
     parts.append("</div>")
     opinions = body.get("opinions") or {}
@@ -702,14 +704,8 @@ def render_session_obs(body: dict) -> str:
         )
         position_n = len(opinions.get("position") or [])
         pos_note = f"（中线轨 {position_n} 条另裁决）" if position_n else ""
-        parts.append(
-            '<h3 style="margin:10px 0 6px;font-size:13px">'
-            f"双轨意见板 · {len(default_cards)} 条{pos_note}</h3>"
-        )
-        parts.append(
-            '<div class="opins" style="display:grid;grid-template-columns:'
-            f'repeat(auto-fill,minmax(180px,1fr));gap:8px">{cards}</div>'
-        )
+        parts.append(f'<h3 class="h3-tight">双轨意见板 · {len(default_cards)} 条{pos_note}</h3>')
+        parts.append(f'<div class="opins opins-dense">{cards}</div>')
     else:
         parts.append('<p class="loadmsg">意见未产出（LLM 意见段待会话推进）。</p>')
     verdict = body.get("verdict")
@@ -717,22 +713,16 @@ def render_session_obs(body: dict) -> str:
         buckets = verdict.get("buckets") or {}
         bucket_line = " · ".join(f"{_esc(k)} {len(v)}" for k, v in buckets.items())
         rg_log = "；".join(verdict.get("risk_guard_log") or []) or "no-op"
-        parts.append('<div class="verd" style="margin-top:10px;border:1px solid var(--line);')
-        parts.append('border-radius:8px;padding:10px">')
+        parts.append('<div class="verd verd-box">')
         parts.append(
-            f'<div class="num" style="font-size:12px;color:var(--t4)">'
+            '<div class="num verd-line">'
             f"initial {_esc(verdict.get('initial'))} → final "
-            f'<b style="font-size:16px;color:var(--t1)">{_esc(verdict.get("final"))}</b>'
+            f'<b class="verd-final">{_esc(verdict.get("final"))}</b>'
             f" · 置信 {_esc(verdict.get('confidence'))} · "
             f"{_esc(verdict.get('consensus_level'))}</div>"
         )
-        parts.append(
-            f'<div style="font-size:11.5px;color:var(--t3);margin-top:4px">'
-            f"RiskGuard：{_esc(rg_log)}</div>"
-        )
-        parts.append(
-            f'<div style="font-size:11.5px;color:var(--t3)">分歧：{_esc(bucket_line) or "无"}</div>'
-        )
+        parts.append(f'<div class="verd-sub">RiskGuard：{_esc(rg_log)}</div>')
+        parts.append(f'<div class="verd-sub">分歧：{_esc(bucket_line) or "无"}</div>')
         parts.append("</div>")
         parts.append(
             '<p class="tbl-note">LLM 零直写裁决面（R3）· RiskGuard 只降不升（R5）'
@@ -797,7 +787,7 @@ def render_todos(payload: dict) -> str:
     rows = []
     for item in todos:
         rows.append(
-            f'<div class="todo"><div class="cbx"></div><div style="flex:1;min-width:0">'
+            f'<div class="todo"><div class="cbx"></div><div class="td-tx">'
             f'<span class="code num">{_esc(item["code"])}</span> {_esc(item["text"])}</div>'
             f'<span class="chip chip-warn">{_esc(item["chip"])}</span></div>'
         )
@@ -817,7 +807,7 @@ def render_navcard(view: dict) -> str:
     chip = f'<span class="chip {"chip-up" if up_today else "chip-neutral"}">'
     return (
         f'<div class="nv-v num">{nav:.4f}</div>'
-        '<div style="display:flex;gap:8px;margin:6px 0 8px">'
+        '<div class="nv-chips">'
         f"{chip}今日 {today_pct:+.2f}%</span>"
         if today_pct is not None
         else ""
@@ -844,7 +834,7 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
         }[name]
         rows.append(
             f'<div class="sys-row"><div class="sdot {dot}"></div>'
-            f'<div style="flex:1;min-width:0"><span class="sys-name">{name}</span>'
+            f'<div class="sys-l"><span class="sys-name">{name}</span>'
             f'<div class="sys-desc">{desc}</div></div>'
             f'<span class="sys-sched num">{sched[name]}</span>'
             f'<span class="sys-st">{state}</span></div>'
@@ -858,7 +848,7 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
     )
     rows.append(
         f'<div class="sys-row"><div class="sdot {"sdot-ok" if cc_active else "sdot-wait"}"></div>'
-        '<div style="flex:1;min-width:0"><span class="sys-name">CC 大脑</span>'
+        '<div class="sys-l"><span class="sys-name">CC 大脑</span>'
         '<div class="sys-desc">headless 子进程唯一 LLM 通道</div></div>'
         f"{probe_html}"
         f'<span class="sys-st">{"运行中" if cc_active else "降级只读"}</span></div>'
@@ -867,7 +857,7 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
     if chain_error:
         rows.append(
             '<div class="sys-row"><div class="sdot sdot-wait"></div>'
-            '<div style="flex:1;min-width:0"><span class="sys-name">决策链</span>'
+            '<div class="sys-l"><span class="sys-name">决策链</span>'
             f'<div class="sys-desc">{html.escape(str(chain_error))}</div></div>'
             '<span class="sys-st">待修复</span></div>'
         )
@@ -1422,8 +1412,8 @@ def render_sessions_table(sessions: dict) -> str:
             "</tr>"
         )
     return (
-        '<table class="tbl"><colgroup><col style="width:150px"><col style="width:120px">'
-        '<col style="width:160px"><col style="width:90px"><col style="width:90px">'
+        '<table class="tbl"><colgroup><col class="w-sess-ts"><col class="w-uuid">'
+        '<col class="w-task"><col class="w-tok"><col class="w-usd">'
         "<col></colgroup><thead><tr><th>ts</th><th>session</th><th>task</th>"
         "<th>tokens</th><th>等效 USD</th><th>转录路径</th></tr></thead><tbody>"
         f"{''.join(trs)}</tbody></table>"
