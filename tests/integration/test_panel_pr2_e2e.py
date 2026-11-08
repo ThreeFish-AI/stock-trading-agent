@@ -90,7 +90,9 @@ class TestMonitorPageFacts:
         )
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
             frag = client.get("/api/panel/advice").text
-        assert 'hx-target="#advice-detail-2"' in frag and ">详情</button>" in frag
+        # 0.0.15 P1 并轨后：code 单元格即链接（无独立详情按钮列）
+        assert 'hx-target="#advice-detail-2"' in frag
+        assert f'hx-get="/api/panel/advice-detail/{day}/600519"' in frag
 
     def test_notifications_lockscreen_note(self, tmp_path: Path):
         app, _, _layout = _app(tmp_path)

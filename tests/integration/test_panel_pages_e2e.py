@@ -182,6 +182,45 @@ class TestAdviceRendered:
         body = client.get(f"/api/advice/{market_today()}/600519").json()
         assert body["rendered"] is None
 
+    def test_library_code_links_to_detail(self, tmp_path: Path):
+        """0.0.15：⑤卡表 code 列改链接接通 advice-detail（此前端点+容器双悬空）。"""
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        _seed_advice(layout)
+        day = market_today()
+        frag = client.get("/api/panel/advice").text
+        assert f'hx-get="/api/panel/advice-detail/{day}/600519"' in frag
+        assert 'hx-target="#advice-detail-2"' in frag
+
+    def test_refused_reasons_fallback(self, tmp_path: Path):
+        """0.0.15：拒卡通报 reasons 数组回退 + 市场钟面短格式 + 来源列头。"""
+        from dataclasses import asdict
+
+        from stock_trading_agent.loop.monitor_events import market_today
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        log = DecisionLog()
+        log.append(
+            "2026-11-08T02:50:29+00:00",
+            "advice_refused",
+            {
+                "code": "600519",
+                "origin": "assert",
+                "reason_code": "schema_or_redline",
+                "reasons": ["signal 枚举越界"],
+            },
+        )
+        with open(layout.decisions_path, "w", encoding="utf-8") as f:
+            for line in log.lines:
+                f.write(json.dumps(asdict(line), ensure_ascii=False) + "\n")
+        frag = client.get("/api/panel/advice?date=" + market_today()).text
+        assert "signal 枚举越界" in frag  # reasons 回退拼接进通报列
+        assert '<th scope="col">来源</th>' in frag
+        assert market_today() in frag
+
 
 class TestReportFragment:
     def test_body_and_disclaimer_check(self, tmp_path: Path):
@@ -239,6 +278,51 @@ class TestSevenPageSkeleton:
             resp = client.get(frag_path)
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"], frag_path
+
+
+class TestAuditChain:
+    """0.0.15：⑦链校验呈现（load 对断链不抛异常，读侧仍渲染 + 警示）。"""
+
+    def _write_chain(self, layout: StateLayout, tamper: bool) -> None:
+        from dataclasses import asdict
+
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        log = DecisionLog()
+        log.append("2026-11-08T08:00:00+08:00", "task_submitted", {"kind": "diagnose_quick"})
+        log.append("2026-11-08T08:01:00+08:00", "task_done", {"task_id": "t1"})
+        if tamper:
+            log.lines[-1].payload["task_id"] = "tampered"  # 落盘前改 payload → hash 复算不符
+        with open(layout.decisions_path, "w", encoding="utf-8") as f:
+            for line in log.lines:
+                f.write(json.dumps(asdict(line), ensure_ascii=False) + "\n")
+
+    def test_chain_ok_and_tampered(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        self._write_chain(layout, tamper=False)
+        frag = client.get("/api/panel/audit").text
+        assert "链校验通过" in frag and "hash 链" in frag
+        self._write_chain(layout, tamper=True)
+        resp = client.get("/api/panel/audit")
+        assert resp.status_code == 200  # 断链不拒渲（读侧防线语义）
+        assert "校验失败" in resp.text
+
+
+class TestStatsT1Review:
+    def test_t1_review_rendered(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.root.mkdir(parents=True, exist_ok=True)
+        (layout.root / "ledger.agent.json").write_text(
+            json.dumps({"attribution": {"600519": {"wins": 2, "losses": 1}}}),
+            encoding="utf-8",
+        )
+        body = client.get("/api/stats").json()
+        assert body["t1_review"]["sampled"] == 3
+        assert body["t1_review"]["rate"] is None  # <30 insufficient
+        frag = client.get("/api/panel/stats").text
+        assert "T+1 复核命中率" in frag and "只观察不记分" in frag
+        assert "任务画像" in frag and "假设性" in frag  # 钉死断言回归
 
 
 class TestHtmxWiring:

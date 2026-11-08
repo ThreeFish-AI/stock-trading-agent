@@ -135,6 +135,8 @@
 - **htmx swap 契约（0.0.14 落地）**：**交换策略统一 innerHTML、挂点常驻壳层为 SSOT**——fragment 根不自带挂点 id；唯一安全例外是自轮询任务卡（outerHTML 自替换且根带 id，0.0.13）。提交类按钮 target 必须指向壳层既有容器（③复核→`#advice-detail`、briefing ack→`#ov-brief`、L2/paper→自身容器 innerHTML）。
 - **报告文件名白名单（0.0.14 落地）**：`(?:\d{4}-\d{2}-\d{2}|index)\.md`——index 为固定字面量不扩大攻击面，目录正则与 resolve 边界两道保险不动。
 - **后续三 PR 升级位**：0.0.15（列头全中文裁定：术语/机器值保留英文原词 + colgroup 固定列宽/跨表同宽/单行省略+title Tooltip/空值 — 占位 + ④绩效三格与⑥T+1 命中率已算未渲补齐 + ⑦链校验呈现 + ⑤卡详情链接接通）；0.0.16（首屏 load 触发——**裁定不动 sse.py multi init**（SSE 单流+180s 兜底契约钉死，load 触发零契约变更同效）+ 全局错误条 + hx-disabled-elt 防重 + ②表单行式（label 同行 1/12 + Tooltip）+ a11y 基线（tablist/aria-selected/:focus-visible）+ `--t4` 提亮过 AA）；0.0.17（CSS 去重与死码清理——**必须终态后重盘发射面**，坑位：`.op/.opins/.op-src/.verd/.sc/.sl/.ss/.stats/.stat/.ghostbtn` 为活码勿按原型残留误删 + 响应式两档 + md-lite 结构化渲染 + `_sparkline_svg` 泛化双曲线 + SSE retry 真化）。
+- **0.0.16 并轨裁定（与 0.0.15 P1 内容补全同日合流）**：③事件表在其列头/表格三规范之上并入 facts 消费（现价/距线 breach|near/mech_risk riskchip/名称列）；④绩效三格复用其 `_perf_grid` 单一渲染件（本 PR 另补表尾汇总条/坐标轴曲线/名称列/状态 pill/tr.open）；⑤卡详情取其 code 链接形态；⑥t1_review 取其文案。
+- **0.0.15 落地（P1 内容补全）**：列头全中文（机器值保留英文原词）；表格三规范（colgroup 固定列宽 + 列宽 SSOT 类跨表同宽 + scope/title Tooltip/空值 —）；④绩效三格与盈亏红涨绿跌、⑥T+1 命中率两处「已算未渲」补齐；⑦链校验呈现（DecisionLog.load 断链不抛仍渲染 + verify_chain 状态行）；⑤卡详情链接接通 + 拒卡 reasons 回退/五源图例/钟面短格式；oob 计数兑现三处死位；fragment 语义类（.muted/.ok/.warn/.task-card/h3）与 .mini 按钮类归位。
 
 ## ⑮ 悬空项登记表（0.0.16 建；消灭「既未落地也未登记」态）
 
