@@ -812,6 +812,38 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("panel.paper_totals", paper_totals_anchor)
 
+    def briefing_slots_and_auto():
+        import datetime as bdt
+
+        from stock_trading_agent.loop.briefing import (
+            build_card_md,
+            has_ack,
+            plan_auto_briefings,
+            slot_of_kind,
+        )
+
+        assert slot_of_kind("briefing_morning") == "am"
+        md = build_card_md({"briefing": "x"}, date="2026-11-09", code="600519", slot="pm")
+        assert "session: pm" in md and "盘后复盘" in md
+        ack_lines = [
+            {"kind": "briefing_ack", "payload": {"date": "d", "code": "c", "session": "pm"}}
+        ]
+        assert has_ack(ack_lines, date="d", code="c", slot="pm")
+        assert not has_ack(ack_lines, date="d", code="c", slot="am")
+        monday_am = bdt.datetime(2026, 11, 9, 9, 10, tzinfo=bdt.timezone(bdt.timedelta(hours=8)))
+        planned = plan_auto_briefings(
+            monday_am, l2_enabled=True, universe_codes=["600519"], already_queued=set()
+        )
+        assert planned == [("briefing_morning", "600519")]
+        assert (
+            plan_auto_briefings(
+                monday_am, l2_enabled=False, universe_codes=["c"], already_queued=set()
+            )
+            == []
+        )
+
+    check_case("loop.briefing.slots_auto", briefing_slots_and_auto)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 

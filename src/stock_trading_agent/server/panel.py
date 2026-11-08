@@ -7,6 +7,7 @@ NR-5：只透出脱敏态数据（monitor events/universe 本身脱敏；session
 from __future__ import annotations
 
 import html
+import json
 import re
 
 TERMINAL_STATUSES = frozenset({"done", "failed", "abandoned"})
@@ -409,14 +410,14 @@ def render_stats_fragment(payload: dict) -> str:
 
 
 def render_briefing_fragment(payload: dict) -> str:
-    """晨报/复盘卡区：当日卡列表 + 关键价位 kchip（signals key_levels 透传）+ ack 状态。"""
+    """晨报/复盘卡区（0.0.18 分槽 + 行动项 chip 置顶）：盘前/盘后/legacy 三组 + ack 带槽位。"""
     day = payload.get("date", "")
     cards = payload.get("cards") or []
     key_levels = payload.get("key_levels") or {}
-    parts = [f"<h3>晨报 / 复盘行动项卡 · {day}</h3>"]
     from stock_trading_agent.server.panel_data import briefing_action_items
 
     action_items = briefing_action_items([str(c.get("md", "")) for c in cards])
+    parts = [f"<h3>晨报 / 复盘行动项卡 · {day}</h3>"]
     if action_items:
         chips = "".join(
             f'<div class="kchip"><span class="code num">{_esc(i["code"])}</span>'
@@ -424,54 +425,68 @@ def render_briefing_fragment(payload: dict) -> str:
             for i in action_items[:8]
         )
         parts.append(f'<div class="svgs">{chips}</div>')
-    if cards:
-        for card in cards:
-            ack = bool(card.get("ack"))
-            code = _esc(card.get("code", ""))
-            if ack:
-                state = '<span class="st done">已确认</span>'
-                action = ""
-            else:
-                state = '<span class="st queued">待确认</span>'
-                vals = f'{{"date": "{_esc(day)}", "code": "{code}"}}'
-                action = (
-                    '<button class="mini" hx-post="/api/panel/briefing/ack" '
-                    f"hx-vals='{vals}' "
-                    'hx-target="#ov-brief" hx-swap="innerHTML" '
-                    'hx-disabled-elt="this">确认复核</button>'
-                )
-            levels = key_levels.get(card.get("code")) or {}
-            chips = "".join(
-                f'<div class="kchip"><span class="tag">{label}</span>'
-                f'<span class="num">{_esc(value)}</span></div>'
-                for label, value in (
-                    ("止损", levels.get("stop")),
-                    ("买点", levels.get("buy")),
-                    ("MA20", levels.get("ma20")),
-                )
-                if value is not None
+
+    def _card_html(card: dict) -> str:
+        ack = bool(card.get("ack"))
+        code = _esc(card.get("code", ""))
+        slot = str(card.get("session") or "")
+        slot_tag = f'<span class="tag">{slot}</span>' if slot else ""
+        if ack:
+            state = '<span class="st done">已确认</span>'
+            action = ""
+        else:
+            state = '<span class="st queued">待确认</span>'
+            vals = {"date": _esc(day), "code": code}
+            if slot:
+                vals["session"] = slot
+            action = (
+                '<button class="mini" hx-post="/api/panel/briefing/ack" '
+                f"hx-vals='{json.dumps(vals, ensure_ascii=False)}' "
+                'hx-target="#ov-brief" hx-swap="innerHTML" '
+                'hx-disabled-elt="this">确认复核</button>'
             )
-            chip_html = (
-                f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">{chips}</div>'
-                if chips
-                else ""
+        levels = key_levels.get(card.get("code")) or {}
+        chips = "".join(
+            f'<div class="kchip"><span class="tag">{label}</span>'
+            f'<span class="num">{_esc(value)}</span></div>'
+            for label, value in (
+                ("止损", levels.get("stop")),
+                ("买点", levels.get("buy")),
+                ("MA20", levels.get("ma20")),
             )
-            body = _esc(str(card.get("md", ""))[:1200])
-            parts.append(
-                f'<div class="task-card"><p><strong>{code}</strong> · {state} {action}</p>'
-                f"{chip_html}"
-                f'<pre class="md-pre">'
-                f"{body}</pre></div>"
-            )
-    else:
-        parts.append(
-            '<p class="muted">当日无卡（面板触发 briefing_review 生成；'
-            "盘后复盘建议 18:10 后触发）。</p>"
+            if value is not None
         )
+        chip_html = (
+            f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">{chips}</div>'
+            if chips
+            else ""
+        )
+        body = _esc(str(card.get("md", ""))[:1200])
+        return (
+            f'<div class="task-card"><p><strong>{code}</strong> {slot_tag} · {state} {action}</p>'
+            f"{chip_html}"
+            f'<pre class="md-pre">'
+            f"{body}</pre></div>"
+        )
+
+    if not cards:
+        parts.append(
+            '<p class="muted">当日无卡（L2 开启时盘前 09:00–09:29 / 盘后 18:15 起自动触发；'
+            "或②页手动触发 briefing_morning / briefing_evening）。</p>"
+        )
+        return "".join(parts)
+    for slot_key, title in (("am", "盘前晨报"), ("pm", "盘后复盘")):
+        group = [c for c in cards if c.get("session") == slot_key]
+        if group:
+            parts.append(f'<h4 style="margin:10px 0 4px;font-size:12.5px">{title}</h4>')
+            parts.extend(_card_html(c) for c in group)
+    legacy = [c for c in cards if not c.get("session")]
+    if legacy:
+        parts.append(
+            '<h4 style="margin:10px 0 4px;font-size:12.5px">通用（legacy briefing_review）</h4>'
+        )
+        parts.extend(_card_html(c) for c in legacy)
     return "".join(parts)
-
-
-# ═══ 0.0.11 §⑫ 新组件渲染器 ═══
 
 
 def render_phase_chip(phase: dict) -> str:
@@ -498,7 +513,8 @@ def render_diag_form() -> str:
             ("diagnose_full", "全量诊股（双轨）"),
             ("batch_wave", "批量波次"),
             ("paper_confirm", "模拟盘逐笔确认（CC 辅助）"),
-            ("briefing_review", "盘前晨报/盘后复盘"),
+            ("briefing_morning", "盘前晨报（am 槽）"),
+            ("briefing_evening", "盘后复盘（pm 槽）"),
             ("monitor_review", "盯盘复核（T2）"),
         ]
     )

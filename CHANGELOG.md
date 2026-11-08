@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.19] - 2026-11-08
+
+### Added
+
+- **晨报/复盘早晚分卡六层加槽 + 自动触发（§⑮ 悬空项前两行翻绿；规约 [12-orchestration.md](docs/specs/12-orchestration.md) §⑨ 新增「早晚分卡与自动触发裁定」节）**。①**双 kind 加槽**：新 kind `briefing_morning`/`briefing_evening`（routing.yaml 双模板槽位化 prompt + NR-4 字段 + schema_ref=briefing 收编可选 action_items 数组；dedup_key 与 UUIDv5 会话身份按 kind 天然分槽；禁跑窗 kind 集与提交白名单两处收编；②页下拉换双 kind，legacy `briefing_review` 保留可路由可提交——旧队列任务与旧卡零迁移）。②**卡路径分槽**：`agent/briefing/<date>/<code>.<am|pm>.md` 每日每股每槽一卡（三卡并存不互覆；legacy 落 `<code>.md`）；卡面 front-matter 增 `session` 行与槽位标题。③**ack 槽位隔离**：`briefing_ack` payload 增 session（空/am/pm 白名单闸）——带槽 ack 只命中本槽卡、legacy ack 只命中 legacy 卡（0.0.19 前的「ack 一次抹两跑」结构缺陷消除）；`briefing_card` 决策 payload 增 kind+session。④**自动触发**：判据纯函数 `plan_auto_briefings`（工作日 ∧ L2 总闸开 ∧ universe 可读 ∧ 槽窗内 ∧ 每股每槽当日未入队含终态）——盘前窗 09:00–09:29/盘后窗 18:15–23:59（禁跑窗 18:10 含端点后留余量）；worker 线程 60s 节流钩子、source=monitor、universe 全码；universe 不可读记 `briefing_auto_skipped` 决策（宁拒不漏留痕）；L2 关闭零入队零决策噪音（无人值守语义与 §⑩ 同源）；未引第二调度器（§⑦）。⑤**面板分组**：briefing fragment 按 盘前晨报/盘后复盘/legacy 三组渲染，ack 按钮带槽位、空态文案改自动触发说明。测试 +19 例（并轨后 489 passed 全绿）：槽位基础（front-matter/路径三卡并存/ack 槽位隔离矩阵）、plan 六象限（L2 关/universe 缺/周末/早晚窗/窗外/每股每槽去重）、路由 NR-4 与禁跑窗收编、全链 e2e（morning 提交→.am.md 落卡→决策 session→面板分组→ack 槽位往返）、worker 自动触发 e2e（幂等/L2 关/universe 留痕/窗外 noop）；selftest 35→36 case。
+
 ## [0.0.18] - 2026-11-08
 
 ### Changed

@@ -28,10 +28,11 @@ from stock_trading_agent.loop.advice import (
 )
 from stock_trading_agent.loop.assertor import OPINION_KINDS, assess_result
 from stock_trading_agent.loop.briefing import (
-    BRIEFING_KIND,
+    BRIEFING_KINDS,
     build_card_md,
     persist_card,
     scan_briefing_text,
+    slot_of_kind,
 )
 from stock_trading_agent.loop.events import (
     EventEnvelope,
@@ -254,7 +255,7 @@ class AgentLoop:
             declined = self._advice_card_or_refuse(task, result, queue, sessions, ctx)
             if declined is not None:
                 return declined  # 写卡链失败 → task=failed + advice_refused，杜绝 done-无卡
-        if task.kind == BRIEFING_KIND:
+        if task.kind in BRIEFING_KINDS:
             declined = self._briefing_card_or_fail(task, result, queue, sessions)
             if declined is not None:
                 return declined
@@ -359,12 +360,13 @@ class AgentLoop:
 
         structured = result.structured_output or {}
         date = market_today()
+        slot = slot_of_kind(task.kind)
         try:
-            md = build_card_md(structured, date=date, code=task.code)
+            md = build_card_md(structured, date=date, code=task.code, slot=slot)
             problems = scan_briefing_text(md)
             if problems:
                 raise ValueError("；".join(problems))
-            card_path = persist_card(self.layout, date, task.code, md)
+            card_path = persist_card(self.layout, date, task.code, md, slot=slot)
         except (OSError, ValueError) as exc:
             queue.transition(task.task_id, "failed")
             record = next(t for t in queue.tasks if t.task_id == task.task_id)
@@ -385,8 +387,10 @@ class AgentLoop:
             kind="briefing_card",
             payload={
                 "task_id": task.task_id,
+                "kind": task.kind,
                 "code": task.code,
                 "date": date,
+                **({"session": slot} if slot else {}),
                 "path": str(card_path),
             },
         )

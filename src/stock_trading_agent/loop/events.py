@@ -18,7 +18,14 @@ NO_REPORT_WINDOW = ((17, 30), (18, 10))
 
 # 禁跑窗覆盖的 kind：写 signals.json 的全诊/批量类 + report 前缀 + 晨报复盘（收严向）
 REPORT_BLOCKING_KINDS = frozenset(
-    {"diagnose_full", "diagnose_quick", "batch_wave", "briefing_review"}
+    {
+        "diagnose_full",
+        "diagnose_quick",
+        "batch_wave",
+        "briefing_review",
+        "briefing_morning",
+        "briefing_evening",
+    }
 )
 
 

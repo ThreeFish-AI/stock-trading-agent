@@ -20,6 +20,8 @@ SUBMIT_KINDS: tuple[str, ...] = (
     "batch_wave",
     "paper_confirm",
     "briefing_review",
+    "briefing_morning",
+    "briefing_evening",
 )
 
 KindLiteral = Literal[
@@ -29,6 +31,8 @@ KindLiteral = Literal[
     "batch_wave",
     "paper_confirm",
     "briefing_review",
+    "briefing_morning",
+    "briefing_evening",
 ]
 
 
