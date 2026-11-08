@@ -243,6 +243,160 @@ def reports(request: Request) -> dict:
     return {"reports": out}
 
 
+# --- 模拟盘④（paper 视图 + 确认/驳回提交半边；写者=paper 引擎进程内直调，13-paper §⑥） ---
+
+
+def _paper_view(request: Request) -> dict:
+    from stock_trading_agent.paper import pending as paper_pending
+    from stock_trading_agent.paper.tplus1 import available_lots
+
+    layout = _layout(request)
+    portfolio = paper_ledger_load(layout.sim_portfolio_path)
+    pending_queue = paper_pending.load(layout.sim_pending_fills_path)
+    today = market_today()
+    positions = []
+    if portfolio is not None:
+        for pos in portfolio.positions:
+            frozen = pending_queue.frozen_sell_lots(pos.code)
+            sellable = (
+                available_lots(portfolio, pos.code, today, pending_sell_lots=frozen)
+                if pos.lots > 0
+                else 0
+            )
+            positions.append(
+                {
+                    **pos.model_dump(),
+                    "sellable_lots": sellable,  # 呈现态豁免：面板可显份额原值（13-paper §⑥）
+                    "market_value": pos.lots * pos.board_lot * (pos.last_price or 0.0),
+                }
+            )
+    return {
+        "exists": portfolio is not None,
+        "positions": positions,
+        "operations": ([op.model_dump() for op in portfolio.operations] if portfolio else []),
+        "equity_history": [e.model_dump() for e in portfolio.equity_history] if portfolio else [],
+        "corporate_actions": (
+            [c.model_dump() for c in portfolio.corporate_actions] if portfolio else []
+        ),
+        "pending": [
+            {k: v for k, v in vars(r).items() if k != "bar"} | {"bar_date": r.bar.date}
+            for r in pending_queue.requests
+        ],
+        "cash": portfolio.cash if portfolio else 0.0,
+        "budget": portfolio.budget if portfolio else 0.0,
+    }
+
+
+def paper_ledger_load(path):
+    from stock_trading_agent.paper import ledger as paper_ledger
+
+    return paper_ledger.load(path)
+
+
+@router.get("/paper/view")
+def paper_view(request: Request) -> dict:
+    return _paper_view(request)
+
+
+@router.post("/paper/confirm")
+def paper_confirm(payload: dict, request: Request) -> dict:
+    return _paper_decide(request, payload, action="confirm")
+
+
+@router.post("/paper/reject")
+def paper_reject(payload: dict, request: Request) -> dict:
+    return _paper_decide(request, payload, action="reject")
+
+
+def _paper_decide(request: Request, payload: dict, *, action: str) -> dict:
+    """确认/驳回（sim.lock 内 pending+portfolio 读-改-写；确认走 ledger.apply_fill 唯一入口）。"""
+    from stock_trading_agent.paper import ledger as paper_ledger
+    from stock_trading_agent.paper import pending as paper_pending
+    from stock_trading_agent.state.store import FileLock
+
+    request_id = str(payload.get("request_id") or "")
+    if not request_id:
+        raise HTTPException(status_code=422, detail="request_id 必填")
+    runtime = _runtime(request)
+    if runtime is None:
+        raise HTTPException(status_code=503, detail="运行时未挂载")
+    layout = _layout(request)
+    try:
+        with FileLock(layout.sim_lock):
+            queue = paper_pending.load(layout.sim_pending_fills_path)
+            if queue.find(request_id) is None:
+                raise HTTPException(status_code=404, detail=f"确认请求不存在：{request_id}")
+            queue = queue.confirm(request_id) if action == "confirm" else queue.reject(request_id)
+            if action == "confirm":
+                req = queue.confirmed(request_id)
+                portfolio = paper_ledger.load(layout.sim_portfolio_path)
+                # 确认闸=锁内串行+重载（先到先得：并发同额后到者被持仓不足拒，13-paper §③）；
+                # 在途卖出冻结（frozen_sell_lots）只进展示层 available_lots，不进确认闸
+                portfolio = paper_ledger.apply_fill(portfolio, req)
+                paper_ledger.persist(portfolio, layout.sim_portfolio_path)
+                runtime.loop.decisions.append(
+                    _now_iso(),
+                    "paper_fill_confirmed",
+                    {"request_id": request_id, "code": req.code, "leg": req.tranche_leg},
+                )
+            else:
+                runtime.loop.decisions.append(
+                    _now_iso(),
+                    "paper_fill_rejected",
+                    {"request_id": request_id, "code": queue.find(request_id).code},
+                )
+            from dataclasses import asdict
+
+            from stock_trading_agent.state.store import atomic_append_jsonl
+
+            if runtime.loop.decisions.lines:
+                atomic_append_jsonl(layout.decisions_path, asdict(runtime.loop.decisions.lines[-1]))
+            queue = queue.remove(request_id)
+            paper_pending.save(queue, layout.sim_pending_fills_path)
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:  # ConfirmError / LedgerError
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True, "request_id": request_id, "action": action}
+
+
+@router.post("/panel/paper/confirm")
+def panel_paper_confirm(request: Request, request_id: str = Form(...)) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_paper_fragment
+
+    payload = {"request_id": request_id}
+    resp = _paper_decide(request, payload, action="confirm")
+    return HTMLResponse(
+        render_paper_fragment(_paper_view(request), notice=f"已确认 {resp['request_id']}")
+    )
+
+
+@router.post("/panel/paper/reject")
+def panel_paper_reject(request: Request, request_id: str = Form(...)) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_paper_fragment
+
+    payload = {"request_id": request_id}
+    resp = _paper_decide(request, payload, action="reject")
+    return HTMLResponse(
+        render_paper_fragment(_paper_view(request), notice=f"已驳回 {resp['request_id']}")
+    )
+
+
+@router.get("/panel/paper")
+def panel_paper(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_paper_fragment
+
+    return HTMLResponse(render_paper_fragment(_paper_view(request)))
+
+
+def _now_iso() -> str:
+    import datetime as dt
+
+    return dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds")
+
+
 # --- 建议卡库（⑤：monitor/advice/ 只读投影 + 拒卡/降级通报区） ---
 
 

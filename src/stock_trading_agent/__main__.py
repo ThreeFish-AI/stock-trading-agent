@@ -474,6 +474,89 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("loop.advice.anchor_gate", advice_anchor_and_gate)
 
+    def paper_tplus1_and_band():
+        from stock_trading_agent.paper.fills import Bar
+        from stock_trading_agent.paper.ledger import open_position
+        from stock_trading_agent.paper.model import Operation, SimPortfolio
+        from stock_trading_agent.paper.rules import band_state, limit_band
+        from stock_trading_agent.paper.tplus1 import available_lots
+
+        band = limit_band(9.99)
+        assert band.upper == 10.98 and band.lower == 9.00  # 板价向内取整（E-09）
+        locked = Bar("d", 11.0, 11.0, 11.0, 11.0, prev_close=10.0)
+        assert band_state(locked, limit_band(10.0)) == "locked_up"  # 一字板
+
+        pf = SimPortfolio(budget=100_000, cash=100_000)
+        pf = open_position(pf, "600519", "A", [], entry_ref=10.0)
+        pf.position("600519").lots = 3
+        pf.operations = [
+            Operation(
+                code="600519",
+                side="buy",
+                lots=2,
+                price=10.0,
+                ts="2026-11-08T02:00:00+00:00",
+                trade_date="2026-11-08",
+            )
+        ]
+        assert available_lots(pf, "600519", "2026-11-08") == 1  # 当日买入扣减
+        assert available_lots(pf, "600519", "2026-11-09") == 3  # 日切清零
+
+    check_case("paper.tplus1_band", paper_tplus1_and_band)
+
+    def paper_tax_and_roundlot():
+        from stock_trading_agent.paper.corporate_actions import dividend_tax_rate
+        from stock_trading_agent.paper.rules import assert_round_lot
+
+        assert dividend_tax_rate(30) == 0.20 and dividend_tax_rate(31) == 0.10
+        assert dividend_tax_rate(365) == 0.10 and dividend_tax_rate(366) == 0.0
+        assert assert_round_lot(1) == 1
+        try:
+            assert_round_lot(0)
+            raise AssertionError("整手闸未拦截 0 手")
+        except ValueError:
+            pass
+
+    check_case("paper.tax_roundlot", paper_tax_and_roundlot)
+
+    def paper_equity_baseline():
+        from stock_trading_agent.paper.engine import mark_equity
+        from stock_trading_agent.paper.ledger import open_position
+        from stock_trading_agent.paper.model import SimPortfolio
+
+        pf = SimPortfolio(budget=100_000, cash=100_000)
+        pf = open_position(pf, "600519", "A", [], entry_ref=10.0)
+        pf.position("600519").lots = 2
+        pf = mark_equity(pf, "2026-11-08", {"600519": 10.5})
+        point = pf.equity_history[-1]
+        assert point.market_value == 2100 and point.equity == 102_100
+        assert point.nav == 1.021
+        assert pf.position("600519").last_price == 10.5
+
+    check_case("paper.equity_baseline", paper_equity_baseline)
+
+    def paper_pending_roundtrip():
+        import tempfile
+        from pathlib import Path
+
+        from stock_trading_agent.paper.confirm import request_from_fill
+        from stock_trading_agent.paper.fills import Fill
+        from stock_trading_agent.paper.pending import PendingQueue
+        from stock_trading_agent.paper.pending import load as pload
+        from stock_trading_agent.paper.pending import save as psave
+
+        fill = Fill(
+            code="600519", side="buy", lots=1, price=9.6, date="2026-11-08", tranche_leg="T2_limit"
+        )
+        req = request_from_fill(fill, request_id="s1", ref_price=9.6, ts="t")
+        path = Path(tempfile.mkdtemp()) / "sim-pending-fills.json"
+        psave(PendingQueue().enqueue(req), path)
+        loaded = pload(path)
+        assert loaded.requests[0].request_id == "s1" and loaded.requests[0].bar.date == "2026-11-08"
+        assert loaded.frozen_sell_lots("600519") == 0
+
+    check_case("paper.pending_roundtrip", paper_pending_roundtrip)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 

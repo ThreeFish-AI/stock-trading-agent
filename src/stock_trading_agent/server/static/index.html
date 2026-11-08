@@ -90,7 +90,12 @@
     </div>
   </section>
 
-  <section class="disabled"><h2>④ 模拟盘</h2><p>三批建仓持仓表、record_fill 逐笔确认队列、权益曲线（含费用与滑点）。</p></section>
+  <section>
+    <h2>④ 模拟盘</h2>
+    <div id="paper" hx-get="/api/panel/paper" hx-trigger="every 180s" hx-swap="outerHTML">
+      <p class="muted">加载中……</p>
+    </div>
+  </section>
   <section>
     <h2>⑤ 建议卡库</h2>
     <div id="advice" hx-get="/api/panel/advice" hx-trigger="every 180s" hx-swap="innerHTML">

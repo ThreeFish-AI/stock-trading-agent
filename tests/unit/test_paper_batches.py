@@ -159,15 +159,29 @@ class TestLedgerApply:
         assert pos.trailing_armed is True and pos.high_since_entry == 11.0
         path.unlink(missing_ok=True)
 
-    def _sell_req(self, ref: float, lots: int):
+    def _sell_req(self, ref: float, lots: int, *, next_day: bool = True):
+        """卖出请求（默认次日 bar：T+1 口径下当日买入不可卖，13-paper §③）。"""
         from dataclasses import replace
 
-        return replace(self.confirmed_req(), side="sell", ref_price=ref, lots=lots)
+        req = replace(self.confirmed_req(), side="sell", ref_price=ref, lots=lots)
+        if next_day:
+            date = "2026-11-08"  # 建仓 bar 2026-11-07 的次日
+            req = replace(
+                req,
+                bar=replace(req.bar, date=date),
+            )
+        return req
+
+    def test_same_day_sell_rejected_by_tplus1(self):
+        # T+1：当日买入不可卖（E-42/E-48）——0 可卖 < 1 手即拒
+        pf = apply_fill(self.portfolio(), self.confirmed_req())
+        with pytest.raises(LedgerError, match="可卖手数不足"):
+            apply_fill(pf, self._sell_req(ref=10.0, lots=1, next_day=False))
 
     def test_sell_fill_credits_cash_and_reduces_lots(self):
         pf = apply_fill(self.portfolio(), self.confirmed_req())  # 先建仓 1 手 @9.6
         cash_before = pf.cash
-        pf = apply_fill(pf, self._sell_req(ref=10.0, lots=1))
+        pf = apply_fill(pf, self._sell_req(ref=10.0, lots=1))  # 次日卖出（T+1 放行）
         pos = pf.position("600519")
         assert pos.lots == 0
         from stock_trading_agent.paper.fees import calc_fees

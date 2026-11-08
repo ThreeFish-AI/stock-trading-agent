@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.6] - 2026-11-08
+
+### Added
+
+- **paper 引擎全量 + 面板④点亮（M2 第二 PR；规约 [docs/specs/13-paper.md](docs/specs/13-paper.md) 建档）**。①**T+1**（`paper/tplus1.py`）：可卖=持仓−当日买入−在途卖出冻结（E-42/E-48），日切参数化零持久化；**确认闸语义裁定**=sim.lock 锁内串行+台账重载（先到先得，并发同额后到者被持仓不足拒——冻结只进展示层，避免同额双拒死锁）；ledger 卖出闸接入（文案保「可卖手数不足」子串）。②**A 股规则闸**（`paper/rules.py`，estimated）：涨跌停三态（板价最小变动单位向内取整/一字板不利向不成交/触及 clamp 进板——保守裁定登记升级位；主板 10% 常量位）、停牌三规则（禁买卖/不计收益 mark 沿用/复牌按实际开盘）、整手闸、HK 收盘复核唯一入口 `hk_close_review_match`（is_final 门：盘中零撮合，D8 定谳前，E-25/E-76）。③**公司行动**（`paper/corporate_actions.py`，estimated）：先送转（Decimal 重算+tranches 同除权+不足 1 股现金找零）后分红（FIFO 分档红利税 ≤30天20%/≤365天10%/>365天免），不产 Operation 行。④**日终引擎**（`paper/engine.py`）：evaluate_day（触价只产待确认请求不写回、GTC 到期收集、marks 收集）、mark_equity（权益曲线同日覆盖）、request_from_t2_event 容错适配。⑤**确认队列持久化**（`paper/pending.py`）：sim-pending-fills.json 根级（写者=paper 引擎，瞬态非 append-only）+sim.lock flock；worker 接线 t2_pending_fill 事件→入队+paper_pending_fill 决策（payload 零数量）。⑥**模型扩展键**（三件登记义务）：Operation.trade_date、Position.board_lot/last_price/last_price_date、SimPortfolio.equity_history/corporate_actions；Bar 扩 prev_close/suspended（match_* 语义零改动）；notional=lots×board_lot×price（A 股默认值数值不变，费用锚零破）。⑦**面板④**：/api/paper/view（持仓+可卖 T+1+市值+队列+权益）、/api/panel/paper fragment（NR-2 常驻条+T1/T2/T3 徽章+确认/驳回按钮+权益 sparkline 内联 SVG+假设性标注）、POST /api/paper/confirm|reject（404/422/409 契约）；NR-5 呈现态豁免裁定（面板可显份额原值，落盘卡仍降级脱敏）。测试 +33 例（309 passed 全绿）：T+1 矩阵/三态与一字板双向/停牌/整手/HK 闸/Decimal 精确值/税档边界 30/365/先送转后分红/引擎六链/队列往返/并发确认恰一笔落账（sim.lock）；T+1 破三条旧测试改写（同日→次日 bar）+新增当日卖拒用例；selftest 25 case（+4）。规约 13-paper.md §①–⑦ 建档（扩展键登记/三态保守裁定/确认闸语义/呈现态豁免/ESTIMATED 纪律）。
+
 ## [0.0.5] - 2026-11-08
 
 ### Added

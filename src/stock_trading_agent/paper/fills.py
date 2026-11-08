@@ -14,13 +14,20 @@ MIN_TICK = 0.01  # 默认 tick 穿越旋钮 ≥1 tick（E-04）；A 股最小变
 
 @dataclass(frozen=True)
 class Bar:
-    """一根 OHLC 日线（撮合的最小输入单元；时戳新鲜度门禁见 07/方案 §12 港股门禁）。"""
+    """一根 OHLC 日线（撮合的最小输入单元；时戳新鲜度门禁见 07/方案 §12 港股门禁）。
+
+    prev_close：涨跌停三态推导输入位（None=三态 gate 不激活，如 HK）；suspended：停牌位
+    （三规则：停牌禁买卖/不计收益——复牌按实际开盘价由下一根 bar.open 天然实现，E-26）。
+    扩位默认值向后兼容（既有调用点与测试零改动）。
+    """
 
     date: str
     open: float
     high: float
     low: float
     close: float
+    prev_close: float | None = None
+    suspended: bool = False
 
 
 @dataclass(frozen=True)
