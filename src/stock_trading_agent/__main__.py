@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -1199,6 +1200,54 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("server.panel.phase_lunch", phase_lunch_matrix)
 
+    def upgrade_gate_diff():
+        from stock_trading_agent.cc_client.upgrade_gate import (
+            Finding,
+            aggregate,
+            diff_snapshots,
+            scan_changelog,
+            snapshot_from_capture,
+        )
+
+        help_text = (
+            "Options:\n"
+            "  --permission-mode <mode>              Permission mode (choices:\n"
+            '                                        "acceptEdits", "dontAsk")\n'
+            "  --zz-example <x>                      Example non-watched\n"
+        )
+        base = snapshot_from_capture("2.1.319", "t", help_text)
+        broken = help_text.replace(
+            "  --zz-example <x>                      Example non-watched\n", ""
+        )
+        findings = diff_snapshots(base, snapshot_from_capture("2.1.320", "t", broken))
+        assert any(f.code == "flag_removed" for f in findings)  # 非在用消失=warn
+        assert aggregate([Finding("x", "fail", "y")]).verdict == "fail"
+        hits = scan_changelog(
+            "# C\n## 2.1.320\n- removed legacy flag\n## 2.1.319\n- stable\n",
+            "2.1.319",
+            "2.1.320",
+        )
+        assert any(f.code == "changelog_keyword" for f in hits)
+
+    check_case("cc_client.upgrade_gate.diff", upgrade_gate_diff)
+
+    def upgrade_gate_baseline_present():
+        import json as _json
+
+        gate_dir = Path(__file__).resolve().parents[2] / "ops" / "upgrade-gate"
+        pinned = _json.loads((gate_dir / "pinned.json").read_text(encoding="utf-8"))
+        ver = pinned["cli_version"]
+        assert (gate_dir / f"claude-{ver}.snapshot.json").exists(), f"基线快照缺席：{ver}"
+        from stock_trading_agent.cc_client.upgrade_gate import load_snapshot, watch_flags
+
+        snap = load_snapshot(gate_dir / f"claude-{ver}.snapshot.json")
+        # 防基线腐化：在用旗标除隐藏面（--max-turns 实测缺席）外必须在基线可见
+        hidden = {"--max-turns"}
+        missing = [f for f in watch_flags() - hidden if f not in snap.flags]
+        assert not missing, f"基线缺在用旗标：{missing}"
+
+    check_case("ops.upgrade-gate.baseline", upgrade_gate_baseline_present)
+
     return results
 
 
@@ -1213,6 +1262,138 @@ def _cmd_selftest(_args: argparse.Namespace) -> int:
         else f"\n{len(failed)} 项失败"
     )
     return 1 if failed else 0
+
+
+def _cmd_upgrade_gate(args: argparse.Namespace) -> int:
+    """升级门禁三件套（0.0.26，§② 裁定；仅真实通道、显式人工触发）。
+
+    流程见 docs/ops/upgrade-runbook.md。exit 契约：0=PASS · 1=FAIL/错误 · 2=WARN
+    （逐条人工核后 --ack-warn 复跑登记）。
+    """
+    import datetime as dt
+
+    from stock_trading_agent.cc_client.cli import HeadlessCLIClient, ProbeError
+    from stock_trading_agent.cc_client.upgrade_gate import (
+        Finding,
+        aggregate,
+        load_snapshot,
+        scan_changelog,
+        serialize_snapshot,
+        snapshot_from_capture,
+    )
+    from stock_trading_agent.state.store import atomic_write_text
+
+    gate_dir = (
+        Path(args.out).resolve()
+        if args.out
+        else Path(__file__).resolve().parents[2] / "ops" / "upgrade-gate"
+    )
+    client = HeadlessCLIClient()
+
+    if args.capture:
+        report = client.probe()
+        help_text = client.capture_help()
+        caps = client.probe(deep=True).capabilities if args.deep else None
+        snap = snapshot_from_capture(
+            report.cli_version.split()[0],  # "2.1.319 (Claude Code)" → "2.1.319"
+            dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            help_text,
+            capabilities=caps or None,
+        )
+        gate_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(
+            gate_dir / f"claude-{snap.cli_version}.snapshot.json", serialize_snapshot(snap)
+        )
+        atomic_write_text(gate_dir / f"claude-{snap.cli_version}.help.txt", help_text)
+        print(
+            f"快照已落 {gate_dir}/claude-{snap.cli_version}.snapshot.json（{len(snap.flags)} 旗标）"
+        )
+        return 0
+
+    baseline_ver = args.baseline
+    if not baseline_ver:
+        pinned = gate_dir / "pinned.json"
+        if not pinned.exists():
+            print(f"基线缺席：{pinned} 不存在——先 --capture 建基线或 --baseline <ver> 指定")
+            return 1
+        import json
+
+        baseline_ver = str(json.loads(pinned.read_text(encoding="utf-8"))["cli_version"])
+    baseline_path = gate_dir / f"claude-{baseline_ver}.snapshot.json"
+    if not baseline_path.exists():
+        print(f"基线快照缺席：{baseline_path}")
+        return 1
+    base = load_snapshot(baseline_path)
+
+    findings: list[Finding] = []
+    try:
+        report = client.probe()
+        cur = snapshot_from_capture(
+            report.cli_version.split()[0],
+            dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            client.capture_help(),
+            capabilities=client.probe(deep=True).capabilities if args.deep else None,
+        )
+    except ProbeError as exc:
+        verdict = aggregate([Finding("version_probe_failed", "fail", str(exc))])
+        _upgrade_gate_decide(base.cli_version, "unknown", verdict, args, findings)
+        print(f"FAIL  version_probe_failed  {exc}")
+        return 1
+    if not client.probe_enum_reject():
+        findings.append(
+            Finding("enum_probe_eaten", "fail", "非法枚举探针 exit 0——隐藏别名吃进（F-30）")
+        )
+    findings.extend(_diff_public(base, cur))
+    if args.changelog:
+        try:
+            text = Path(args.changelog).read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(Finding("changelog_unreadable", "warn", f"CHANGELOG 不可读：{exc}"))
+        else:
+            findings.extend(scan_changelog(text, base.cli_version, cur.cli_version))
+    verdict = aggregate(findings)
+    _upgrade_gate_decide(base.cli_version, cur.cli_version, verdict, args, findings)
+    for f in verdict.findings:
+        print(f"{f.severity.upper():4}  {f.code}  {f.detail}")
+    print(f"baseline {base.cli_version} → current {cur.cli_version}：{verdict.verdict.upper()}")
+    return {"pass": 0, "warn": 2, "fail": 1}[verdict.verdict]
+
+
+def _diff_public(base, cur):
+    """diff_snapshots 的延迟导入壳（避免模块级循环）。"""
+    from stock_trading_agent.cc_client.upgrade_gate import diff_snapshots
+
+    return diff_snapshots(base, cur)
+
+
+def _upgrade_gate_decide(baseline_ver: str, cur_ver: str, verdict, args, findings) -> None:
+    """upgrade_gate_run 决策留痕（payload 零敏感量，NR-5；断链不静默吞——打指引）。
+
+    坑位：DecisionLog.append 内部已持 decisions.lock——外层不得再包同路径 FileLock
+    （不同 fd 的 flock 不认进程内重入，自死锁至 LockTimeout）。
+    """
+    import datetime as dt
+
+    from stock_trading_agent.state.decisions import DecisionChainError, DecisionLog
+    from stock_trading_agent.state.paths import StateLayout
+
+    layout = StateLayout.from_env()
+    try:
+        DecisionLog().append(
+            dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            "upgrade_gate_run",
+            {
+                "baseline_version": baseline_ver,
+                "current_version": cur_ver,
+                "verdict": verdict.verdict,
+                "codes": [f.code for f in findings],
+                "ack": bool(args.ack_warn),
+                "deep": bool(args.deep),
+            },
+            path=layout.decisions_path,
+        )
+    except DecisionChainError as exc:
+        print(f"决策链断裂，结果照常输出但不落决策——先跑 repair-decisions：{exc}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1245,6 +1426,27 @@ def main(argv: list[str] | None = None) -> int:
         help="六桶状态归档（queue/sessions/audit/runs/budget/decisions；默认 dry-run）",
     )
     archive_p.add_argument("--apply", action="store_true", help="执行归档（默认只打印计划）")
+    gate_p = sub.add_parser(
+        "upgrade-gate",
+        help="CLI 升级门禁三件套（--version/--help 快照 diff/非法枚举探针；exit 0/1/2）",
+    )
+    gate_p.add_argument(
+        "--baseline", default=None, help="基线版本（缺省读 ops/upgrade-gate/pinned.json）"
+    )
+    gate_p.add_argument(
+        "--deep", action="store_true", help="追加 deep 探针采 capabilities（真实花钱）"
+    )
+    gate_p.add_argument(
+        "--changelog",
+        default=None,
+        help="CHANGELOG 文件路径（ops/upgrade_changelog.py 拉取后喂入）",
+    )
+    gate_p.add_argument("--ack-warn", action="store_true", help="WARN 已逐条人工核过后复跑登记")
+    gate_p.add_argument("--json", action="store_true", help="JSON 输出（预留）")
+    gate_p.add_argument("--capture", action="store_true", help="采现行快照落盘（不 diff）")
+    gate_p.add_argument(
+        "--out", default=None, help="快照目录（缺省仓内 ops/upgrade-gate/；测试注入用）"
+    )
     sub.add_parser("selftest", help="聚合纯函数回归（与 pytest 同源判据）")
     args = parser.parse_args(argv)
     handlers = {
@@ -1253,6 +1455,7 @@ def main(argv: list[str] | None = None) -> int:
         "probe": _cmd_probe,
         "repair-decisions": _cmd_repair_decisions,
         "archive-state": _cmd_archive_state,
+        "upgrade-gate": _cmd_upgrade_gate,
         "selftest": _cmd_selftest,
     }
     return handlers[args.command](args)

@@ -49,5 +49,6 @@
 | src/stock_trading_agent/budget/ | 预算闸（默认关，订阅/计费双形态） |
 | src/stock_trading_agent/server/ | FastAPI 面板（只读态 + 提交半边 + monitor 投影 + htmx fragment） |
 | ops/launchd/ | 第四槽 LaunchAgent 模板（KeepAlive=true 常驻自愈（0.0.4 实测裁定）+ AbandonProcessGroup，安装见 docs/ops/launchd.md） |
+| ops/upgrade-gate/ | CLI 升级门禁基线（pinned.json 钉版本 + 快照族；三件套与回滚 runbook 见 docs/ops/upgrade-runbook.md） |
 | ops/state_probe.py | 状态根只读巡检（G2：三源分列体量 + 触发判据 T1/T3 状态，决策记录 §4 数据源） |
 | tests/ | unit（纯函数）+ integration（tmp 状态目录、红线扫描机器门、fake claude 真实通道族） |

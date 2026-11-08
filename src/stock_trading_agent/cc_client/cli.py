@@ -347,6 +347,68 @@ class HeadlessCLIClient:
             raise ProbeError(f"--version 非零退出（{proc.returncode}）")
         return first[0].strip()
 
+    # --- 升级门禁通道件（0.0.26，§② 升级门禁裁定；与 probe 职责边界：本件只服务 upgrade-gate） ---
+
+    def capture_help(self) -> str:
+        """spawn `--help` 取全文（升级门禁快照源）。COLUMNS 钉 100——描述换行随终端宽度漂移。"""
+        _real_spawn_gate()
+        return _run_sync(self._capture_help())
+
+    async def _capture_help(self) -> str:
+        env = dict(sanitize_env(self._env))
+        env["COLUMNS"] = "100"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                self._cli_bin,
+                "--help",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+        except FileNotFoundError as exc:
+            raise ProbeError(f"claude CLI 不在 PATH：{self._cli_bin}") from exc
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=PROBE_TIMEOUT_S)
+        except TimeoutError:
+            proc.kill()
+            raise ProbeError("--help 超时") from None
+        if proc.returncode != 0 or not stdout:
+            raise ProbeError(f"--help 非零退出或空输出（{proc.returncode}）")
+        return stdout.decode("utf-8", errors="replace")
+
+    def probe_enum_reject(
+        self, flag: str = "--permission-mode", value: str = "__sta_invalid__"
+    ) -> bool:
+        """非法枚举探针（F-30 补位）：非法值应非零快退；exit 0 = 隐藏别名吃进 → False。
+
+        实测（2.1.319）：`--permission-mode __sta_invalid__ --version` exit 1 秒拒零成本；
+        --version 短路使探针不触会话。
+        """
+        _real_spawn_gate()
+        return _run_sync(self._probe_enum_reject(flag, value))
+
+    async def _probe_enum_reject(self, flag: str, value: str) -> bool:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                self._cli_bin,
+                flag,
+                value,
+                "--version",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=sanitize_env(self._env),
+            )
+        except FileNotFoundError as exc:
+            raise ProbeError(f"claude CLI 不在 PATH：{self._cli_bin}") from exc
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=PROBE_TIMEOUT_S)
+        except TimeoutError:
+            proc.kill()
+            return False  # 挂起视同未拒（保守）
+        return proc.returncode != 0
+
 
 def _detect_auth_mode(env: Mapping[str, str], credentials_path: Path) -> str:
     """认证态启发式（F-31/D2；判不准一律按 api 收紧）。

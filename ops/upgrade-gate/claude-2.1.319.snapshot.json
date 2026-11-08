@@ -1,0 +1,355 @@
+{
+ "capabilities": null,
+ "captured_at": "2026-11-08T15:34:15+00:00",
+ "cli_version": "2.1.319",
+ "commands": [
+  "agents",
+  "attach",
+  "auth",
+  "auto-mode",
+  "doctor",
+  "gateway",
+  "import",
+  "install",
+  "logs",
+  "mcp",
+  "plugin|plugins",
+  "purge",
+  "respawn",
+  "rm",
+  "setup-token",
+  "stop|kill",
+  "ultrareview",
+  "update|upgrade"
+ ],
+ "flags": {
+  "--add-dir": {
+   "aliases": [],
+   "choices": [],
+   "value": "<directories...>"
+  },
+  "--agent": {
+   "aliases": [],
+   "choices": [],
+   "value": "<agent>"
+  },
+  "--agents": {
+   "aliases": [],
+   "choices": [],
+   "value": "<json-or-file>"
+  },
+  "--allow-dangerously-skip-permissions": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--allowedTools": {
+   "aliases": [
+    "--allowed-tools"
+   ],
+   "choices": [],
+   "value": "<tools...>"
+  },
+  "--append-system-prompt": {
+   "aliases": [],
+   "choices": [],
+   "value": "<prompt>"
+  },
+  "--autocompact": {
+   "aliases": [],
+   "choices": [],
+   "value": "<auto|tokens>"
+  },
+  "--ax-screen-reader": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--bare": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--betas": {
+   "aliases": [],
+   "choices": [],
+   "value": "<betas...>"
+  },
+  "--bg": {
+   "aliases": [
+    "--background"
+   ],
+   "choices": [],
+   "value": null
+  },
+  "--brief": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--chrome": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--cloud": {
+   "aliases": [],
+   "choices": [],
+   "value": "[description|session_id|url]"
+  },
+  "--dangerously-skip-permissions": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--debug-file": {
+   "aliases": [],
+   "choices": [],
+   "value": "<path>"
+  },
+  "--desktop": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--disable-slash-commands": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--disallowedTools": {
+   "aliases": [
+    "--disallowed-tools"
+   ],
+   "choices": [],
+   "value": "<tools...>"
+  },
+  "--effort": {
+   "aliases": [],
+   "choices": [],
+   "value": "<level>"
+  },
+  "--environment": {
+   "aliases": [],
+   "choices": [],
+   "value": "<environment_id>"
+  },
+  "--exclude-dynamic-system-prompt-sections": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--fallback-model": {
+   "aliases": [],
+   "choices": [],
+   "value": "<model>"
+  },
+  "--file": {
+   "aliases": [],
+   "choices": [],
+   "value": "<specs...>"
+  },
+  "--fork-session": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--forward-subagent-text": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--from-pr": {
+   "aliases": [],
+   "choices": [],
+   "value": "[value]"
+  },
+  "--ide": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--include-hook-events": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--include-partial-messages": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--input-format": {
+   "aliases": [],
+   "choices": [
+    "text",
+    "stream-json"
+   ],
+   "value": "<format>"
+  },
+  "--json-schema": {
+   "aliases": [],
+   "choices": [],
+   "value": "<schema>"
+  },
+  "--max-budget-usd": {
+   "aliases": [],
+   "choices": [],
+   "value": "<amount>"
+  },
+  "--mcp-config": {
+   "aliases": [],
+   "choices": [],
+   "value": "<configs...>"
+  },
+  "--model": {
+   "aliases": [],
+   "choices": [],
+   "value": "<model>"
+  },
+  "--no-chrome": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--no-session-persistence": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--output-format": {
+   "aliases": [],
+   "choices": [
+    "text",
+    "json",
+    "stream-json"
+   ],
+   "value": "<format>"
+  },
+  "--permission-mode": {
+   "aliases": [],
+   "choices": [
+    "acceptEdits",
+    "auto",
+    "bypassPermissions",
+    "manual",
+    "dontAsk",
+    "plan"
+   ],
+   "value": "<mode>"
+  },
+  "--permission-prompts": {
+   "aliases": [],
+   "choices": [
+    "host",
+    "none",
+    "host"
+   ],
+   "value": "<target>"
+  },
+  "--plugin-dir": {
+   "aliases": [],
+   "choices": [],
+   "value": "<path>"
+  },
+  "--plugin-url": {
+   "aliases": [],
+   "choices": [],
+   "value": "<url>"
+  },
+  "--prompt-suggestions": {
+   "aliases": [],
+   "choices": [
+    "true",
+    "false",
+    "1",
+    "0",
+    "yes",
+    "no",
+    "on",
+    "off",
+    "true"
+   ],
+   "value": "[value]"
+  },
+  "--remote-control": {
+   "aliases": [],
+   "choices": [],
+   "value": "[name]"
+  },
+  "--remote-control-session-name-prefix": {
+   "aliases": [],
+   "choices": [],
+   "value": "<prefix>"
+  },
+  "--replay-user-messages": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--restricted": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--safe-mode": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--session-id": {
+   "aliases": [],
+   "choices": [],
+   "value": "<uuid>"
+  },
+  "--setting-sources": {
+   "aliases": [],
+   "choices": [],
+   "value": "<sources>"
+  },
+  "--settings": {
+   "aliases": [],
+   "choices": [],
+   "value": "<file-or-json>"
+  },
+  "--strict-mcp-config": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--system-prompt": {
+   "aliases": [],
+   "choices": [],
+   "value": "<prompt>"
+  },
+  "--system-prompt-snapshot": {
+   "aliases": [],
+   "choices": [
+    "on",
+    "off"
+   ],
+   "value": "<on|off>"
+  },
+  "--teleport": {
+   "aliases": [],
+   "choices": [],
+   "value": "[session]"
+  },
+  "--tmux": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  },
+  "--tools": {
+   "aliases": [],
+   "choices": [],
+   "value": "<tools...>"
+  },
+  "--verbose": {
+   "aliases": [],
+   "choices": [],
+   "value": null
+  }
+ },
+ "help_sha256": "5ca3a9dac2026e56c221fdd34380c7d7d45ebbb51c1d01b7c17c75cb076a0be8"
+}

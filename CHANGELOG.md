@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.26] - 2026-11-08
+
+### Added
+
+- **升级门禁三件套 + versions/ 回滚（§⑮ 唯一「顺延」项提前清偿；§② 新增裁定节；R-03 缓解主体闭合）**。①**四层拆分**：纯函数 `cc_client/upgrade_gate.py`（--help 解析/watched diff/CHANGELOG 窗口扫描/聚合）+ 通道层 `cli.capture_help()/probe_enum_reject()` + CLI 子命令 `stock-trading-agent upgrade-gate`（exit 契约 0=PASS/1=FAIL/2=WARN，--ack-warn 登记人工已核）+ 网络层 `ops/upgrade_changelog.py`（stdlib urllib，**网络面只落 ops/**，src/ 零网络纪律不动）。②**watched 旗标面从 build_argv 派生**（非手抄，与 argv_snapshot selftest 同源）；diff 分级判据只收严：FAIL=在用旗标消失/choices 收窄/非法枚举吃进（F-30 探针：`--permission-mode __sta_invalid__ --version` 实测 exit 1 秒拒零成本）/--version 探针失败；WARN=非在用消失·改名/capabilities 消失/CHANGELOG 关键词；INFO=新增·指纹变化·隐藏旗标。③**坑位实证**：`--max-turns` 属隐藏旗标（--help 不可见但在用）——diff 只比基线可见面、隐藏态 INFO 登记；--help 描述换行随终端宽度漂移——capture 钉 COLUMNS=100、diff 不比描述原文。④**versions/ 回滚定谳**：`~/.local/share/claude/versions/` 多版本共存（实测 2.1.294/310/319）+ 软链重指；仓侧 `ops/upgrade-gate/pinned.json` + 基线快照族入库（真机 2.1.319 首基线：58 旗标）；selftest 钉基线不腐化。⑤**决策留痕** `upgrade_gate_run`（payload 零敏感量；真机自检 PASS 已落生产链）；坑位：append 内部已持 decisions.lock，外层再包同路径 FileLock 自死锁（已修）。⑥**runbook** docs/ops/upgrade-runbook.md（升级前盘点回滚位→自检→install→三件套→capture 入库→kickstart；FAIL→回滚双路径）。测试 +22 例（unit 17+integration 5）、selftest 47→49。
+
 ## [0.0.25] - 2026-11-08
 
 ### Added
