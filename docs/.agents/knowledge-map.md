@@ -15,5 +15,7 @@
 | [docs/ops/launchd.md](../ops/launchd.md) | launchd 第四槽安装与运维（面板守护；三槽并存收编不替代） | 贡献者 |
 | [docs/ops/trading-day-verify.md](../ops/trading-day-verify.md) | 交易日验证运维：D8 定谳流程与 T2 出卡真跑手册 | 贡献者 / Agent |
 | [docs/ops/tauri-gate-review.md](../ops/tauri-gate-review.md) | Tauri 桌面壳门口评审记录（结论：不做） | 贡献者 |
+| [docs/ops/bg-session-eval.md](../ops/bg-session-eval.md) | --bg 会话族评估（结论：不引入） | 贡献者 |
+| [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md) | Agent SDK 对照实验记录（脚本待触发） | 贡献者 |
 | [vibe-stock（外仓）](https://github.com/ThreeFish-AI/vibe-stock) | 机制 SSOT：诊股 Skill（SKILL.md + references/01–11 + strategies/ + scripts/ + batch/），本产品经 `~/.claude/skills/vibe-stock` 软链使用 | 贡献者 / Agent |
 | [issue.md](issue.md) | Issue 处理档案（头部索引 + 详情锚点） | 贡献者 / Agent |

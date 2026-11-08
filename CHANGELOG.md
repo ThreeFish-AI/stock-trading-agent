@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.10] - 2026-11-08
+
+### Added
+
+- **M3 收口（PR-H；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑪）**。①**崩溃重放（R5）**：`plan_replays` 纯函数（判据与 IO 分离）——monitor 源 running 残留重放（monitor_review 另需 l2_enabled 双保险；t1_refresh 无条件；panel/cli 维持 abandoned）；**防自旋=队列派生判据**（同 dedup_key ≥2 实体即 replay_cap，零新状态位）；决策 kind task_requeued/task_replay_skipped；重放任务消费期仍过全闸。②**--bg 评估（D-63）**：[docs/ops/bg-session-eval.md](docs/ops/bg-session-eval.md) 结论不引入（D-06 稳定性反证+现形态覆盖+成本收益未证），触发再评条件留档。③**SDK 对照脚本（D6，R7）**：`ops/d6_sdk_compare.py`（--real+STA_ALLOW_REAL_CC 双门、cli_path 钉同二进制、preset/setting_sources 对齐）+[docs/ops/d6-sdk-comparison.md](docs/ops/d6-sdk-comparison.md) 记录模板；本轮不真跑（待用户触发）。测试 +5 例（360 passed 全绿）：重放五象限（重放/帽/关闸跳过/panel 仅 abandoned/t1 无条件）。M3 全量收口（L2 核心 0.0.9 + 本 PR）。
+
 ## [0.0.9] - 2026-11-08
 
 ### Added

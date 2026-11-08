@@ -96,3 +96,9 @@
 - **预算分桶（修两实 bug）**：`record_dual_axis` 增 `daily{day:{usd,tasks}}`/`monthly{month:{usd}}`（旧全期键保留兼容面板；旧 ledger 零迁移）；`_budget_precheck` 改读当日/当月桶（market_today 钟面）——旧月闸空转（读从不写的 month_cost_usd_equiv）、tasks 全期计数两 bug 修复。D2 语义不动（subscription 仅次数闸+记账）。
 - **防御件实用集**：①泄漏巡检（D-08）：启动+每小时扫 `pgrep -fl 'claude.*-p'` 差集 live_pids，孤儿记 `cc_orphan_detected`（log-only，kill 留 opt-in）；②`--setting-sources project` 无条件加（D-52：143s→2s；cwd 空目录=空集；不适用依赖 user settings 凭证注入的宿主——登记）；③permission_denials 解析入 CCResult + task_done 决策 payload（F-28 审计消费）。
 - **升级位（只登记不实施）**：D-72 waitingFor 轮询（触发：L2 开启后观测挂起会话实锤）；F-56 PreToolUse hook deny（触发：需宿主侧零例外强制时）。
+
+## ⑪ 崩溃重放与实验裁定（0.0.10 落地）
+
+- **R5 重放策略**：启动期 running 残留全部先 abandoned（WAL 语义不变+task_abandoned 决策照记）；monitor 源残留按计划重放——判据纯函数 `plan_replays`（判据与 IO 分离）：monitor_review 另要求当下 l2_enabled（关则 `task_replay_skipped(l2_disabled)`，与消费期闸双保险）；**防自旋=队列派生判据**（同 dedup_key 实体数 ≥2 即 replay_cap——重放任务若再崩成 abandoned，count=3 仍 >2 拦截，同键至多两个实体任务，零新状态位）；t1_refresh（零 LLM）无条件重放；panel/cli 源维持 abandoned（M1 语义）。决策 kind 族：task_requeued / task_replay_skipped{reason_code}。重放≠保证执行——新任务消费期仍过全闸。
+- **--bg 评估（D-63，文档性判定）**：结论不引入——依据 D-06 稳定性反证（一次性+resume 比长驻管道稳，两个 open issue 属同一会话族状态面）、现形态已覆盖保活（超时状态机+AbandonProcessGroup+R5 重放）、成本收益未证（L2 事件频率远未触达冷启动瓶颈）；触发再评条件见 [docs/ops/bg-session-eval.md](../ops/bg-session-eval.md)。
+- **SDK 对照（D6，R7 只交脚本+模板不真跑）**：`ops/d6_sdk_compare.py`（--real 旗标+STA_ALLOW_REAL_CC 环境门；cli_path 钉同二进制+preset 对齐+setting_sources=[]，D-16/D-17）；记录模板 [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md) 初始行「未跑，待用户触发」。
