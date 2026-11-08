@@ -455,15 +455,41 @@ def panel_navcard(request: Request) -> HTMLResponse:
 def panel_syscard(request: Request) -> HTMLResponse:
     from stock_trading_agent.server.panel import render_syscard
 
-    return HTMLResponse(render_syscard(monitor_status(request), sessions(request), queue(request)))
+    return HTMLResponse(
+        render_syscard(
+            monitor_status(request), sessions(request), queue(request), l2_state(request)
+        )
+    )
 
 
 @router.get("/panel/overview")
 def panel_overview(request: Request) -> HTMLResponse:
+    """①事件流卡体 + hero 计数带 oob 下发（ov-sub/ov-ev-count/ov-todo-count）。
+
+    #ov-events 消费主体（innerHTML）；三个 oob 元素在响应顶层，htmx 对任意 swap 均处理 oob。
+    """
+    import html as _html
+
     from stock_trading_agent.server.panel import render_event_feed
+    from stock_trading_agent.server.panel_data import market_phase
 
     payload = _monitor_events_payload(request, date=None, tail=50)
-    return HTMLResponse(render_event_feed(payload))
+    events = payload.get("events") or []
+    downgraded = sum(1 for ev in events if ev.get("mech_risk"))
+    todo_items = todos(request).get("todos") or []
+    phase = market_phase()
+    sub = (
+        f"{phase.get('label', '')} · 事件 {len(events)} 条"
+        + (f"（{downgraded} 条降档高亮）" if downgraded else "")
+        + f" · 待办 {len(todo_items)} 项"
+    )
+    body = render_event_feed(payload)
+    return HTMLResponse(
+        body
+        + f'<div id="ov-sub" hx-swap-oob="true" class="sub">{_html.escape(sub)}</div>'
+        + f'<span id="ov-ev-count" hx-swap-oob="true" class="cm">{len(events)} 条</span>'
+        + f'<span id="ov-todo-count" hx-swap-oob="true" class="cm">{len(todo_items)} 项</span>'
+    )
 
 
 @router.get("/panel/mometa")
@@ -650,7 +676,6 @@ def panel_briefing(request: Request) -> HTMLResponse:
 
 
 def _briefing_payload(request: Request) -> dict:
-
     from stock_trading_agent.loop.briefing import has_ack
     from stock_trading_agent.loop.monitor_events import market_today
 
@@ -669,7 +694,19 @@ def _briefing_payload(request: Request) -> dict:
                     "md": card_path.read_text(encoding="utf-8"),
                 }
             )
-    return {"date": day, "cards": cards}
+    # 关键价位 kchip（①晨报区）：signals key_levels 透传——止损恒显、买点/MA20 有键才显
+    from stock_trading_agent.server.panel_data import load_root_json
+
+    key_levels: dict[str, dict] = {}
+    entries = load_root_json(layout.root / "signals.json")
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("code"):
+                levels = entry.get("key_levels") or {}
+                key_levels[str(entry["code"])] = {
+                    k: levels.get(k) for k in ("stop", "buy", "ma20") if levels.get(k) is not None
+                }
+    return {"date": day, "cards": cards, "key_levels": key_levels}
 
 
 @router.post("/panel/briefing/ack")
@@ -722,7 +759,8 @@ def _paper_view(request: Request) -> dict:
                     "market_value": pos.lots * pos.board_lot * (pos.last_price or 0.0),
                 }
             )
-    from stock_trading_agent.server.stats import perf_summary
+    from stock_trading_agent.server.panel_data import load_name_map
+    from stock_trading_agent.server.stats import paper_totals, perf_summary
 
     return {
         "exists": portfolio is not None,
@@ -735,6 +773,12 @@ def _paper_view(request: Request) -> dict:
             else None
         ),
         "positions": positions,
+        "names": load_name_map(layout),
+        "totals": paper_totals(
+            positions,
+            portfolio.cash if portfolio else 0.0,
+            portfolio.budget if portfolio else 0.0,
+        ),
         "operations": ([op.model_dump() for op in portfolio.operations] if portfolio else []),
         "equity_history": [e.model_dump() for e in portfolio.equity_history] if portfolio else [],
         "corporate_actions": (
@@ -1012,12 +1056,29 @@ def panel_submit(request: Request, kind: str = Form(...), code: str = Form(...))
 
 @router.get("/panel/events")
 def panel_events(request: Request) -> HTMLResponse:
-    return HTMLResponse(render_events_table(_monitor_events_payload(request, date=None, tail=50)))
+    """③事件表 fragment：注入名称链与当日建议卡 stem 集（详情按钮联动的数据前置）。"""
+    from stock_trading_agent.server.panel_data import load_name_map
+
+    payload = _monitor_events_payload(request, date=None, tail=50)
+    payload["names"] = load_name_map(_layout(request))
+    advice_dir = _layout(request).advice_dir / str(payload.get("date") or "")
+    payload["advice_codes"] = (
+        sorted(p.stem for p in advice_dir.glob("*.md")) if advice_dir.exists() else []
+    )
+    return HTMLResponse(render_events_table(payload))
 
 
 @router.get("/panel/audit")
 def panel_audit(request: Request) -> HTMLResponse:
     return HTMLResponse(render_audit(decisions(request, tail=20), budget(request)))
+
+
+@router.get("/panel/sessions")
+def panel_sessions(request: Request) -> HTMLResponse:
+    """⑦会话登记表（审计三件套 sessions 腿呈现，0.0.16）。"""
+    from stock_trading_agent.server.panel import render_sessions_table
+
+    return HTMLResponse(render_sessions_table(sessions(request)))
 
 
 @router.get("/panel/task/{task_id}")

@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.16] - 2026-11-08
+
+### Added
+
+- **面板呈现层欠账清偿 + 全量勘误登记（21-agent 对抗调研确认 17 条 gap 中呈现层批；规约 [12-orchestration.md](docs/specs/12-orchestration.md) §⑫ 勘误注 + 新建 §⑮ 悬空项登记表）**。①**③事件表 facts 消费**：render_events_table 重写为原型列集（时间/股票 code+名称/事件/现价/距线/级别/mech_risk riskchip/复核短语/操作），距线=price/level−1 带 breach（≤0）/near（≤3%）判据（与①信号卡同源）；handler 注入名称链与当日建议卡 stem 集；③⑤「详情」按钮 hx-get advice-detail 分别填充 #advice-detail/#advice-detail-2（渲染器 0.0.11 已在场、入口零存在——本 PR 接通）；③通知卡补「锁屏不保证送达」边界句（方案 §1 承诺）。②**④原型六件补落地**：持仓名称列、状态 pill 修失配（st-open 建仓中/st-hold 持有/st-close 已清仓 + .d 圆点，与②任务表分立）、建仓批 .leg 形态、盈亏 pf/nf 红涨绿跌、建仓中 tr.open 高亮、表尾汇总条（新 `stats.paper_totals`：总市值/现金/总资产/净值，删旧 muted 重复行）、坐标轴版权益曲线 `_axis_equity_svg`（NAV 网格线+刻度+末点标签，<2 点空态；①页 sparkline 不动）。③**①页三死 id 接活**：/api/panel/overview 响应改 oob 组装（#ov-events 卡体 innerHTML + ov-sub「盘态 · 事件 N 条（M 条降档高亮）· 待办 K 项」+ ov-ev-count/ov-todo-count 计数 chip，htmx 对任意 swap 处理响应内 oob）；晨报关键价位 kchip（signals key_levels 透传：止损恒显、买点/MA20 有键才显——不解析 briefing md 防第二事实源）；CC 行探针时刻（l2_state.updated_at）。④**⑥T+1 复核命中率小卡**（payload.t1_review 四键 0.0.11 已通、fragment 现补渲染）。⑤**⑦会话登记表**：GET /api/panel/sessions + render_sessions_table（ts/uuid/task_id/tokens/等效 USD/转录路径，colgroup 固定列宽+单行省略+title 悬浮，三件套互查 sessions 腿）+ index.html ⑦ sessions 卡。⑥**勘误批**：0.0.13「§⑫ 升级位全部翻绿收官」勘误（午休分态/现价源未翻绿，仍为升级位）；0.0.11/13-paper §⑥ 虚报件以本 PR 补落地闭合（13-paper §⑥ 同步勘误）；README/AGENTS/knowledge-map/docs specs README 指针刷新（AGENTS KeepAlive 记载改实测裁定 KeepAlive=true；specs 行改不枚举版本防再陈旧）；删除死码 render_overview（零调用）。⑦**§⑮ 悬空项登记表**：早晚分卡+briefing 自动化顺延、现价源/午休分态/F-57/caffeinate/budget 写半边/sim hash 链/导出按钮等待裁定、key_levels 扩键/校准分桶表/D5 机制侧阻塞——消灭「既未落地也未登记」态。测试 +10 例（436 passed 全绿）：③facts 列与详情联动/锁屏句、④六件+paper_totals 手算锚+现金恰现一次去重断言、①三个 oob id+降档计数/kchip 条件呈现/syscard probe、⑥t1_review 卡、⑦sessions 表+title+au-sessions 骨架；selftest 33→34 case（panel.paper_totals）。**与 PR #19（ThreeFish-AI/ui-b-content）范围重叠声明**：本 PR 已含其「绩效三格/⑤卡详情/⑥命中率」超集项（带测试），#19 重排时建议瘦身至独有项（全中文列头全表化/表格三规范/⑦链校验呈现）。
+
 ## [0.0.15] - 2026-11-08
 
 ### Fixed

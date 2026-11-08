@@ -120,6 +120,7 @@
 - **纯函数落点**：`server/panel_data.py`（market_phase 连续窗简化午休并入盘中——升级位/build_name_map 无名称源硬缺省 mono code——升级位/signals_snapshot 非法词呈现降级/derive_todos/briefing_action_items/薄读取器）；`stats.perf_summary`（Sharpe 日频年化/maxDD/胜率 FIFO，<30 insufficient）与 `t1_review_hitrate`（vs ledger.agent.json）；`loop/advice.parse_trend_table`（σ√h 表 round-trip 反解，与 render 同模块）；`stream_hub` 增 signals/reports 事件名。
 - **轻量版过渡清单**（升级位）：②五段流水线/双轨意见板/裁决卡（P2 会话中间产物架构，另轮）、③通知预览（P2 通知台账）、①事件日历预告（c 类数据源）、股票名称源、现价源、午休分态。
 - **0.0.12 翻绿三项**：①名称源回退链落地（`panel_data.load_name_map`：names.json 主源→signals stock_name→universe name 三源合并；产品仓只读，signals 表接名称列）；②事件日历（`aggregate_calendar`：T1 workdir+会话 workdir 的 evidence forecast.next_disclosure/unlock.upcoming/notices.items 聚合，`/api/calendar` 端点，①页中栏 kchip 渲染）；③通知预览历史重放（`rebuild_notifications`：watch.out.log notify 行（终态原文优先）+events notify=true 行双源，`/api/notifications` 端点，③页 macOS 通知样式卡+红线 7 说明——产品仓永不发通知）。港股 forecast/unlock 块 not_supported 如实空。
+- **勘误（0.0.16）**：0.0.13 CHANGELOG「§⑫ 升级位全部翻绿收官」不实——**午休分态与现价源两项未翻绿、仍为升级位**（§⑫ L112-113 原文为准）；0.0.13 实际翻绿的仅 §⑫ 清单中的②五段流水线/双轨意见板/裁决卡一项。0.0.16 另补落地 0.0.11 虚报件：③事件表 facts 消费（现价/距线/mech_risk/名称列+breach/near 判据）、③⑤建议卡详情联动（advice-detail 渲染器接 hx-get 入口）、④表尾汇总条（`stats.paper_totals`）+坐标轴版权益曲线（`_axis_equity_svg`）+持仓名称列+盈亏红涨绿跌+建仓中高亮+状态 pill（st-open/st-hold/st-close 中文标签）、①hero 计数带 oob 接线（ov-sub/ov-ev-count/ov-todo-count）+晨报关键价位 kchip（signals key_levels 透传：止损恒显、买点/MA20 有键才显）+CC 行探针时刻、⑥T+1 复核命中率小卡（数据链 0.0.11 已通）、⑦会话登记表（`/api/panel/sessions`+render_sessions_table，三件套互查 sessions 腿）、③通知卡「锁屏不保证送达」边界句（方案 §1）；删除死码 render_overview（零调用）。
 
 ## ⑬ 会话观测裁定（0.0.13 落地，P2 §⑫ 升级位翻绿收官）
 
@@ -134,3 +135,26 @@
 - **htmx swap 契约（0.0.14 落地）**：**交换策略统一 innerHTML、挂点常驻壳层为 SSOT**——fragment 根不自带挂点 id；唯一安全例外是自轮询任务卡（outerHTML 自替换且根带 id，0.0.13）。提交类按钮 target 必须指向壳层既有容器（③复核→`#advice-detail`、briefing ack→`#ov-brief`、L2/paper→自身容器 innerHTML）。
 - **报告文件名白名单（0.0.14 落地）**：`(?:\d{4}-\d{2}-\d{2}|index)\.md`——index 为固定字面量不扩大攻击面，目录正则与 resolve 边界两道保险不动。
 - **后续三 PR 升级位**：0.0.15（列头全中文裁定：术语/机器值保留英文原词 + colgroup 固定列宽/跨表同宽/单行省略+title Tooltip/空值 — 占位 + ④绩效三格与⑥T+1 命中率已算未渲补齐 + ⑦链校验呈现 + ⑤卡详情链接接通）；0.0.16（首屏 load 触发——**裁定不动 sse.py multi init**（SSE 单流+180s 兜底契约钉死，load 触发零契约变更同效）+ 全局错误条 + hx-disabled-elt 防重 + ②表单行式（label 同行 1/12 + Tooltip）+ a11y 基线（tablist/aria-selected/:focus-visible）+ `--t4` 提亮过 AA）；0.0.17（CSS 去重与死码清理——**必须终态后重盘发射面**，坑位：`.op/.opins/.op-src/.verd/.sc/.sl/.ss/.stats/.stat/.ghostbtn` 为活码勿按原型残留误删 + 响应式两档 + md-lite 结构化渲染 + `_sparkline_svg` 泛化双曲线 + SSE retry 真化）。
+
+## ⑮ 悬空项登记表（0.0.16 建；消灭「既未落地也未登记」态）
+
+> 规约句三属性：适用条件 / 做法 / 坑位。三态分类：**顺延**（本仓排期）/ **待裁定**（登记触发条件）/ **机制侧阻塞**（vibe-stock 仓为机制 SSOT，本仓不可独立推进）。本表为唯一悬空项索引，后续 PR 落地或裁撤即更新本表。
+
+| 项 | 态 | 说明与触发条件 |
+| :--- | :--- | :--- |
+| 早晚分卡（盘前晨报 vs 盘后复盘行动项卡） | 顺延 0.0.17+ | §⑨「留 M3」但 M3（0.0.10）收口未含——六层加槽：kind 白名单/routing 双模板/dedup_key/session UUID/ack/卡路径+面板解析；briefing.py 头注同步改写 |
+| briefing 盘前/盘后自动触发 | 顺延（与早晚分卡同批） | 不引第二调度器（§⑦）；路径=agent 进程内定时或事件驱动入队（走同 dedup_key 幂等） |
+| §⑫ 现价源升级位 | 待裁定 | 触发：signals/facts 双源现价口径冲突实锤；方案=读 monitor/state.json watch 快照价/T1 evidence 价合并进 price_map 带 asof 陈旧标注；公开行情直取需新裁定（产品仓 src/ 现零网络面） |
+| §⑫ 午休分态升级位 | 待裁定 | panel_data.market_phase 连续窗简化（CN 11:30–13:00/HK 12:00–13:00 并入盘中）；对闸与调度零影响，纯呈现粒度；与现价源同轮裁定 |
+| 买点/MA20 key_levels 扩键 | 机制侧阻塞 | ①晨报 kchip 已按「有键才显」实现；阻塞方：vibe-stock signals.json key_levels 现仅 stop——扩键后本仓自动点亮 |
+| F-57 paper_confirm defer 链（-p 第四决策值挂起等人工） | 机制侧阻塞+待裁定 | §13 承诺；现状 paper_confirm kind 用户可达但 CC 链 defer/resume 通道零存在（build_argv 无 --permission-prompt-tool）；触发：paper_confirm 真实使用面出现再裁（先裁定该 kind 是否裁撤或改语义） |
+| 升级门禁三件套+versions/ 回滚（§14、R-03 缓解主体） | 顺延低优 | --version 探针+--help 旗标快照 diff+init.capabilities 探测+CHANGELOG 扫描；已落半边（DISABLE_AUTOUPDATER/probe/--system-prompt-snapshot off）；触发：首次主动升级 CLI 版本前必做 |
+| caffeinate -i 交易时段防睡死（I-50） | 待裁定 | launchd 日历槽不唤醒睡死 Mac；触发：出现「槽错过+机器睡眠」实锤再上（面板守护 KeepAlive 已覆盖自愈面） |
+| agent/budget.json 面板写半边（§11 读写矩阵） | 待裁定 | 现仅 GET 只读；enabled 联动经 POST /api/l2 达成——「读写」宣称要么补写端点要么勘误矩阵（倾向后者：写面收敛 L2 端点更安全） |
+| sim 台账逐笔 hash 链（方案 §12 纪律） | 待裁定 | 13-paper §① 已降格为 append-only（无排除裁定）；decisions 链 0.0.15 修复后 sim 链是否补齐待裁；触发：sim 台账作为审计证据被实际消费时 |
+| §15「预测 vs 实际」校准分桶表 | 机制侧阻塞 | 披露形态复用 outlook calibration——阻塞方：outlook 侧形态定义（vibe-stock）；本仓 stats.py 待其对齐 |
+| ③页「导出脱敏卡片/标记已复核」按钮（原型对账项） | 待裁定 | 「标记已复核」需新决策 kind（现仅 briefing_ack）；原型承诺件非 CHANGELOG 明文——裁：立项或登记原型差异 |
+| D5 watch.py exit 2 接管时点 | 机制侧阻塞 | 07 坑位④协调评审未发生（§⑩ 已采 events 台账驱动替代路线）；触发：vibe-stock 侧 exit 2 实施重启评审 |
+| D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | docs/ops/trading-day-verify.md 承载（D8 周一 2026-11-10、T2 盘后唤起、D6 用户触发）；不属代码悬空项 |
+| 流式 stdout 改造 | 不立项 | §⑬ 超远期不立项（案 a 已满足观测诉求） |
+| D-72 waitingFor 轮询 / F-56 PreToolUse hook deny | 条件触发 | §⑩ 升级位原文（触发条件已登记，不重复） |
