@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import ORIGIN_HEADERS
 from stock_trading_agent.server.app import create_app
 
 
@@ -30,7 +31,7 @@ def app(tmp_path: Path):
 
 @pytest.fixture
 def client(app) -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers=ORIGIN_HEADERS)
 
 
 def _runtime(client: TestClient):
@@ -79,7 +80,7 @@ class TestSubmitContract:
         layout_root = Path(app.state.state_root)
         (layout_root / "monitor").mkdir(parents=True, exist_ok=True)
         with hold_lock(layout_root / "monitor" / "watch.lock"):
-            with TestClient(app) as c:
+            with TestClient(app, headers=ORIGIN_HEADERS) as c:
                 resp = c.post(
                     "/api/queue/submit", json={"kind": "diagnose_quick", "code": "600519"}
                 )

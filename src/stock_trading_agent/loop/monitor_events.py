@@ -19,6 +19,26 @@ from stock_trading_agent.loop.events import MARKET_TZ
 # T1 触发的 mech_risk 降档事实档位（07：mech_risk 降档事实属机械判据族）
 T1_MECH_RISK_SEVERITIES: frozenset[str] = frozenset({"high", "medium"})
 
+# T2-worthy 规则集（vibe-stock rules.py _REVIEW_HINT 12 条 review 短语规则逐字钉死，
+# 单测防漂移；12-orchestration §⑩）。monitor 源 auto-T2 只对这些规则（或 mech_risk 非 None）
+# 的事件入队；运维类规则（source_dropped/hk_delayed 等）零短语不触发。
+T2_WORTHY_RULES: frozenset[str] = frozenset(
+    {
+        "stop_break",
+        "stop_break_confirmed",
+        "whipsaw",
+        "target_hit",
+        "abnormal_move",
+        "t2_pending_fill",
+        "ma20_break",
+        "trailing_armed",
+        "trailing_exit",
+        "band_lo_touch",
+        "band_hi_touch",
+        "band_trail_break",
+    }
+)
+
 
 @dataclass(frozen=True)
 class MonitorEvent:
@@ -76,6 +96,16 @@ def t1_trigger(ev: MonitorEvent) -> bool:
         return True
     severity = (ev.mech_risk or {}).get("severity")
     return severity in T1_MECH_RISK_SEVERITIES
+
+
+def t2_worthy(ev: MonitorEvent) -> bool:
+    """T2-worthy 判据（M3 auto-T2 触发面，与 t1_trigger 同构独立——两闸可同时命中各查各幂等）。
+
+    四条件 AND：level=="T0" ∧ code≠"*" ∧ 未被压制 ∧（rule∈T2_WORTHY_RULES ∨ mech_risk 非 None）。
+    """
+    if ev.level != "T0" or ev.code == "*" or ev.suppress_reason is not None:
+        return False
+    return ev.rule in T2_WORTHY_RULES or ev.mech_risk is not None
 
 
 def market_today(now: _dt.datetime | None = None) -> str:

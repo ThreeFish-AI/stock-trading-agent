@@ -55,6 +55,7 @@ def _cmd_run_once(args: argparse.Namespace) -> int:
         return 3
     try:
         runtime.recover_orphans()
+        runtime.apply_l2_config(probe=False)  # L2 联动（读存值；R1）
         if args.kind and args.code:
             try:
                 runtime.submit(kind=args.kind, code=args.code, source="cli")
@@ -322,7 +323,7 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
             sub, session_est_usd=999, day_spent_usd=999, month_spent_usd=9999, day_task_count=0
         )
         assert v.allowed and v.record_only
-        led = record_dual_axis({"input_tokens": 10}, 0.5, {})
+        led = record_dual_axis({"input_tokens": 10}, 0.5, {}, day="2026-11-08", month="2026-11")
         assert led["tokens"]["input_tokens"] == 10 and led["tasks"] == 1
 
     check_case("budget.gate.axes", budget_gates)
@@ -605,6 +606,58 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
         assert em is not None and em["price"] == 9.295 and em["ts"] is not None
 
     check_case("ops.d8_probe.parsers", d8_probe_parsers)
+
+    def l2_t2_worthy_and_config():
+        from stock_trading_agent.loop.monitor_events import MonitorEvent, t2_worthy
+        from stock_trading_agent.state.agent_config import AgentConfig, load_agent_config
+
+        ev = MonitorEvent(
+            ts="t",
+            code="600519",
+            market="cn",
+            kind="real",
+            rule="target_hit",
+            level="T0",
+            notify=True,
+        )
+        assert t2_worthy(ev)
+        ops = MonitorEvent(
+            ts="t",
+            code="600519",
+            market="cn",
+            kind="real",
+            rule="storm_digest",
+            level="T0",
+            notify=True,
+        )
+        assert not t2_worthy(ops)
+        assert AgentConfig().l2_enabled is False  # 安全缺省
+        import tempfile
+        from pathlib import Path
+
+        d = Path(tempfile.mkdtemp())
+        assert load_agent_config(d / "none.json").l2_enabled is False
+
+    check_case("loop.l2.t2_worthy_config", l2_t2_worthy_and_config)
+
+    def l2_origin_guard():
+        from stock_trading_agent.server.origin_guard import origin_allowed
+
+        assert origin_allowed({"origin": "http://127.0.0.1:8730"})
+        assert origin_allowed({"origin": "http://testserver"})
+        assert not origin_allowed({})
+        assert not origin_allowed({"origin": "https://evil.example"})
+
+    check_case("server.origin_guard.allowed", l2_origin_guard)
+
+    def l2_leak_scan():
+        from stock_trading_agent.cc_client.leak import find_orphans, parse_pgrep_output
+
+        entries = parse_pgrep_output("123 claude -p x\nbad\n456 claude -p y\n")
+        assert entries == [(123, "claude -p x"), (456, "claude -p y")]
+        assert find_orphans(entries, {123}) == [(456, "claude -p y")]
+
+    check_case("cc_client.leak.scan", l2_leak_scan)
 
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord

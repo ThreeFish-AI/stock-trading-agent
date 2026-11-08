@@ -81,6 +81,8 @@ def build_argv(req: CCRequest, resume_session_id: str | None = None) -> list[str
     if req.autocompact is not None:
         argv += ["--autocompact", req.autocompact]
     argv += ["--system-prompt-snapshot", "off"]  # 迭代 system prompt 须关闭快照（F-43）
+    argv += ["--setting-sources", "project"]  # D-52 慢启动防御：禁 user/policy settings
+    # （会话 cwd 恒空目录 ⇒ project 等价空集；143s→2s 实测）
     prompt = req.prompt if isinstance(req.prompt, str) else str(req.prompt)
     argv.append(prompt)
     return argv
@@ -115,6 +117,7 @@ class _Parsed:
     session_id: str | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
     mcp_server_errors: list[dict[str, Any]] = field(default_factory=list)
+    permission_denials: int = 0
 
 
 def _parse_stream(lines: list[str]) -> _Parsed:
@@ -141,6 +144,10 @@ def _parse_stream(lines: list[str]) -> _Parsed:
         elif obj.get("type") == "result":  # 末个 result 行定结局（D-06）
             parsed.result_line_present = True
             parsed.envelope = obj
+            pd = obj.get("permission_denials")  # F-28 审计流水：int 或 list 双容错缺省 0
+            parsed.permission_denials = (
+                pd if isinstance(pd, int) else len(pd) if isinstance(pd, list) else 0
+            )
             out = obj.get("structured_output")
             parsed.structured_output = out if isinstance(out, dict) else None
             usage = obj.get("usage")
@@ -269,7 +276,13 @@ class HeadlessCLIClient:
             transcript_path=transcript or (audit_path or Path("/dev/null")),
             usage_tokens=parsed.usage_tokens,
             mcp_server_errors=parsed.mcp_server_errors,
+            permission_denials=parsed.permission_denials,
         )
+
+    def live_pids(self) -> set[int]:
+        """在管子进程 PID 快照（泄漏巡检差集基准，D-08）。"""
+        with self._procs_lock:
+            return {proc.pid for proc in self._live_procs}
 
     # --- 归档（断言器放行后由 Loop 调用；无子进程无网络，不设 spawn 门） ---
     def _audit_path(self, req: CCRequest, session_id: str) -> Path:

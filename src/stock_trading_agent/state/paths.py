@@ -100,6 +100,11 @@ class StateLayout:
         return self.briefing_dir / date / f"{code}.md"
 
     @property
+    def agent_config_path(self) -> Path:
+        """L2 总闸配置（agent/config.json；写者=主 Agent，12-orchestration §⑩）。"""
+        return self.agent_dir / "config.json"
+
+    @property
     def watcher_state_path(self) -> Path:
         """monitor 台账监听偏移断点（agent/watcher.json；崩溃不重放已登记事件）。"""
         return self.agent_dir / "watcher.json"

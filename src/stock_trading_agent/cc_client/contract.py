@@ -44,6 +44,7 @@ class CCResult:
     transcript_path: Path
     usage_tokens: dict[str, int] = field(default_factory=dict)
     mcp_server_errors: list[dict[str, Any]] = field(default_factory=list)  # init 透传（F-23）
+    permission_denials: int = 0  # F-28 审计流水计数（--permission-prompts none 的拒绝记录）
 
 
 @dataclass

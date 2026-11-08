@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import ORIGIN_HEADERS
 from stock_trading_agent.server.app import create_app
 
 
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(state_root=tmp_path / "state"))
+    return TestClient(create_app(state_root=tmp_path / "state"), headers=ORIGIN_HEADERS)
 
 
 class TestReadRoutes:

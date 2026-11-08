@@ -32,10 +32,16 @@ from stock_trading_agent.loop.events import (
     lock_precheck,
 )
 from stock_trading_agent.loop.loop import AgentLoop, LoopReject
-from stock_trading_agent.loop.monitor_events import MonitorEvent, market_today, t1_trigger
+from stock_trading_agent.loop.monitor_events import (
+    MonitorEvent,
+    market_today,
+    t1_trigger,
+    t2_worthy,
+)
 from stock_trading_agent.loop.router import load_default_table
 from stock_trading_agent.loop.t1 import T1Runner
 from stock_trading_agent.loop.watcher import EventsWatcher
+from stock_trading_agent.state.agent_config import AgentConfig, load_agent_config, save_agent_config
 from stock_trading_agent.state.decisions import DecisionLog
 from stock_trading_agent.state.paths import StateLayout
 from stock_trading_agent.state.queue import TaskRecord
@@ -96,6 +102,8 @@ class LoopRuntime:
         )
         self.poll_interval_s = poll_interval_s
         self.watcher_enabled = watcher_enabled
+        self._last_leak_scan = 0.0
+        self._pgrep_runner = None  # 测试注入位（None=真跑 pgrep）
         self._stop = threading.Event()
         self._worker_thread: threading.Thread | None = None
         self._watcher: EventsWatcher | None = None
@@ -126,10 +134,11 @@ class LoopRuntime:
         return True
 
     def start(self) -> bool:
-        """启动运行时：daemon 锁 → 崩溃恢复 → worker/watcher 线程。"""
+        """启动运行时：daemon 锁 → 崩溃恢复 → 泄漏巡检 → worker/watcher 线程。"""
         if not self.acquire_daemon():
             return False
         self.recover_orphans()
+        self.scan_cc_leaks()  # D-08：启动先扫一次（孤儿检测 log-only）
         self._stop.clear()
         self._worker_thread = threading.Thread(
             target=self._worker_loop, name="sta-loop-worker", daemon=True
@@ -168,6 +177,7 @@ class LoopRuntime:
         with FileLock(self.layout.queue_lock):
             queue = self.loop.load_queue()
             task = self.loop.ingest(event, queue)
+            task.source = source
             atomic_write_json(self.layout.queue_path, queue.to_dict())
             self._decide(
                 "task_submitted",
@@ -209,6 +219,7 @@ class LoopRuntime:
                         kind=T1_KIND,
                         code=ev.code,
                         enqueued_at=_now_iso(),
+                        source="monitor",
                     )
                     queue.submit(task)
                     atomic_write_json(self.layout.queue_path, queue.to_dict())
@@ -219,6 +230,33 @@ class LoopRuntime:
                             "kind": T1_KIND,
                             "code": ev.code,
                             "source": "monitor",
+                        },
+                    )
+            # M3 auto-T2（events 台账驱动，12-orchestration §⑩）：
+            # R3 直建 TaskRecord——不走 loop.ingest（lock_precheck 在 watch.lock 持有中恒拒）
+            # 也不嵌 self.submit（本函数已持 queue.lock，flock 会自死锁）；锁/窗消费期 defer。
+            if t2_worthy(ev) and load_agent_config(self.layout.agent_config_path).l2_enabled:
+                key = f"{MONITOR_REVIEW_KIND}:{ev.code}:{date}"
+                if queue.find_any(key) is None:
+                    now = _dt.datetime.now(tz=_dt.UTC)
+                    t2_task = TaskRecord(
+                        task_id=f"{key}:{now.strftime('%H%M%S')}",
+                        dedup_key=key,
+                        kind=MONITOR_REVIEW_KIND,
+                        code=ev.code,
+                        enqueued_at=_now_iso(),
+                        source="monitor",
+                    )
+                    queue.submit(t2_task)
+                    atomic_write_json(self.layout.queue_path, queue.to_dict())
+                    self._decide(
+                        "task_submitted",
+                        {
+                            "task_id": t2_task.task_id,
+                            "kind": MONITOR_REVIEW_KIND,
+                            "code": ev.code,
+                            "source": "monitor",
+                            "trigger": {"rule": ev.rule, "review": ev.review},
                         },
                     )
         return task
@@ -245,6 +283,33 @@ class LoopRuntime:
             "paper_pending_fill",
             {"code": ev.code, "leg": req.tranche_leg, "request_id": request_id},
         )
+
+    # --- L2 配置联动（R1：单开关联动预算闸 + probe 持久化 billing_mode） ---
+    def apply_l2_config(self, *, probe: bool = False) -> AgentConfig:
+        """读 config → budget.enabled=l2_enabled；probe=True 时探测认证态并持久化。
+
+        probe 判不准/失败一律 "api" 收紧（D2）；决策留痕（l2_toggled 由调用方记，此处记 l2_probe）。
+        """
+        from stock_trading_agent.budget.gate import billing_mode_from_probe
+
+        cfg = load_agent_config(self.layout.agent_config_path)
+        if probe and cfg.l2_enabled:
+            mode: str
+            try:
+                report = self.cc.probe()
+                mode = billing_mode_from_probe(report.auth_mode)
+                self._decide(
+                    "l2_probe",
+                    {"auth_mode": report.auth_mode, "billing_mode": mode},
+                )
+            except Exception as exc:  # ProbeError 等：判不准收紧（D2），不阻断开关动作
+                mode = "api"
+                self._decide("l2_probe", {"error": str(exc), "billing_mode": mode})
+            cfg.billing_mode = mode
+            save_agent_config(self.layout.agent_config_path, cfg)
+        self.loop.budget.enabled = cfg.l2_enabled
+        self.loop.budget.billing_mode = cfg.billing_mode or "api"
+        return cfg
 
     # --- 崩溃恢复（启动期；running 残留 → abandoned） ---
     def recover_orphans(self) -> list[TaskRecord]:
@@ -287,6 +352,29 @@ class LoopRuntime:
                 return None
             self.loop.mark_running(picked, queue)  # WAL 不变式：执行前 running 落盘
             request = None
+            # L2 消费闸（NR-4 收口）：monitor 源任务在 L2 关闭时一律拒起（无闸即拒起）。
+            # 叠加序：defer（锁/窗，可恢复）在前，终态拒绝递进在后——防终态吞掉 defer 补跑。
+            if (
+                picked.source == "monitor"
+                and picked.kind == MONITOR_REVIEW_KIND
+                and not load_agent_config(self.layout.agent_config_path).l2_enabled
+            ):
+                queue.transition(picked.task_id, "failed")
+                picked.finished_at = _now_iso()
+                picked.error = "L2 总闸关闭：monitor 源 monitor_review 一律拒（NR-4 无闸即拒起）"
+                self._decide(
+                    "advice_refused",
+                    {
+                        "task_id": picked.task_id,
+                        "kind": picked.kind,
+                        "code": picked.code,
+                        "origin": "gate",
+                        "reason_code": "l2_disabled",
+                        "reasons": [picked.error],
+                    },
+                )
+                atomic_write_json(self.layout.queue_path, queue.to_dict())
+                return picked
             if picked.kind == MONITOR_REVIEW_KIND:
                 # T2 准入闸（消费期判定：每日 ≤5 票 + 实盘优先；超额拒=failed 终态防自旋）
                 reason = t2_admission(
@@ -385,8 +473,36 @@ class LoopRuntime:
         queue = self.loop.load_queue()
         return next((t for t in queue.tasks if t.task_id == task.task_id), task)
 
+    # --- 泄漏巡检（D-08，log-only） ---
+    def scan_cc_leaks(self) -> list[tuple[int, str]]:
+        """扫描在管外的 claude -p 孤儿进程；发现即决策 cc_orphan_detected（不 kill）。
+
+        周期：启动一次 + worker 空转每小时一次（_last_leak_scan 节流）；DryRun 通道无进程跳过。
+        """
+        import time as _time
+
+        live = getattr(self.cc, "live_pids", None)
+        if live is None:
+            return []  # DryRun 等无进程通道
+        from stock_trading_agent.cc_client.leak import scan as leak_scan
+
+        orphans = leak_scan(live(), runner=self._pgrep_runner)
+        self._last_leak_scan = _time.monotonic()
+        if orphans:
+            self._decide(
+                "cc_orphan_detected",
+                {
+                    "pids": [pid for pid, _ in orphans],
+                    "action": "log",
+                    "note": "D-08 泄漏巡检：log-only（kill 留 opt-in）",
+                },
+            )
+        return orphans
+
     # --- worker 线程体 ---
     def _worker_loop(self) -> None:
+        import time as _time
+
         while not self._stop.is_set():
             try:
                 task = self.consume_one()
@@ -394,4 +510,9 @@ class LoopRuntime:
                 traceback.print_exc()
                 task = None
             if task is None:
+                if _time.monotonic() - self._last_leak_scan > 3600:  # 每小时泄漏巡检
+                    try:
+                        self.scan_cc_leaks()
+                    except Exception:
+                        traceback.print_exc()
                 self._stop.wait(self.poll_interval_s)

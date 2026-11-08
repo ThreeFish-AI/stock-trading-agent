@@ -34,6 +34,7 @@ class TaskRecord:
     finished_at: str | None = None
     session_uuid: str | None = None
     error: str | None = None
+    source: str = "panel"  # panel | cli | monitor（L2 消费闸与崩溃重放分流判据；旧记录回落默认）
 
 
 @dataclass

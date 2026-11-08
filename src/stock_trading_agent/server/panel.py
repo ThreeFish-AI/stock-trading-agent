@@ -206,6 +206,40 @@ def _sparkline_svg(points: list[dict], *, width: int = 220, height: int = 44) ->
     )
 
 
+def render_settings_fragment(state: dict) -> str:
+    """面板⑦设置区：L2 总闸（开启方向 hx-confirm 二次确认；关闭不确认）。"""
+    enabled = bool(state.get("l2_enabled"))
+    mode = state.get("billing_mode") or "未探测"
+    if enabled:
+        badge = '<span class="st done">L2 开启</span>'
+    else:
+        badge = '<span class="st queued">L2 关闭</span>'
+    parts = [
+        "<h3>L2 无人值守总闸（默认关；显式开启方生效）</h3>",
+        f"<p>{badge} · billing_mode {_esc(mode)} · 更新 {_esc(state.get('updated_at', ''))}</p>",
+        '<p class="muted">开启后：T2-worthy monitor 事件自动触发盯盘复核（每日 ≤5 票、'
+        "预算闸联动开启、probe 认证态判定计费形态）。关闭仅封 monitor 源自动任务，"
+        "面板手动提交不受影响。</p>",
+    ]
+    target = 'hx-target="#l2-settings" hx-swap="outerHTML"'
+    if enabled:
+        off_vals = 'hx-vals=\'{"enabled": "false"}\''
+        parts.append(
+            f'<button class="mini" hx-post="/api/panel/l2" {off_vals} {target}>关闭 L2</button>'
+        )
+    else:
+        on_vals = 'hx-vals=\'{"enabled": "true"}\''
+        confirm = (
+            "hx-confirm='开启 L2 无人值守：monitor 事件将自动触发 T2 复核"
+            "（每日 ≤5 票、预算闸联动开启）。确认？'"
+        )
+        parts.append(
+            f'<button class="mini" hx-post="/api/panel/l2" {on_vals} {target} {confirm}>'
+            "开启 L2</button>"
+        )
+    return "".join(parts)
+
+
 def render_stats_fragment(payload: dict) -> str:
     """面板⑥：kind 分布 + 任务成功率（样本不足标注）+ 预算双口径小表（§15）。"""
     d = payload.get("decisions") or {}

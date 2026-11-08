@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import ORIGIN_HEADERS
 from stock_trading_agent.cc_client.dryrun import DryRunCCClient
 from stock_trading_agent.loop.t1 import T1Runner
 from stock_trading_agent.loop.worker import LoopRuntime
@@ -29,7 +30,7 @@ def app(tmp_path: Path):
 class TestSSEStream:
     def test_stream_yields_retry_then_close(self, app):
         """短生命周期冒烟：读首事件（retry/心跳）即断开（防长连挂测试）。"""
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             with client.stream("GET", "/api/stream") as resp:
                 assert resp.status_code == 200
                 body = b""
@@ -40,20 +41,20 @@ class TestSSEStream:
                 assert b"retry" in body
 
     def test_index_has_sse_wiring(self, app):
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             html = client.get("/").text
             assert 'hx-ext="sse"' in html and 'sse-connect="/api/stream"' in html
             assert "sse:paper" in html and "sse:decisions" in html  # compound triggers
 
     def test_vendor_sse_served(self, app):
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             resp = client.get("/vendor/sse.js")
             assert resp.status_code == 200 and len(resp.content) > 1000
 
 
 class TestBriefingChain:
     def test_full_chain_card_and_ack(self, tmp_path: Path, app):
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             runtime = client.app.state.loop_runtime
             runtime.submit(kind="briefing_review", code="600519")
             task = runtime.consume_one()
@@ -79,7 +80,7 @@ class TestBriefingChain:
         layout = StateLayout(root=tmp_path / "state")
         runtime = LoopRuntime(layout=layout, t1=T1Runner(), watcher_enabled=False)
         app = create_app(state_root=layout.root, runtime=runtime)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             assert runtime.start()  # is_active 需 worker 线程（ack 端点门槛）
             runtime.submit(kind="briefing_review", code="600519")
             runtime.consume_one()
@@ -96,7 +97,7 @@ class TestBriefingChain:
             runtime.stop()
 
     def test_bad_date_422(self, app):
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             assert client.app.state.loop_runtime.start()
             resp = client.post(
                 "/api/panel/briefing/ack", data={"date": "2020-01-01", "code": "600519"}
@@ -106,7 +107,7 @@ class TestBriefingChain:
 
 class TestStatsEndpoint:
     def test_stats_seeded(self, app):
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             runtime = client.app.state.loop_runtime
             runtime.submit(kind="briefing_review", code="600519")
             runtime.consume_one()
