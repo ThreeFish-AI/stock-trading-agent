@@ -482,6 +482,8 @@ class LoopRuntime:
             if self.table.zero_llm.get(picked.kind) != T1_HANDLER:
                 try:
                     request = self.loop.build_request(picked)
+                    picked.session_uuid = request.session_uuid  # 观测反查键（0.0.13）
+                    atomic_write_json(self.layout.queue_path, queue.to_dict())
                 except LoopReject as exc:  # 消费期拒绝（预算闸等）→ failed 终态，防自旋
                     queue.transition(picked.task_id, "failed")
                     picked.finished_at = _now_iso()

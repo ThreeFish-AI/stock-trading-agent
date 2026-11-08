@@ -132,14 +132,24 @@ def render_tasks_table(queue: dict) -> str:
 
 
 def render_task_card(task: dict) -> str:
-    """任务卡：非终态带 5s 快轮询；终态停轮询并展示结果。"""
+    """任务卡：非终态带 5s 快轮询；终态停轮询并展示结果。
+
+    0.0.13：有 session_uuid 时同步驱动②页「会话观测」区（同卡轮询双写，P2 案 a）。
+    """
     status = str(task.get("status", "queued"))
+    task_id = _esc(task.get("task_id", ""))
+    session_uuid = str(task.get("session_uuid") or "")
     poll = (
-        f'hx-get="/api/panel/task/{_esc(task.get("task_id", ""))}" '
-        'hx-trigger="every 5s" hx-swap="outerHTML"'
+        f'hx-get="/api/panel/task/{task_id}" hx-trigger="every 5s" hx-swap="outerHTML"'
         if status not in TERMINAL_STATUSES
         else ""
     )
+    session_hook = ""
+    if session_uuid:
+        session_hook = (
+            f' hx-get="/api/panel/session/{task_id}" hx-trigger="every 5s" '
+            'hx-target="#dg-session" hx-swap="innerHTML"'
+        )
     note = ""
     if status == "done":
         note = (
@@ -148,7 +158,7 @@ def render_task_card(task: dict) -> str:
     elif status in ("failed", "abandoned"):
         note = f'<p class="warn">任务 {_esc(status)}：{_esc(task.get("error") or "")}</p>'
     return (
-        f'<div class="task-card" id="task-card" {poll}>'
+        f'<div class="task-card" id="task-card" {poll}{session_hook}>'
         f"<p><strong>{_esc(task.get('kind', ''))}</strong> · {_esc(task.get('code', ''))} · "
         f'<span class="st {_esc(status)}">{_esc(status)}</span></p>'
         f'<p class="muted">task_id {_esc(task.get("task_id", ""))}</p>'
@@ -433,6 +443,82 @@ def render_notifications(payload: dict) -> str:
         '<p class="tbl-note">仅本地 osascript（terminal 通道）· 禁第三方推送（红线 7）· '
         "告警主通道永久留服务端（后台标签页冻结，I-48）——本卡为只读历史重放</p>"
     )
+
+
+def render_session_obs(body: dict) -> str:
+    """②会话观测：五段进度条（done/cur/pend）+ 双轨意见板 + 裁决卡（P2 §⑫ 案 a）。"""
+    stages = body.get("stages") or []
+    if not stages:
+        return '<p class="loadmsg">无会话产物视图。</p>'
+    steps = []
+    for st in stages:
+        cls = {"done": "done", "current": "cur", "pending": "pend"}.get(st.get("state"), "pend")
+        steps.append(
+            f'<div class="step {cls}"><div class="step-dot"></div>'
+            f'<div class="step-tx">{st["stage"]}·{_esc(st["name"])}</div>'
+            f'<div class="step-sub num">{_esc(st.get("note", ""))}</div></div>'
+        )
+    parts = ['<div class="pipe" style="display:flex;gap:4px;flex-wrap:wrap">']
+    parts.append("".join(steps))
+    parts.append("</div>")
+    opinions = body.get("opinions") or {}
+    default_cards = opinions.get("default") or []
+    sig_map = {
+        "strong_buy": "sig-sb",
+        "buy": "sig-b",
+        "hold": "sig-h",
+        "sell": "sig-s",
+        "strong_sell": "sig-ss",
+    }
+    if default_cards:
+        cards = "".join(
+            f'<div class="op"><div class="op-src num">{_esc(c["source"])}</div>'
+            f'<div><span class="{sig_map.get(c.get("signal"), "")}"></span> '
+            f'<span class="num">{_esc(c.get("confidence"))}</span></div></div>'
+            for c in default_cards[:16]
+        )
+        position_n = len(opinions.get("position") or [])
+        pos_note = f"（中线轨 {position_n} 条另裁决）" if position_n else ""
+        parts.append(
+            '<h3 style="margin:10px 0 6px;font-size:13px">'
+            f"双轨意见板 · {len(default_cards)} 条{pos_note}</h3>"
+        )
+        parts.append(
+            '<div class="opins" style="display:grid;grid-template-columns:'
+            f'repeat(auto-fill,minmax(180px,1fr));gap:8px">{cards}</div>'
+        )
+    else:
+        parts.append('<p class="loadmsg">意见未产出（LLM 意见段待会话推进）。</p>')
+    verdict = body.get("verdict")
+    if verdict:
+        buckets = verdict.get("buckets") or {}
+        bucket_line = " · ".join(f"{_esc(k)} {len(v)}" for k, v in buckets.items())
+        rg_log = "；".join(verdict.get("risk_guard_log") or []) or "no-op"
+        parts.append('<div class="verd" style="margin-top:10px;border:1px solid var(--line);')
+        parts.append('border-radius:8px;padding:10px">')
+        parts.append(
+            f'<div class="num" style="font-size:12px;color:var(--t4)">'
+            f"initial {_esc(verdict.get('initial'))} → final "
+            f'<b style="font-size:16px;color:var(--t1)">{_esc(verdict.get("final"))}</b>'
+            f" · 置信 {_esc(verdict.get('confidence'))} · "
+            f"{_esc(verdict.get('consensus_level'))}</div>"
+        )
+        parts.append(
+            f'<div style="font-size:11.5px;color:var(--t3);margin-top:4px">'
+            f"RiskGuard：{_esc(rg_log)}</div>"
+        )
+        parts.append(
+            f'<div style="font-size:11.5px;color:var(--t3)">分歧：{_esc(bucket_line) or "无"}</div>'
+        )
+        parts.append("</div>")
+        parts.append(
+            '<p class="tbl-note">LLM 零直写裁决面（R3）· RiskGuard 只降不升（R5）'
+            "· 裁决链经 adjudicate 原命令</p>"
+        )
+    notes = body.get("notes") or []
+    if notes:
+        parts.append(f'<p class="loadmsg">{_esc(notes[0])}</p>')
+    return "".join(parts)
 
 
 def render_signals_table(payload: dict) -> str:

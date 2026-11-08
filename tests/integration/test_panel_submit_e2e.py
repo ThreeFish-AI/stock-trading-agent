@@ -139,7 +139,8 @@ class TestPanelFlow:
         _runtime(client).consume_one()
         resp = client.get(f"/api/panel/task/{task_id}")
         assert resp.status_code == 200
-        assert "hx-trigger" not in resp.text  # 终态停轮询
+        # 终态停任务卡自身轮询；0.0.13 起 done 且有 session_uuid 时挂会话观测 5s 双写（P2 案 a）
+        assert 'hx-get="/api/panel/task/' not in resp.text
         assert "done" in resp.text
 
 

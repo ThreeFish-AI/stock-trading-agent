@@ -409,6 +409,8 @@ tr.open td{background:var(--warnbg)}
     <div class="card-b" id="dg-form" hx-get="/api/panel/dgform" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   <div class="card"><div class="card-h"><span class="ct">会话任务</span><span class="cm" id="dg-task-meta"></span></div>
     <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="every 5s, sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+    <div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">会话观测</span><span class="cm">五段进度 · 双轨意见板 · 裁决卡</span></div>
+      <div class="card-b" id="dg-session"><div class="loadmsg">提交任务后于此观测五段推进（真实 CC 会话）。</div></div></div>
 </div>
 <div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="cm">vibe-stock reports 目录 · 04 规约结构</span></div>
   <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
