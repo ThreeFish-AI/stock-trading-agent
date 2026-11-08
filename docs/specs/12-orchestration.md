@@ -23,6 +23,16 @@
 - **CCRequest.cwd**：会话工作目录注入（`agent/runs/<session_uuid>/`，spawn 前建）；DryRun 通道忽略该字段，契约两通道同构。
 - `--json-schema` 只喂 draft-07 扁平子集（`to_draft07` 遇 2020-12 方言直接 raise，F-12）；喂 CC 与本地复验同一份 schema（NR-3）。
 
+### 升级门禁与 versions/ 回滚裁定（0.0.26 落地；§⑮ 原「顺延低优」项提前清偿，用户 2026-11-08 裁定）
+
+- **四层拆分**：纯函数 `cc_client/upgrade_gate.py`（--help 解析/watched diff/CHANGELOG 窗口扫描/聚合，零网络零子进程）+ 通道层 `cli.capture_help()/probe_enum_reject()`（本地 spawn，同 `_real_spawn_gate` 门与 sanitize_env 纪律）+ CLI 子命令 `upgrade-gate`（exit 契约 0=PASS/1=FAIL/2=WARN，`--ack-warn` 复跑登记）+ 网络层 `ops/upgrade_changelog.py`（stdlib urllib 拉 CHANGELOG——**网络面只落 ops/**，src/ 零网络纪律不动；拉取失败不阻断升级，`--changelog` 恒支持人工喂入）。
+- **与 probe 职责边界**：probe=运行时通道健康探针（serve 常驻、dry-run 可跑、不比对基线）零改动；upgrade-gate=版本变更一次性门禁（仅真实通道、显式人工触发、可比对、可 FAIL 拒升级），只消费 probe/capture_help/probe_enum_reject。
+- **diff 分级（判据只收严，只能升不能降）**：FAIL=基线可见的在用旗标消失（watch_flags 从 build_argv 派生非手抄）｜在用旗标 choices 收窄（如 dontAsk 消失）｜非法枚举探针 exit 0（F-30：`--permission-mode __sta_invalid__ --version` 实测 2.1.319 exit 1 秒拒零成本）｜--version 探针失败（D-09）；WARN=非在用旗标消失/疑似改名｜capabilities 键消失（deep）｜CHANGELOG 窗口命中关键词族（breaking/removed/deprecat/renamed/flag/headless/stream-json/permission/budget/schema/session/--bare）；INFO=新增旗标/capability、--help 指纹变化（人工核对 --bare 化语义，R-03 头号观察项）、隐藏旗标。
+- **坑位**：①隐藏旗标 --help 不可见（`--max-turns` 在用但缺席实测）——diff 只比基线可见面，隐藏态登记 INFO，由真实通道集成测试与枚举探针兜底；②--help 描述换行随终端宽度漂移——capture 钉 COLUMNS=100、diff 只比旗标名/占位/choices（sha256 仅审计指纹）；③解析锚定「恰 2 空格缩进 + `--` 开头」、别名尾逗号剥离、choices 跨行先拼整段（commander 风格）。
+- **versions/ 回滚**：机器侧 `~/.local/share/claude/versions/` 多版本共存 + 软链重指（`claude install <旧版>` 主路径、`ln -sfn` 离线兜底）；仓侧 `ops/upgrade-gate/pinned.json`（钉版本锚）+ `claude-<ver>.snapshot.json/.help.txt` 基线快照族入库（回滚后复跑 gate= 回滚验证）；selftest `ops.upgrade-gate.baseline` 钉基线不腐化。
+- **决策留痕**：`upgrade_gate_run`（payload baseline_version/current_version/verdict/codes/ack/deep，零敏感量 NR-5）；坑位：`DecisionLog.append` 内部已持 decisions.lock——外层不得再包同路径 FileLock（flock 不认进程内重入，自死锁）。
+- **runbook**：[docs/ops/upgrade-runbook.md](../ops/upgrade-runbook.md)（升级前盘点回滚位→自检→install→三件套→PASS 收尾 capture 入库→kickstart 重启面板；FAIL→回滚双路径+issue.md 登记）。
+
 ## ③ 主 Loop 六段
 
 - **①触发源**三类：panel（面板手动）/ launchd（monitor 台账经 watchfiles 监听，watch.py 为写者）/ monitor（M3 预留）。统一事件信封 + dedup_key=`f"{kind}:{code}:{date}"`；入队前过禁跑窗（17:30–18:10 Asia/Shanghai 钟面，覆盖 diagnose_full/diagnose_quick/batch_wave/briefing_review 与 `report` 前缀）与双锁前置（fetch_state.lock/watch.lock 存在即 defer，弱约定）。
@@ -121,7 +131,7 @@
 
 - **R5 重放策略**：启动期 running 残留全部先 abandoned（WAL 语义不变+task_abandoned 决策照记）；monitor 源残留按计划重放——判据纯函数 `plan_replays`（判据与 IO 分离）：monitor_review 另要求当下 l2_enabled（关则 `task_replay_skipped(l2_disabled)`，与消费期闸双保险）；**防自旋=队列派生判据**（同 dedup_key 实体数 ≥2 即 replay_cap——重放任务若再崩成 abandoned，count=3 仍 >2 拦截，同键至多两个实体任务，零新状态位）；t1_refresh（零 LLM）无条件重放；panel/cli 源维持 abandoned（M1 语义）。决策 kind 族：task_requeued / task_replay_skipped{reason_code}。重放≠保证执行——新任务消费期仍过全闸。
 - **--bg 评估（D-63，文档性判定）**：结论不引入——依据 D-06 稳定性反证（一次性+resume 比长驻管道稳，两个 open issue 属同一会话族状态面）、现形态已覆盖保活（超时状态机+AbandonProcessGroup+R5 重放）、成本收益未证（L2 事件频率远未触达冷启动瓶颈）；触发再评条件见 [docs/ops/bg-session-eval.md](../ops/bg-session-eval.md)。
-- **SDK 对照（D6，R7 只交脚本+模板不真跑）**：`ops/d6_sdk_compare.py`（--real 旗标+STA_ALLOW_REAL_CC 环境门；cli_path 钉同二进制+preset 对齐+setting_sources=[]，D-16/D-17）；记录模板 [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md) 初始行「未跑，待用户触发」。
+- **SDK 对照（D6，2026-11-08 用户授权真跑完成）**：`ops/d6_sdk_compare.py`（--real 旗标+STA_ALLOW_REAL_CC 环境门；cli_path 钉同二进制，D-16/D-17）；结果与四条结论见 [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md)——CLI p50 5.94s vs SDK 21.18s（包装层 +15s/spawn，主通道裁定实证加固）；SDK 0.2.179 API 漂移实锤（preset/setting_sources 形参已删，D-14 同族）；session uuid 改 uuid4 每跑新鲜（uuid5 同日重跑撞 already-in-use，§② 坑位③延伸）。
 
 ## ⑫ 面板七页重构裁定（0.0.11 落地）
 
@@ -166,14 +176,14 @@
 | ~~§⑫ 午休分态升级位~~ | ✅ 0.0.25 落地 | 同上（market_phase lunch 态，双市同休才显午休；对闸与调度零影响） |
 | 买点/MA20 key_levels 扩键 | 机制侧阻塞 | ①晨报 kchip 已按「有键才显」实现；阻塞方：vibe-stock signals.json key_levels 现仅 stop——扩键后本仓自动点亮 |
 | F-57 paper_confirm defer 链（-p 第四决策值挂起等人工） | 机制侧阻塞+待裁定 | §13 承诺；现状 paper_confirm kind 用户可达但 CC 链 defer/resume 通道零存在（build_argv 无 --permission-prompt-tool）；触发：paper_confirm 真实使用面出现再裁（先裁定该 kind 是否裁撤或改语义） |
-| 升级门禁三件套+versions/ 回滚（§14、R-03 缓解主体） | 顺延低优 | --version 探针+--help 旗标快照 diff+init.capabilities 探测+CHANGELOG 扫描；已落半边（DISABLE_AUTOUPDATER/probe/--system-prompt-snapshot off）；触发：首次主动升级 CLI 版本前必做 |
+| ~~升级门禁三件套+versions/ 回滚（§14、R-03 缓解主体）~~ | ✅ 0.0.26 落地 | §②「升级门禁与 versions/ 回滚裁定」节（提前清偿：用户 2026-11-08 裁定；四层拆分+diff 分级+回滚 runbook） |
 | caffeinate -i 交易时段防睡死（I-50） | 待裁定 | launchd 日历槽不唤醒睡死 Mac；触发：出现「槽错过+机器睡眠」实锤再上（面板守护 KeepAlive 已覆盖自愈面） |
 | ~~agent/budget.json 面板写半边（§11 读写矩阵）~~ | ✅ 0.0.25 勘误 | 写半边裁定收敛 L2 端点已成事实（§⑩）；读写矩阵面板列勘误为只读（state/paths.py docstring 同步），不补 budget 直写端点 |
 | sim 台账逐笔 hash 链（方案 §12 纪律） | 待裁定 | 13-paper §① 已降格为 append-only（无排除裁定）；decisions 链 0.0.15 修复后 sim 链是否补齐待裁；触发：sim 台账作为审计证据被实际消费时 |
 | §15「预测 vs 实际」校准分桶表 | 机制侧阻塞 | 披露形态复用 outlook calibration——阻塞方：outlook 侧形态定义（vibe-stock）；本仓 stats.py 待其对齐 |
 | ~~③页「导出脱敏卡片/标记已复核」按钮（原型对账项）~~ | ✅ 0.0.25 落地 | 用户 2026-11-08 裁定立项（不登记原型差异）；§⑧「已复核与导出裁定」节（advice_reviewed 决策 kind+导出只读端点+mount 双挂点） |
 | D5 watch.py exit 2 接管时点 | 机制侧阻塞 | 07 坑位④协调评审未发生（§⑩ 已采 events 台账驱动替代路线）；触发：vibe-stock 侧 exit 2 实施重启评审 |
-| D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | docs/ops/trading-day-verify.md 承载（D8 周一 2026-11-10、T2 盘后唤起、D6 用户触发）；不属代码悬空项 |
+| D6 SDK 对照真跑 / D8 定谳 / T2 出卡真跑 | 运维待办 | D6 ✅ 2026-11-08 真跑完成（[docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md)；用户授权）；D8 周二定谳、T2 周一盘后唤起仍由 docs/ops/trading-day-verify.md 承载 |
 | 流式 stdout 改造 | 不立项 | §⑬ 超远期不立项（案 a 已满足观测诉求） |
 | D-72 waitingFor 轮询 / F-56 PreToolUse hook deny | 条件触发 | §⑩ 升级位原文（触发条件已登记，不重复） |
 

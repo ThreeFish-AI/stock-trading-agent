@@ -15,6 +15,7 @@
 | [docs/specs/](../specs/) | 实施规约：[12-orchestration.md](../specs/12-orchestration.md)（编排，随实施 PR 增节，现 §①–⑯）、[13-paper.md](../specs/13-paper.md)（paper，0.0.6 建）、[14-design-system.md](../specs/14-design-system.md)（设计系统，0.0.23 建） | 贡献者 / Agent |
 | [docs/ops/launchd.md](../ops/launchd.md) | launchd 第四槽安装与运维（面板守护；三槽并存收编不替代） | 贡献者 |
 | [docs/ops/trading-day-verify.md](../ops/trading-day-verify.md) | 交易日验证运维：D8 定谳流程与 T2 出卡真跑手册 | 贡献者 / Agent |
+| [docs/ops/upgrade-runbook.md](../ops/upgrade-runbook.md) | CLI 升级门禁三件套与 versions/ 回滚 runbook（0.0.26） | 贡献者 / Agent |
 | [docs/ops/tauri-gate-review.md](../ops/tauri-gate-review.md) | Tauri 桌面壳门口评审记录（结论：不做） | 贡献者 |
 | [docs/ops/bg-session-eval.md](../ops/bg-session-eval.md) | --bg 会话族评估（结论：不引入） | 贡献者 |
 | [docs/ops/d6-sdk-comparison.md](../ops/d6-sdk-comparison.md) | Agent SDK 对照实验记录（脚本待触发） | 贡献者 |
