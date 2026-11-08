@@ -1254,6 +1254,100 @@ def panel_audit(request: Request) -> HTMLResponse:
     return HTMLResponse(render_audit(lines, budget(request), chain_ok=chain_ok))
 
 
+# --- audit/ 归档只读（三件套互查第三腿，0.0.21；读写矩阵 §④ 面板读半边闭合） ---
+
+_AUDIT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_AUDIT_FILE_RE = re.compile(r"^[A-Za-z0-9:_-]+\.jsonl$")
+
+
+def _audit_dir_of(request: Request, date: str) -> Path | None:
+    """归档目录解析（三保险前两道：日期/文件名正则；第三道 resolve 边界在调用方）。"""
+    if not _AUDIT_DATE_RE.match(date):
+        return None
+    root = _layout(request).audit_dir / date
+    return root if root.exists() else None
+
+
+@router.get("/audit/dates")
+def audit_dates(request: Request) -> dict:
+    root = _layout(request).audit_dir
+    dates = (
+        sorted(
+            (d.name for d in root.iterdir() if d.is_dir() and _AUDIT_DATE_RE.match(d.name)),
+            reverse=True,
+        )
+        if root.exists()
+        else []
+    )
+    return {"dates": dates}
+
+
+@router.get("/audit/{date}")
+def audit_index(date: str, request: Request) -> dict:
+    import datetime as dt
+
+    day_dir = _audit_dir_of(request, date)
+    if day_dir is None:
+        raise HTTPException(status_code=404, detail=f"无归档日期：{date}")
+    files = []
+    for f in sorted(day_dir.glob("*.jsonl")):
+        if not _AUDIT_FILE_RE.match(f.name):
+            continue
+        stat = f.stat()
+        files.append(
+            {
+                "file": f.name,
+                "size_bytes": stat.st_size,
+                "mtime": dt.datetime.fromtimestamp(stat.st_mtime, tz=dt.UTC).isoformat(
+                    timespec="seconds"
+                ),
+            }
+        )
+
+    return {"date": date, "count": len(files), "files": files}
+
+
+@router.get("/audit/{date}/{name}")
+def audit_read(
+    date: str, name: str, request: Request, tail: int = Query(default=100, ge=1, le=500)
+) -> dict:
+    """转录 tail 读取（三保险：日期/文件名正则 + resolve 边界；行级原文，本地只读）。"""
+    day_dir = _audit_dir_of(request, date)
+    if day_dir is None or not _AUDIT_FILE_RE.match(name):
+        raise HTTPException(status_code=404, detail="归档不存在")
+    path = (day_dir / name).resolve()
+    if not path.is_relative_to(day_dir.resolve()) or not path.exists():
+        raise HTTPException(status_code=404, detail="归档不存在")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return {
+        "date": date,
+        "file": name,
+        "total_lines": len(lines),
+        "lines": lines[-tail:],
+    }
+
+
+@router.get("/panel/audit-archive")
+def panel_audit_archive(request: Request, date: str | None = None) -> HTMLResponse:
+    """⑦归档索引卡（缺省最新有归档日期；行级查看按钮填 #au-transcript）。"""
+    from stock_trading_agent.server.panel import render_audit_archive
+
+    dates = audit_dates(request)["dates"]
+    day = date if date and _AUDIT_DATE_RE.match(date) else (dates[0] if dates else "")
+    payload = audit_index(day, request) if day else {"date": "", "count": 0, "files": []}
+    payload["dates"] = dates
+    return HTMLResponse(render_audit_archive(payload))
+
+
+@router.get("/panel/audit-archive/{date}/{name}")
+def panel_audit_read(date: str, name: str, request: Request) -> HTMLResponse:
+    """转录 tail fragment（<pre> 原文；行数夹紧 100）。"""
+    from stock_trading_agent.server.panel import render_audit_transcript
+
+    body = audit_read(date, name, request, tail=100)
+    return HTMLResponse(render_audit_transcript(body))
+
+
 @router.get("/panel/sessions")
 def panel_sessions(request: Request) -> HTMLResponse:
     """⑦会话登记表（审计三件套 sessions 腿呈现，0.0.16）。"""

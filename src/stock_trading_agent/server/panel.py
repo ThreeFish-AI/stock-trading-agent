@@ -1294,6 +1294,58 @@ def render_advice_library(payload: dict) -> str:
     return "".join(parts)
 
 
+def render_audit_archive(payload: dict) -> str:
+    """⑦归档索引卡：日期带 + 当日归档行（uuid/size/mtime + 查看按钮 → #au-transcript）。"""
+    dates = payload.get("dates") or []
+    if not dates:
+        return '<p class="muted">暂无 stream-json 归档（真实通道断言器放行后落 agent/audit/）。</p>'
+    day = payload.get("date") or dates[0]
+    chips = "".join(
+        f'<button class="mini{" on" if d == day else ""}" '
+        f'hx-get="/api/panel/audit-archive?date={_esc(d)}" hx-target="#au-archive" '
+        f'hx-swap="innerHTML">{_esc(d)}</button>'
+        for d in dates[:10]
+    )
+    files = payload.get("files") or []
+    rows = "".join(
+        "<tr>"
+        f'<td class="num" title="{_esc(f["file"])}">{_esc(f["file"][:30])}…</td>'
+        f'<td class="num">{f["size_bytes"]:,} B</td>'
+        f'<td class="num">{_esc(f.get("mtime", ""))}</td>'
+        "<td>"
+        f'<button class="mini" hx-get="/api/panel/audit-archive/{_esc(day)}/{_esc(f["file"])}" '
+        'hx-target="#au-transcript" hx-swap="innerHTML">查看</button></td>'
+        "</tr>"
+        for f in files
+    )
+    body = (
+        '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-ts">'
+        '<col class="w-op"></colgroup><thead><tr><th scope="col">转录</th>'
+        '<th scope="col">大小</th><th scope="col">mtime</th><th scope="col"></th>'
+        f"</tr></thead><tbody>{rows}</tbody></table>"
+        if files
+        else '<p class="muted">当日无归档。</p>'
+    )
+    return (
+        f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">{chips}</div>'
+        + body
+        + '<div id="au-transcript" style="margin-top:10px"></div>'
+    )
+
+
+def render_audit_transcript(body: dict) -> str:
+    """转录 tail fragment（<pre> 原文行；NR-3 已放行产物，本地只读重放）。"""
+    lines = body.get("lines") or []
+    total = body.get("total_lines", 0)
+    shown = f"（尾 {len(lines)} / 共 {total} 行）" if len(lines) < total else f"（共 {total} 行）"
+    text = _esc("\n".join(lines))
+    return (
+        f'<div class="card"><div class="card-h"><span class="ct">转录 · '
+        f'{_esc(body.get("file", ""))}</span><span class="cm">stream-json {shown}</span></div>'
+        f'<div class="card-b"><pre class="md-pre">{text}</pre></div></div>'
+    )
+
+
 def render_sessions_table(sessions: dict) -> str:
     """⑦会话登记表：uuid/task_id/tokens/等效 USD/转录路径（审计三件套的 sessions 腿呈现）。
 
@@ -1310,6 +1362,17 @@ def render_sessions_table(sessions: dict) -> str:
         uuid = str(r.get("session_uuid", ""))
         task = str(r.get("task_id", ""))
         transcript = str(r.get("transcript_path", ""))
+        link = ""
+        if "/audit/" in transcript:  # 三件套互查：sessions 行 → audit 转录查看（0.0.21）
+            tail_path = transcript.split("/audit/", 1)[1]
+            date_part, _, fname = tail_path.partition("/")
+            if date_part and fname:
+                link = (
+                    f'<a href="#" hx-get="/api/panel/audit-archive/{_esc(date_part)}/'
+                    f'{_esc(fname)}" hx-target="#au-transcript" hx-swap="innerHTML">'
+                    f"{_esc(fname[:24])}…</a>"
+                )
+        cell = link or f'<span title="{_esc(transcript)}">{_esc(transcript[:28])}…</span>'
         trs.append(
             "<tr>"
             f'<td class="num">{_esc(r.get("ts", ""))}</td>'
@@ -1317,7 +1380,7 @@ def render_sessions_table(sessions: dict) -> str:
             f'<td class="num" title="{_esc(task)}">{_esc(task[:20])}…</td>'
             f'<td class="num">{tokens:,}</td>'
             f'<td class="num">{r.get("cost_usd_equiv", 0)}</td>'
-            f'<td class="num" title="{_esc(transcript)}">{_esc(transcript[:28])}…</td>'
+            f'<td class="num">{cell}</td>'
             "</tr>"
         )
     return (
