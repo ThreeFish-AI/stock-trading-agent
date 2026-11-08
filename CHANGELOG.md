@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.13] - 2026-11-08
+
+### Added
+
+- **P2 专项第二 PR：五段流水线可观测性（规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑬，§⑫ 升级位全部翻绿收官）**。①**会话产物解析器** [server/session_products.py](src/stock_trading_agent/server/session_products.py)：读 `agent/runs/<uuid>/.vs/` 中间产物（evidence/opinions×2/verdict×2/报告存在性），defensive 缺席降级——探索实证两仓零清理、产物全留；②**五段状态机**（evidence→①②；opinions 非空数组→③——铺底 `[]` 骨架不算完成；verdict→④；报告→⑤；首未完成=current）；③**观测反查键**：worker build_request 后回写 session_uuid 入 TaskRecord 落盘（终态保留）；④**端点与渲染**：`GET /api/session/{task_id}` + `/api/panel/session/{task_id}` fragment（五段进度条 done/cur/pend + 双轨意见板逐卡 + 裁决卡 initial→RiskGuard log→final + 分歧三桶 + R3/R5 尾注）；②页新「会话观测」区由任务卡 5s 同源双写驱动；⑤流式 stdout 改造登记**超远期不立项**（案 a 满足诉求）。测试 +5 例（400 passed）：SessionView 空/部分/全种子、状态机矩阵（骨架 [] vs LLM 覆写）、双轨/裁决解析、端点 fragment（手动消费保反查键、404）。dry-run 通道如实空态。
+
 ## [0.0.12] - 2026-11-08
 
 ### Added

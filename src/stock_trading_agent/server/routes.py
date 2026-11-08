@@ -381,6 +381,46 @@ def panel_signals(request: Request) -> HTMLResponse:
     return HTMLResponse(render_signals_table(signals(request)))
 
 
+@router.get("/session/{task_id}")
+def session_view(task_id: str, request: Request) -> dict:
+    """会话中间产物视图（queue 反查 session_uuid → .vs 四件解析；P2 §⑫ 案 a）。"""
+    from stock_trading_agent.server.session_products import (
+        opinions_board,
+        read_session_products,
+        stage_status,
+        verdict_card,
+    )
+
+    layout = _layout(request)
+    task = next(
+        (t for t in (queue(request).get("tasks") or []) if t.get("task_id") == task_id), None
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"任务不存在：{task_id}")
+    uuid = task.get("session_uuid") or ""
+    if not uuid:
+        raise HTTPException(
+            status_code=404, detail="任务无 session_uuid（未 spawn 或 dry-run 轨迹）"
+        )
+    view = read_session_products(layout.runs_dir, uuid, layout.reports_dir)
+    return {
+        "task_id": task_id,
+        "session_uuid": uuid,
+        "stages": stage_status(view),
+        "opinions": opinions_board(view),
+        "verdict": verdict_card(view),
+        "report_path": str(view.report_path) if view.report_path else None,
+        "notes": view.notes,
+    }
+
+
+@router.get("/panel/session/{task_id}")
+def panel_session(task_id: str, request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_session_obs
+
+    return HTMLResponse(render_session_obs(session_view(task_id, request)))
+
+
 @router.get("/panel/calendar")
 def panel_calendar(request: Request) -> HTMLResponse:
     from stock_trading_agent.server.panel import render_calendar

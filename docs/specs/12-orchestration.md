@@ -112,3 +112,10 @@
 - **纯函数落点**：`server/panel_data.py`（market_phase 连续窗简化午休并入盘中——升级位/build_name_map 无名称源硬缺省 mono code——升级位/signals_snapshot 非法词呈现降级/derive_todos/briefing_action_items/薄读取器）；`stats.perf_summary`（Sharpe 日频年化/maxDD/胜率 FIFO，<30 insufficient）与 `t1_review_hitrate`（vs ledger.agent.json）；`loop/advice.parse_trend_table`（σ√h 表 round-trip 反解，与 render 同模块）；`stream_hub` 增 signals/reports 事件名。
 - **轻量版过渡清单**（升级位）：②五段流水线/双轨意见板/裁决卡（P2 会话中间产物架构，另轮）、③通知预览（P2 通知台账）、①事件日历预告（c 类数据源）、股票名称源、现价源、午休分态。
 - **0.0.12 翻绿三项**：①名称源回退链落地（`panel_data.load_name_map`：names.json 主源→signals stock_name→universe name 三源合并；产品仓只读，signals 表接名称列）；②事件日历（`aggregate_calendar`：T1 workdir+会话 workdir 的 evidence forecast.next_disclosure/unlock.upcoming/notices.items 聚合，`/api/calendar` 端点，①页中栏 kchip 渲染）；③通知预览历史重放（`rebuild_notifications`：watch.out.log notify 行（终态原文优先）+events notify=true 行双源，`/api/notifications` 端点，③页 macOS 通知样式卡+红线 7 说明——产品仓永不发通知）。港股 forecast/unlock 块 not_supported 如实空。
+
+## ⑬ 会话观测裁定（0.0.13 落地，P2 §⑫ 升级位翻绿收官）
+
+- **案 a 会后解析+轮询补**（用户裁定）：零通道/零跨仓改动——`server/session_products.py` 读 `agent/runs/<uuid>/.vs/` 中间产物（evidence/opinions×2/verdict×2/context-pack/报告存在性），defensive 缺席降级；流式 stdout 改造登记为**超远期不立项**（案 a 已满足观测诉求，执行核改造风险不复引入）。
+- **五段状态机**：evidence 落地→①②done；opinions **非空数组**→③（铺底 `[]` 是骨架态不算完成——LLM 覆写后才推进）；verdict→④；reports/<code>.<market>/<date>.md→⑤；首个未完成=current。
+- **观测反查键**：worker `build_request` 后把 `request.session_uuid` 回写 TaskRecord 并落盘（queue.json 终态保留）——`GET /api/session/{task_id}|/api/panel/session/{task_id}` 反查 `.vs/` 产物；②页「会话观测」区由任务卡同源 5s 轮询双写驱动（running 态进度条随 workdir 文件逐步落地自然点亮，非严格流式）。
+- **渲染件**：五段进度条（done/cur/pend）+ 双轨意见板（default 逐卡 source/signal/confidence/weight、position 折叠计数）+ 裁决卡（initial→RiskGuard log→final、置信、分歧三桶计数、R3/R5 尾注）——组件自原型 diagnosis.html 语义对齐；dry-run 通道无 workdir 时如实空态（「待真实会话产物」）。
