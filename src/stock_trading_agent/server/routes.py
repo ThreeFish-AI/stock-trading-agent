@@ -654,17 +654,27 @@ def stats(request: Request) -> dict:
     from stock_trading_agent.server.panel_data import load_root_json
     from stock_trading_agent.server.stats import (
         aggregate_decisions,
+        assertion_buckets,
         budget_curve,
+        cost_by_kind,
+        route_hit_rate,
         t1_review_hitrate,
     )
+    from stock_trading_agent.state.store import read_json
 
     layout = _layout(request)
     ledger_rows = load_root_json(layout.root / "ledger.agent.json") or {}
     lines = decisions(request, tail=200)
+    session_records = list(sessions(request).get("sessions", {}).values())
     return {
         "decisions": aggregate_decisions(lines),
-        "budget_curve": budget_curve(list(sessions(request).get("sessions", {}).values())),
+        "budget_curve": budget_curve(session_records),
         "t1_review": t1_review_hitrate(lines, ledger_rows),
+        "assertion_buckets": assertion_buckets(lines),  # §15 断言违例率分桶（0.0.22）
+        "route_hit": route_hit_rate(lines),  # §15 意图路由命中率
+        "cost_by_kind": cost_by_kind(
+            session_records, (read_json(layout.queue_path) or {}).get("tasks", [])
+        ),
     }
 
 

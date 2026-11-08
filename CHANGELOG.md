@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.22] - 2026-11-08
+
+### Added
+
+- **观测指标族管线（方案 §15 decision log 指标族承诺全量闭合；规约 12-orchestration §⑨ 新增「§15 指标族管线」条）**。①**AssertVerdict typed codes**：15 桶键枚举（exit_nonzero/envelope_missing/result_line_missing 三段判据三类 + structured_missing/result_subtype_error/mcp_server_errors/signal_enum_invalid/disclaimer_missing/schema_invalid/sensitive_field/stale_data/anchor_escalation/anchor_unreadable/advice_contract/advice_ctx_missing + uncategorized 兜底）；`assert_refuse`/`advice_refused(assert)` 决策 payload 增 `reason_codes`（与 reasons 平行；legacy 存量无码归 uncategorized——可聚合不拒读；新增检查必须配码，判据只收严）。②**worker UNKNOWN_KIND 拒绝带 `reason_code=route_unknown`**（§15 意图路由命中率兜底计数）。③**stats 三聚合函数**：`assertion_buckets`（断言违例率分桶）、`route_hit_rate`（分母=提交总量/分子=兜底拒；坑位登记：server 白名单先拦使面板路径恒 100% 属预期，防线在 CLI/内部直建路径）、`cost_by_kind`（sessions×queue 终态任务经 task_id join 的 per-kind 成本分布，join 不上归 unknown 不丢账）。④**/api/stats 增三键 + ⑥页三块呈现**（断言违例分桶表/意图路由命中率行/会话成本分布表）。⑤顺手修 ④页公司行动表单两处 `\d` 转义 SyntaxWarning。测试 +9 例（507 passed 全绿）：typed codes 五象限（三段/structured/subtype/signal+sensitive/anchor+stale/advice 族）、refuse 兼容 uncategorized、三聚合纯函数锚（分桶排序/命中率半分/per-kind join+unknown+usd 降序）、assert_refuse 决策行带码 e2e、⑥页三块呈现 e2e（分桶/命中率/成本 join 数值锚）；selftest 37→38 case。
+
 ## [0.0.21] - 2026-11-08
 
 ### Added

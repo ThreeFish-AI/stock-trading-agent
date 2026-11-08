@@ -230,6 +230,12 @@ class TestStatsAndAudit:
 
         log = DecisionLog()
         log.append(
+            "2026-11-08T01:59:00+00:00",
+            "task_submitted",
+            {"task_id": "t0", "kind": "monitor_review", "code": "600519", "source": "panel"},
+            path=layout.decisions_path,
+        )
+        log.append(
             "2026-11-08T02:00:00+00:00",
             "advice_card_written",
             {
@@ -242,9 +248,58 @@ class TestStatsAndAudit:
             },
             path=layout.decisions_path,
         )
+        from stock_trading_agent.state.decisions import DecisionLog
+
+        log = DecisionLog()
+        log.append(
+            "2026-11-08T02:01:00+00:00",
+            "assert_refuse",
+            {
+                "task_id": "t",
+                "kind": "diagnose_quick",
+                "code": "600519",
+                "reason_codes": ["structured_missing"],
+                "reasons": ["x"],
+            },
+            path=layout.decisions_path,
+        )
+        # 种子会话 + 队列终态任务（cost_by_kind join 数据源）
+        from stock_trading_agent.state.queue import QueueState as QS
+        from stock_trading_agent.state.queue import TaskRecord as TR
+        from stock_trading_agent.state.sessions import SessionRecord, SessionsState
+        from stock_trading_agent.state.store import atomic_write_json
+
+        qs = QS()
+        qs.submit(
+            TR(
+                task_id="t0",
+                dedup_key="monitor_review:600519:2026-11-08",
+                kind="monitor_review",
+                code="600519",
+            )
+        )
+        atomic_write_json(layout.queue_path, qs.to_dict())
+        sstate = SessionsState()
+        sstate.upsert(
+            SessionRecord(
+                session_uuid="b" * 8 + "-0000-0000-0000-000000000002",
+                task_id="t0",
+                transcript_path="/tmp/x.jsonl",
+                usage_tokens={"total": 42},
+                cost_usd_equiv=0.03,
+                ts="2026-11-08T02:02:00+00:00",
+            )
+        )
+        atomic_write_json(layout.sessions_path, sstate.to_dict())
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            body = client.get("/api/stats").json()
             frag = client.get("/api/panel/stats").text
         assert "T+1 复核命中率" in frag
+        assert body["assertion_buckets"].get("structured_missing") == 1  # §15 分桶（0.0.22）
+        assert body["route_hit"]["submitted"] >= 1
+        ck = {r["kind"]: r for r in body["cost_by_kind"]}
+        assert ck["monitor_review"]["tokens"] == 42 and ck["monitor_review"]["usd"] == 0.03
+        assert "断言违例分桶" in frag and "意图路由命中率" in frag and "会话成本分布" in frag
 
     def test_sessions_table_and_index_card(self, tmp_path: Path):
         app, _, layout = _app(tmp_path)

@@ -395,6 +395,44 @@ def render_stats_fragment(payload: dict) -> str:
         )
     else:
         parts.append('<p class="muted">暂无会话记账。</p>')
+    buckets = payload.get("assertion_buckets") or {}
+    if buckets:
+        brows = "".join(
+            f"<tr><td>{_esc(k)}</td><td class='num'>{v}</td></tr>" for k, v in buckets.items()
+        )
+        parts.append(
+            "<h3>断言违例分桶（NR-3 拒落盘原因，§15）</h3>"
+            '<table class="tbl"><colgroup><col><col class="w-num"></colgroup>'
+            f"<thead><tr><th scope='col'>违例类型</th><th scope='col'>计数</th></tr></thead>"
+            f"<tbody>{brows}</tbody></table>"
+            '<p class="tbl-note">legacy 无码行归 uncategorized（0.0.22 前存量）</p>'
+        )
+    route = payload.get("route_hit") or {}
+    if route.get("submitted"):
+        rate = route.get("rate")
+        rate_text = f"{rate:.2%}" if rate is not None else "—"
+        parts.append(
+            "<h3>意图路由命中率（确定性查表，§15）</h3>"
+            f'<p class="muted">提交 {route.get("submitted", 0)} · 兜底拒 '
+            f"{route.get('fallback', 0)} · 命中率 {rate_text}"
+            f"（{_esc(route.get('note') or '')}）</p>"
+        )
+    cbk = payload.get("cost_by_kind") or []
+    if cbk:
+        crows = "".join(
+            "<tr>"
+            f"<td>{_esc(r['kind'])}</td><td class='num'>{r['sessions']}</td>"
+            f"<td class='num'>{r['tokens']:,}</td><td class='num'>{r['usd']}</td>"
+            "</tr>"
+            for r in cbk
+        )
+        parts.append(
+            "<h3>会话成本分布（按 kind 归因，§15）</h3>"
+            '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-num">'
+            "</colgroup><thead><tr><th scope='col'>kind</th><th scope='col'>会话</th>"
+            "<th scope='col'>token</th><th scope='col'>等效 USD</th></tr></thead>"
+            f"<tbody>{crows}</tbody></table>"
+        )
     t1 = payload.get("t1_review") or {}
     if t1:
         t1_rate = t1.get("rate")
@@ -1157,7 +1195,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
         'inputmode="numeric"></div>'
         '<div class="frm-row">'
         '<label for="ca-ex" title="除权除息日（YYYY-MM-DD）">除权日</label>'
-        '<input class="inp num" id="ca-ex" name="ex_date" pattern="\d{4}-\d{2}-\d{2}" required '
+        '<input class="inp num" id="ca-ex" name="ex_date" pattern="\\d{4}-\\d{2}-\\d{2}" required '
         'placeholder="2026-11-20"></div>'
         '<div class="frm-row">'
         '<label for="ca-rn" title="送转全口径比分子（10送5 → 15）；split 必填">比率分子</label>'
@@ -1169,7 +1207,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
         'placeholder="10"></div>'
         '<div class="frm-row">'
         '<label for="ca-pay" title="派息日（YYYY-MM-DD）；dividend 必填">派息日</label>'
-        '<input class="inp num" id="ca-pay" name="pay_date" pattern="\d{4}-\d{2}-\d{2}" '
+        '<input class="inp num" id="ca-pay" name="pay_date" pattern="\\d{4}-\\d{2}-\\d{2}" '
         'placeholder="2026-11-27"></div>'
         '<div class="frm-row">'
         '<label for="ca-ps" title="每股税前现金（元/股）；dividend 必填">每股派息</label>'

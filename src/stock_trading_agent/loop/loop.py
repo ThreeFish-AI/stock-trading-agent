@@ -241,6 +241,7 @@ class AgentLoop:
                     "task_id": task.task_id,
                     "kind": task.kind,
                     "code": task.code,
+                    "reason_codes": list(verdict.codes),  # §15 断言违例率分桶键（0.0.22）
                     **(
                         {"origin": "assert", "reason_code": "schema_or_redline"}
                         if task.kind == MONITOR_REVIEW_KIND

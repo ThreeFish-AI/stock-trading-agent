@@ -863,6 +863,24 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("paper.corporate.split", corporate_split_anchor)
 
+    def metrics_pipeline_anchor():
+        from stock_trading_agent.server.stats import assertion_buckets, route_hit_rate
+
+        lines = [
+            {"kind": "task_submitted", "payload": {}},
+            {"kind": "assert_refuse", "payload": {"reason_codes": ["exit_nonzero"]}},
+            {"kind": "assert_refuse", "payload": {"reasons": ["legacy"]}},
+            {
+                "kind": "task_failed",
+                "payload": {"reason_code": "route_unknown"},
+            },
+        ]
+        assert assertion_buckets(lines) == {"exit_nonzero": 1, "uncategorized": 1}
+        r = route_hit_rate(lines)
+        assert r["submitted"] == 1 and r["fallback"] == 1 and r["rate"] == 0.0
+
+    check_case("server.metrics.pipeline", metrics_pipeline_anchor)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 
