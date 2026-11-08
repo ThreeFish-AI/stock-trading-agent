@@ -58,14 +58,35 @@ def gate_report_event(ts: _dt.datetime, kind: str) -> str | None:
     return None
 
 
-def lock_precheck(fetch_lock: bool, watch_lock: bool) -> str | None:
-    """锁前置检查（弱尊重：vibe-stock fetch_state.lock / watch.lock 存在即 defer）。
+def lock_is_held(path) -> bool:
+    """flock 持有态探测（对齐 vibe-stock advisory 锁语义；判持有不判存在）。
 
-    坑位：两锁的 flock 实现在 vibe-stock watch.py（129/159 行区），本层只做存在性检查；
-    M1 接线期须对齐同一 flock 语义后再升强互锁。
+    做法：文件缺席=无人持有；在场则尝试 LOCK_EX|LOCK_NB——立即取到=无人持有（随即释放，
+    持有窗口微秒级），EWOULDBLOCK=持有中。
+    坑位：vibe-stock 两锁的锁文件不删除（防删除-重建竞态），存在性检查会把陈旧锁文件
+    误判为持有中（本机实测：非交易日残留 watch.lock 导致全部 defer 拒提交）。
     """
+    import fcntl
+
+    if not path.exists():
+        return False
+    try:
+        fh = path.open("r+")
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return True
+    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    fh.close()
+    return False
+
+
+def lock_precheck(fetch_lock: bool, watch_lock: bool) -> str | None:
+    """锁前置检查（尊重 vibe-stock flock 语义：持有中才 defer，调用方传 lock_is_held() 结果）。"""
     if fetch_lock:
-        return "fetch_state.lock 在场：取数串行中，任务 defer"
+        return "fetch_state.lock 持有中：取数串行进行，任务 defer"
     if watch_lock:
-        return "watch.lock 在场：盯盘中，任务 defer"
+        return "watch.lock 持有中：盯盘进行，任务 defer"
     return None

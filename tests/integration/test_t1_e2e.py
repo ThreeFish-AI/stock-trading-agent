@@ -82,15 +82,19 @@ class TestT1Chain:
                 return T1Outcome(ok=True, workdir=workdir, reasons=())
 
         rt = make_runtime(t1=FakeT1())
+        from conftest import hold_lock
         from stock_trading_agent.loop.monitor_events import parse_line
 
         rt.record_monitor_event(parse_line(_line("600519")))
         rt.layout.monitor_dir.mkdir(parents=True, exist_ok=True)
-        rt.layout.watch_lock.touch()
-        assert rt.consume_one() is None  # defer：盯盘中不跑取数（I-005）
-        q = json.loads(rt.layout.queue_path.read_text(encoding="utf-8"))
-        assert q["tasks"][0]["status"] == "queued"
-        rt.layout.watch_lock.unlink()
+        rt.layout.watch_lock.touch()  # 陈旧锁文件：不误判（本机实测坑）
+        task = rt.consume_one()
+        assert task is not None and task.status == "done"
+        rt.record_monitor_event(parse_line(_line("601919")))
+        with hold_lock(rt.layout.watch_lock):  # 真实持锁：defer（I-005 盯盘中不跑取数）
+            assert rt.consume_one() is None
+            q = json.loads(rt.layout.queue_path.read_text(encoding="utf-8"))
+            assert q["tasks"][1]["status"] == "queued"
         task = rt.consume_one()  # 收盘锁释放自动补跑
         assert task is not None and task.status == "done"
 

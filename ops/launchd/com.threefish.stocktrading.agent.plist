@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Stock Trading Agent 第四槽：守护面板进程（KeepAlive=true 常驻自愈，方案 §3/§8、D3）。 -->
+<!-- 安装：见 docs/ops/launchd.md（先 uv sync 建 .venv；sed 替换 __REPO_PATH__ / __HOME__ 后 bootstrap）。 -->
+<!-- 坑位：直接调 .venv console script 而非 uv run 包装——launchd 只盯直接子进程，uv 包装会使 python 成孤儿占端口、守护失效（实测）。 -->
+<!-- 启用真实 CC 通道：安装时自行注入 EnvironmentVariables 键 STA_ALLOW_REAL_CC=1（默认 dry-run 安全）。 -->
+<!-- 注释内不使用连续连字符（plist XML 兼容纪律，沿 vibe-stock monitor 模板先例）。 -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.threefish.stocktrading.agent</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__REPO_PATH__/.venv/bin/stock-trading-agent</string>
+		<string>serve</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>AbandonProcessGroup</key>
+	<true/>
+	<key>ExitTimeOut</key>
+	<integer>20</integer>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>StandardOutPath</key>
+	<string>__HOME__/.vibe-stock/agent/logs/panel.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>__HOME__/.vibe-stock/agent/logs/panel.err.log</string>
+</dict>
+</plist>

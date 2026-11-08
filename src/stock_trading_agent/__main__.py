@@ -21,6 +21,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         port=args.port or PORT,
         workers=1,
         log_level="info",
+        timeout_graceful_shutdown=args.graceful_shutdown,
     )
     return 0
 
@@ -59,16 +60,34 @@ def _cmd_run_once(args: argparse.Namespace) -> int:
     return 0 if task.status == "done" else 1
 
 
-def _cmd_probe(args: argparse.Namespace) -> int:
+def _cmd_probe(_args: argparse.Namespace) -> int:
+    import os
+
+    from stock_trading_agent.budget.gate import billing_mode_from_probe
+    from stock_trading_agent.cc_client.cli import HeadlessCLIClient, ProbeError
     from stock_trading_agent.cc_client.dryrun import DryRunCCClient
     from stock_trading_agent.state.paths import StateLayout
 
-    client = DryRunCCClient(audit_dir=StateLayout.from_env().audit_dir)
-    report = client.probe()
+    if os.environ.get("STA_ALLOW_REAL_CC") == "1":
+        try:
+            report = HeadlessCLIClient().probe()
+        except ProbeError as exc:
+            print(f"probe 失败：{exc}")
+            return 1
+    else:
+        client = DryRunCCClient(audit_dir=StateLayout.from_env().audit_dir)
+        report = client.probe()
     caps = ", ".join(f"{k}={v}" for k, v in report.capabilities.items()) or "-"
+    mode = billing_mode_from_probe(report.auth_mode)
     print(f"cli_version={report.cli_version} auth_mode={report.auth_mode} capabilities={caps}")
-    print("（骨架期探针即 dry-run 报告；真实通道 STA_ALLOW_REAL_CC=1 且 M1 完整版可用）")
+    print(f"billing_mode={mode}（probe 联动，判不准收紧为 api；真实通道需 STA_ALLOW_REAL_CC=1）")
     return 0
+
+
+def _repo_root():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[2]
 
 
 def _run_selftests() -> list[tuple[str, bool, str]]:
@@ -356,6 +375,44 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("loop.worker.task_eligible", task_eligible_matrix)
 
+    def cc_normalize_and_parse():
+        from stock_trading_agent.cc_client.cli import _parse_stream, normalize_exit_code
+
+        assert normalize_exit_code(-15) == 143 and normalize_exit_code(-9) == 137
+        assert normalize_exit_code(-2) == 130 and normalize_exit_code(0) == 0
+        init = (
+            '{"type":"system","subtype":"init","session_id":"s","capabilities":{},'
+            '"mcp_server_errors":[]}'
+        )
+        ok = '{"type":"result","subtype":"success","session_id":"s","usage":{"input_tokens":1}}'
+        parsed = _parse_stream(["{坏行", init, ok])
+        assert parsed.result_line_present and parsed.session_id == "s"
+        assert _parse_stream([init]).envelope is None  # 缺 result 行
+
+    check_case("cc_client.cli.parse_stream", cc_normalize_and_parse)
+
+    def billing_from_probe():
+        from stock_trading_agent.budget.gate import billing_mode_from_probe
+
+        assert billing_mode_from_probe("subscription") == "subscription"
+        assert billing_mode_from_probe("api") == "api"
+        assert billing_mode_from_probe("dry-run") == "api"  # 判不准收紧（D2）
+
+    check_case("budget.gate.billing_from_probe", billing_from_probe)
+
+    def launchd_plist_pinned():
+        import plistlib
+
+        plist_path = _repo_root() / "ops" / "launchd" / "com.threefish.stocktrading.agent.plist"
+        with plist_path.open("rb") as fh:
+            data = plistlib.load(fh)
+        assert data["KeepAlive"] is True
+        assert data["AbandonProcessGroup"] is True
+        assert data["ExitTimeOut"] == 20 and data["ThrottleInterval"] == 30
+        assert data["RunAtLoad"] is True and "serve" in data["ProgramArguments"]
+
+    check_case("ops.launchd.plist", launchd_plist_pinned)
+
     def queue_find_any():
         from stock_trading_agent.state.queue import QueueState, TaskRecord
 
@@ -401,6 +458,12 @@ def main(argv: list[str] | None = None) -> int:
         "serve", help="起本地面板（FastAPI + 静态页 + Loop 运行时，默认 dry-run 通道）"
     )
     serve_p.add_argument("--port", type=int, default=None)
+    serve_p.add_argument(
+        "--graceful-shutdown",
+        type=int,
+        default=10,
+        help="uvicorn 优雅关停窗（秒）；须小于 launchd ExitTimeOut（默认 10 < 20，R-12）",
+    )
     run_p = sub.add_parser(
         "run-once", help="消费恰一个队列任务（退出码 0/1/2/3；与 serve 抢 daemon 锁）"
     )

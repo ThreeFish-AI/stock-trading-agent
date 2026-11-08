@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -39,3 +40,18 @@ def make_runtime(tmp_path: Path):
         )
 
     return _make
+
+
+@contextlib.contextmanager
+def hold_lock(path: Path):
+    """测试助手：真实持有 flock（对齐 lock_is_held 探测语义；touch 存在性不再是 defer 判据）。"""
+    import fcntl
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = path.open("w")
+    fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+    try:
+        yield
+    finally:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        fh.close()

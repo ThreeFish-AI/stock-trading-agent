@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.4] - 2026-11-08
+
+### Added
+
+- **真实 CC 通道完整版 + launchd 第四槽守护（M1 两 PR 方案的第二 PR）**。①**HeadlessCLIClient 完整实现**（`STA_ALLOW_REAL_CC=1` 门，默认拒不变）：per-call `asyncio.run` 同步壳（async 误用回退单线程池）、`create_subprocess_exec`+`start_new_session=True` 独立进程组+`_live_procs` 持引用防 GC（I-37）、超时状态机 `timeout_s`→`killpg(SIGINT)` 收轮（宽限 10s）→`killpg(SIGKILL)`（编排器永不主动 SIGTERM，D-01）、退出码归一化 `-sig→128+sig`（130/137/143）、`_parse_stream` 纯函数（init 行取 session/capabilities/mcp_server_errors、末个 result 行为 envelope、坏行不炸进 raw 缓存）、`CCRequest.cwd` 会话目录注入（`agent/runs/<session_uuid>/` spawn 前建）、resume 旗标全量重传（D-32）、probe=`--version`+认证态启发式（密钥名在场→api / credentials 文件在场→subscription / 判不准收紧为 api）+`billing_mode_from_probe` 联动、CLI `probe` 子命令真实版（ProbeError→exit 1）。②**断言器收严两条**：result subtype 非 success（D-01）；init.mcp_server_errors 非空（F-23）——均为新增拒因。③**routing.yaml monitor_review 修错**（修错非放宽，论证入 12-orchestration §②）：allowed_tools [Read,Glob,Grep]→[Read,Write,Glob,Grep,Bash]（NR-1 硬前置：adjudicate 需 Bash、risk 覆写需 Write，旧值使 T2 会话物理不可能履约；修正集是 diagnose_full 严格子集；机器钉防回退）。④**launchd 第四槽**：`ops/launchd/com.threefish.stocktrading.agent.plist` 模板（RunAtLoad+KeepAlive=true 常驻自愈+AbandonProcessGroup=true（D3）+ExitTimeOut=20>serve --graceful-shutdown 10（R-12）+ThrottleInterval 30；模板不带 STA_ALLOW_REAL_CC 出厂 dry-run 安全）+[docs/ops/launchd.md](docs/ops/launchd.md) 安装运维文档；serve 增 `--graceful-shutdown` 参数。**本机实测两裁定**：入口直接调 `.venv/bin/stock-trading-agent` console script（uv run 包装使 launchd 盯错进程、python 成孤儿占端口）；KeepAlive={Crashed} 的 after-crash 信号量在本 macOS 挂起不触发（kill -9 后 90s 无重启）——改 KeepAlive=true（节流 30s，kill -9 实测 24s 自愈重启，停机走 bootout）。⑤**锁语义修复（真机暴露的缺陷）**：`lock_precheck` 由存在性检查改为 flock 持有态探测（`lock_is_held`：LOCK_EX|LOCK_NB 即取即释）——vibe-stock 两锁文件不删除（防删除-重建竞态），存在性检查把非交易日残留的陈旧锁文件误判为持有中、全天 defer 拒提交（本机 2026-11-08 实测：周五残留 watch.lock/fetch_state.lock 在场提交 423，修复后 201）；ingest 与消费期复检两处同步换用。测试 +32 例（244 passed 全绿 <15s）：`_parse_stream` 纯函数矩阵、fake claude 可执行族（正常流/缺 result 行/error subtype/exit 143/SIGINT 收轮/SIGKILL 升级/mcp errors/cwd 注入/env 治理剥密钥/resume 旗标/archive NR-3 次序/probe 四象限/默认门拒）、plist plistlib 逐键钉死、monitor_review 工具钉、runs cwd 注入、STA_IT_REAL 真跑用例（skipif 环境门，CI 天然跳过）；selftest 19 case（+3：parse_stream、billing_from_probe、ops.launchd.plist）。规约追加裁定登记于 [12-orchestration.md](docs/specs/12-orchestration.md) §② 增补与新增 §⑦；README/knowledge-map/AGENTS 目录速查同步。
+
 ## [0.0.3] - 2026-11-08
 
 ### Added

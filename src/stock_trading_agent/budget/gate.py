@@ -81,3 +81,11 @@ def record_dual_axis(tokens: dict[str, int], cost_usd_equiv: float, ledger: dict
         "cost_usd_equiv": round(ledger.get("cost_usd_equiv", 0.0) + cost_usd_equiv, 4),
         "tasks": ledger.get("tasks", 0) + 1,
     }
+
+
+def billing_mode_from_probe(auth_mode: str) -> str:
+    """probe 认证态 → BudgetConfig.billing_mode 联动（F-31/D2）。
+
+    做法：subscription 透传；其余（api/未知）一律 api——判不准按 API 档收紧（D2 收紧方向）。
+    """
+    return auth_mode if auth_mode == "subscription" else "api"

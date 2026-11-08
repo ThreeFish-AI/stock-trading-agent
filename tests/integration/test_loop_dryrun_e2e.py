@@ -138,12 +138,21 @@ class TestGates:
             loop.ingest(ev, queue)
 
     def test_lock_precheck_defers(self, tmp_path: Path):
+        from conftest import hold_lock
+
         layout = StateLayout(root=tmp_path / "state")
         layout.agent_dir.mkdir(parents=True, exist_ok=True)
-        layout.fetch_lock.touch()
+        layout.fetch_lock.touch()  # 陈旧锁文件（无持有者）：不应误判 defer（本机实测坑）
         loop = make_loop(layout)
-        with pytest.raises(LoopReject, match=r"fetch_state\.lock"):
-            loop.ingest(
-                EventEnvelope(event_id="e", source="panel", kind="diagnose_quick", code="600519"),
-                QueueState(),
-            )
+        loop.ingest(
+            EventEnvelope(event_id="e", source="panel", kind="diagnose_quick", code="600519"),
+            QueueState(),
+        )
+        with hold_lock(layout.fetch_lock):  # 真实持锁：defer
+            with pytest.raises(LoopReject, match=r"fetch_state\.lock"):
+                loop.ingest(
+                    EventEnvelope(
+                        event_id="e2", source="panel", kind="diagnose_quick", code="600519"
+                    ),
+                    QueueState(),
+                )
