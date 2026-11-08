@@ -257,11 +257,9 @@ tr.sel td:first-child{box-shadow:inset 2.5px 0 0 var(--acc)}
 .arr{font:700 14px var(--mono);color:var(--t4)}
 .bignum{font:700 25px/1 var(--mono);color:var(--t1);letter-spacing:-.3px}
 .bignum .u{font-size:12px;font-weight:500;color:var(--t3);letter-spacing:0}
-.mini{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:2px}
-.mini th{font-size:10px;font-weight:500;color:var(--t4);text-align:right;padding:3px 4px;white-space:nowrap}
-.mini td{font:500 11px var(--mono);color:var(--t2);text-align:right;padding:4px;white-space:nowrap;border-top:1px solid rgba(255,255,255,.05)}
-.mini th:first-child,.mini td:first-child{text-align:left}
-.mini td:first-child{color:var(--acc2)}
+.mini{font:600 11.5px var(--sans);padding:4px 12px;border-radius:7px;
+  border:1px solid var(--line2);background:var(--bg3);color:var(--t2);white-space:nowrap;width:auto;cursor:pointer}
+.mini:hover{border-color:var(--accln);color:var(--acc2)}
 .adv-foot{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line);background:rgba(255,255,255,.015)}
 .adv-foot .warn-tx{font-size:11.5px;color:var(--warn)}
 .adv-foot .fx{margin-left:auto;display:flex;gap:8px}
@@ -364,6 +362,18 @@ tr.open td{background:var(--warnbg)}
 .pf{color:var(--up)}
 .nf{color:var(--dn)}
 .loadmsg{color:var(--t4);font-size:12px;padding:8px 2px}
+
+/* ── 0.0.15 fragment 语义类（panel.py 旧渲染器词表归位，全走 token）── */
+.muted{color:var(--t3);font-size:12px;line-height:1.7;padding:4px 0}
+.ok{color:var(--dn2);font-size:12px;padding:4px 0}
+.warn{color:var(--warn);font-size:12px;line-height:1.7;padding:4px 0}
+.task-card{border:1px solid var(--line);background:var(--bg2);border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12.5px;color:var(--t2)}
+.task-card p{margin:2px 0}
+main h3{font-size:13px;font-weight:600;color:var(--t1);margin:14px 0 6px;letter-spacing:.2px}
+/* ── 0.0.15 列宽 SSOT（同属性列跨表同宽）── */
+.w-ts{width:118px}.w-code{width:88px}.w-num{width:84px}.w-kind{width:132px}
+.w-st{width:96px}.w-op{width:150px}.w-sup{width:110px}.w-batch{width:150px}
+.w-seq{width:52px}.w-hash{width:110px}
 
 </style>
 </head>

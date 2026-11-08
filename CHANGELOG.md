@@ -4,6 +4,13 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.16] - 2026-11-08
+
+### Added
+
+- **面板 UI/UX 审计修复第二 PR：P1 内容补全 + 表格规范 + 全中文列头（规约 [12-orchestration.md](docs/specs/12-orchestration.md) §⑭ 升级位首项落地）**。①**列头全中文裁定**（用户裁定；kind/status/side 等机器值保留英文原词）：③事件表（时间/代码/规则/级别/复核短语/压制/操作）、②任务表（类型/代码/状态/入队/错误）、④持仓与逐笔确认两表（代码/建仓批/手数/可卖(T+1)/参考价/bar 日/操作）、⑤卡表与拒卡表（代码/来源/原因/通报）、⑥分布与预算表（决策类型）、⑦台账表（序号/类型/摘要/hash 链）；②**表格三规范落地**：各表 `<colgroup>` 固定列宽 + `.w-ts/.w-code/.w-num` 列宽 SSOT 类同属性列跨表同宽 + `th scope="col"` + 长文本格 `title` Tooltip + 空值 `—` 占位（被压制行显「已压制」tag）；③**已算未渲四项补齐**：④绩效三格（Sharpe 日频年化/最大回撤绿=跌/胜率 FIFO，`_perf_grid`，None 显 —，样本<30 纪律注）+ 盈亏% 红涨绿跌着色（`.pf`红=盈/`.nf`绿=亏）+ 数字列 `.num`；⑥ T+1 复核命中率块（样本<30 只观察不记分）；④**⑦链校验呈现**：`panel_audit` strict 载入 `DecisionLog.load` + 断链降级（`DecisionChainError` 时原始行渲染不拒渲 + 警示含 repair-decisions 修复指引，与 0.0.15 决策链修复的 fail-closed 语义对齐）+ `verify_chain()` 表尾状态行（通过/失败警示）；L2 设置区与 audit 台账卡片化（`.card/.card-h/.card-b` + chip 徽章）；⑤**⑤卡详情接通**：卡表 code 列改链接（`hx-get /api/panel/advice-detail/{day}/{code}` → `#advice-detail-2`，此前端点+容器双悬空）；拒卡通报 `reasons` 数组回退拼接（写侧 gate/assert/render_scan/write_failure 只带 reasons、仅 session_degraded 带 facts_note）+ 五源 `title` 中文图例（`_ORIGIN_ZH`）+ ts 转 Asia/Shanghai 钟面短格式；⑥**死位兑现**：`render_event_feed`/`render_todos`/`render_tasks_table` 尾附 `hx-swap-oob` 计数 span（①事件/待办卡头计数与 ②会话任务卡头元信息激活）；①时间轴 ts 显示层取 HH:MM（全值走 title）；⑦**fragment 语义类归位**（index.html）：`.muted/.ok/.warn/.task-card/main h3` 补 CSS（此前零定义走浏览器默认）、`.mini` 重定义为小按钮类（删无发射者的表格版规则，按钮不再被 `width:100%` 撑满）。测试 +11 例（448 passed 全绿，含并发合入的决策链修复 18 例）：TestAuditChain（通过/篡改两态 + 断链降级不拒渲）、TestStatsT1Review、⑤卡链接与拒卡 reasons 回退 e2e、④绩效三格/中文列头/colgroup 断言、render_audit/_perf_grid/表格规范/HH:MM 单测。
+
+
 ## [0.0.15] - 2026-11-08
 
 ### Fixed
