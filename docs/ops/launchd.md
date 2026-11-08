@@ -15,7 +15,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktradi
 curl -s http://127.0.0.1:8730/api/health   # RunAtLoad 已拉起；验证 ok=true
 ```
 
-坑位：入口必须是 `.venv/bin/stock-trading-agent` console script 直调——若用 `uv run` 包装，launchd 只盯 uv 父进程，python 服务进程会在父进程死亡时成孤儿继续占端口、守护与实际服务脱钩（本机实测）。依赖更新后须重跑 `uv sync`（.venv 内包随 lock 更新）。
+坑位：入口必须是 console script 直调——若用 `uv run` 包装，launchd 只盯 uv 父进程，python 服务进程会在父进程死亡时成孤儿继续占端口、守护与实际服务脱钩（本机实测）。依赖更新后须重跑 `uv sync`（.venv 形态）或 `uv tool install --force <repo>`（tool 形态）。
+
+备选安装形态（本机实测坑位）：仓库若位于 `~/Documents` 下（iCloud「桌面与文稿」同步域），launchd 拉起的 Python 会在解释器初始化 getpath 阶段对 `open()` 无限挂起（TCC/FileProvider 交互；同路径 shell 直跑正常、非 Documents 路径 launchd 正常）。此时改用 `uv tool install --force <repo>`，plist 入口指向 `~/.local/bin/stock-trading-agent`（venv 落 `~/.local/share/uv/tools/`，脱离 Documents 域）。
 
 坑位：sed 用 `|` 分隔符（路径含 `/`）；模板**不带** `STA_ALLOW_REAL_CC`（出厂 dry-run 安全）——启用真实 CC 通道须自行在 plist 注入 `<key>EnvironmentVariables</key>` + `STA_ALLOW_REAL_CC=1` 并 `bootout`+`bootstrap` 重载，同时建议开启预算闸（NR-4）。
 
