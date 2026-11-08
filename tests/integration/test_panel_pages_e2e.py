@@ -190,7 +190,7 @@ class TestAdviceRendered:
         _seed_advice(layout)
         day = market_today()
         frag = client.get("/api/panel/advice").text
-        assert f'hx-get="/api/panel/advice-detail/{day}/600519"' in frag
+        assert f'hx-get="/api/panel/advice-detail/{day}/600519?mount=ad"' in frag
         assert 'hx-target="#advice-detail-2"' in frag
 
     def test_refused_reasons_fallback(self, tmp_path: Path):

@@ -14,11 +14,11 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, ValidationError
 
 from stock_trading_agent import __version__
-from stock_trading_agent.loop.advice import parse_advice_card
+from stock_trading_agent.loop.advice import has_review, parse_advice_card
 from stock_trading_agent.loop.events import lock_is_held
 from stock_trading_agent.loop.loop import LoopReject
 from stock_trading_agent.loop.monitor_events import market_today, parse_line
@@ -43,6 +43,8 @@ root_router = APIRouter()  # 无前缀（favicon 等根级路由）
 PANEL_COMPONENT = "stock-trading-agent-panel"
 
 _REPORTS_DIR_RE = re.compile(r"^\d{5,6}\.(cn|hk)$")
+_ADVICE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")  # 建议卡导出三保险之一（0.0.25）
+_ADVICE_CODE_RE = re.compile(r"^\d{5,6}$")
 
 
 def _layout(request: Request) -> StateLayout:
@@ -74,27 +76,26 @@ def health() -> dict:
 @router.get("/queue")
 def queue(request: Request) -> dict:
     from stock_trading_agent.state.queue import QueueState
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
-    data = read_json(_layout(request).queue_path)
+    data = read_json_cached(_layout(request).queue_path)
     return data if data is not None else QueueState().to_dict()
 
 
 @router.get("/sessions")
 def sessions(request: Request) -> dict:
     from stock_trading_agent.state.sessions import SessionsState
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
-    data = read_json(_layout(request).sessions_path)
+    data = read_json_cached(_layout(request).sessions_path)
     return data if data is not None else SessionsState().to_dict()
 
 
 @router.get("/decisions")
 def decisions(request: Request, tail: int = Query(default=20, ge=1, le=200)) -> list[dict]:
-    path = _layout(request).decisions_path
-    if not path.exists():
-        return []
-    lines = [json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines() if raw]
+    from stock_trading_agent.state.store import read_jsonl_lines_cached
+
+    lines = [json.loads(raw) for raw in read_jsonl_lines_cached(_layout(request).decisions_path)]
     return lines[-tail:]
 
 
@@ -111,9 +112,9 @@ def paper(request: Request) -> dict:
 
 @router.get("/budget")
 def budget(request: Request) -> dict:
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
-    data = read_json(_layout(request).budget_path)
+    data = read_json_cached(_layout(request).budget_path)
     return (
         data
         if data is not None
@@ -138,49 +139,50 @@ def monitor_events(
 
 
 def _monitor_events_payload(request: Request, *, date: str | None, tail: int) -> dict:
-    """核心载荷（HTTP 端点与 fragment 复用；tail 夹紧 1..500）。"""
+    """核心载荷（HTTP 端点与 fragment 复用；tail 夹紧 1..500；R2 缓存读）。"""
+    from stock_trading_agent.state.store import read_jsonl_lines_cached
+
     tail = max(1, min(int(tail), 500))
     day = date or market_today()
     path = _layout(request).monitor_events_file(day)
     events: list[dict] = []
     skipped = 0
-    if path.exists():
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            if not raw.strip():
-                continue
-            ev = parse_line(raw)
-            if ev is None:
-                skipped += 1
-                continue
-            events.append(
-                {
-                    "ts": ev.ts,
-                    "code": ev.code,
-                    "market": ev.market,
-                    "kind": ev.kind,
-                    "rule": ev.rule,
-                    "level": ev.level,
-                    "notify": ev.notify,
-                    "mech_risk": ev.mech_risk,
-                    "facts": ev.facts,  # 0.0.11 透出：现价/距线等机械事实（①③两页呈现源）
-                    "review": ev.review,
-                    "suppress_reason": ev.suppress_reason,
-                }
-            )
+    for raw in read_jsonl_lines_cached(path):
+        if not raw.strip():
+            continue
+        ev = parse_line(raw)
+        if ev is None:
+            skipped += 1
+            continue
+        events.append(
+            {
+                "ts": ev.ts,
+                "code": ev.code,
+                "market": ev.market,
+                "kind": ev.kind,
+                "rule": ev.rule,
+                "level": ev.level,
+                "notify": ev.notify,
+                "mech_risk": ev.mech_risk,
+                "facts": ev.facts,  # 0.0.11 透出：现价/距线等机械事实（①③两页呈现源）
+                "review": ev.review,
+                "suppress_reason": ev.suppress_reason,
+            }
+        )
     return {"date": day, "count": len(events), "skipped": skipped, "events": events[-tail:]}
 
 
 @router.get("/monitor/status")
 def monitor_status(request: Request) -> dict:
-    from stock_trading_agent.state.store import read_json
+    from stock_trading_agent.state.store import read_json_cached
 
     layout = _layout(request)
     day = market_today()
-    watch_state = read_json(layout.monitor_state_path) or {}
+    watch_state = read_json_cached(layout.monitor_state_path) or {}
     runtime = _runtime(request)
 
     queued = running = 0
-    q = read_json(layout.queue_path) or {"tasks": []}
+    q = read_json_cached(layout.queue_path) or {"tasks": []}
     for t in q.get("tasks", []):
         if t.get("status") == "queued":
             queued += 1
@@ -301,12 +303,9 @@ def notifications(request: Request, tail: int = 20) -> list[dict]:
 
     layout = _layout(request)
     events = _monitor_events_payload(request, date=None, tail=500).get("events", [])
-    import contextlib
+    from stock_trading_agent.state.store import read_text_cached
 
-    log_text = ""
-    log_path = layout.monitor_dir / "logs" / "watch.out.log"
-    with contextlib.suppress(OSError):
-        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    log_text = read_text_cached(layout.monitor_dir / "logs" / "watch.out.log")
     names = load_name_map(layout)
     rows = rebuild_notifications(events, log_text, names)
     return rows[-tail:]
@@ -317,32 +316,68 @@ def notifications(request: Request, tail: int = 20) -> list[dict]:
 
 @router.get("/signals")
 def signals(request: Request) -> dict:
-    """在册信号快照（signals.json 只读 + sim last_price/events facts 现价组合）。"""
+    """在册信号快照（signals.json 只读 + 三源现价合并，§⑫ 现价源升级位 0.0.25）。"""
     from stock_trading_agent.server.panel_data import (
+        PriceFact,
         build_name_map,
+        load_name_map,
         load_root_json,
+        merge_price_facts,
+        parse_ticks_prices,
         signals_snapshot,
+        t1_price,
     )
 
     layout = _layout(request)
     entries = load_root_json(layout.root / "signals.json")
-    price_map: dict[str, float | None] = {}
+    from stock_trading_agent.loop.monitor_events import market_today
+
+    today = market_today()
+    # 源 1：sim 持仓确认 bar 价（asof=last_price_date，可缺席）
+    sim_map: dict[str, PriceFact] = {}
     from stock_trading_agent.paper import ledger as paper_ledger
 
     portfolio = paper_ledger.load(layout.sim_portfolio_path)
     if portfolio:
         for pos in portfolio.positions:
-            price_map[pos.code] = pos.last_price
+            if pos.last_price:
+                sim_map[pos.code] = PriceFact(
+                    price=float(pos.last_price),
+                    asof=str(getattr(pos, "last_price_date", "") or ""),
+                    source="sim",
+                )
+    # 源 2：盯盘事件 facts 价（事件时点价，asof=事件 ts）
+    events_map: dict[str, PriceFact] = {}
     for ev in _monitor_events_payload(request, date=None, tail=500).get("events", []):
         facts = ev.get("facts") or {}
         price = facts.get("price")
         if price is not None and ev.get("code"):
-            price_map.setdefault(str(ev["code"]), float(price))
-    snap = signals_snapshot(entries if isinstance(entries, list) else None, price_map)
-    from stock_trading_agent.server.panel_data import load_name_map
-
+            events_map[str(ev["code"])] = PriceFact(
+                price=float(price), asof=str(ev.get("ts") or ""), source="events"
+            )
+    # 源 3：monitor/ticks 轮询价（现价真实落点；watch.py 写者，产品仓只读）
+    ticks_map: dict[str, PriceFact] = {}
+    ticks_path = layout.monitor_dir / "ticks" / f"{today}.jsonl"
+    if ticks_path.exists():
+        try:
+            ticks_map = parse_ticks_prices(ticks_path.read_text(encoding="utf-8").splitlines())
+        except OSError:
+            ticks_map = {}
+    # 源 4：T1 evidence 取证价（blocks.quote.price，state=available 才取）
+    t1_map: dict[str, PriceFact] = {}
+    t1_root = layout.runs_dir / today / "t1"
+    if t1_root.exists():
+        for d in sorted(t1_root.iterdir()):
+            ev = load_root_json(d / "evidence.json")
+            fact = t1_price(ev) if isinstance(ev, dict) else None
+            if fact and d.name.isdigit():
+                t1_map[d.name] = fact
+    price_map = merge_price_facts(sim_map, events_map, ticks_map, t1_map)
+    snap = signals_snapshot(
+        entries if isinstance(entries, list) else None, price_map, market_date=today
+    )
     snap["name_map"] = build_name_map(reports(request).get("reports", []))
-    snap["names"] = load_name_map(layout)
+    snap["names"] = load_name_map(layout, signals=entries)  # R4：signals 单请求单读（原先 2 次）
     return snap
 
 
@@ -593,12 +628,18 @@ def panel_report_body(code_market: str, filename: str, request: Request) -> HTML
 
 
 @router.get("/panel/advice-detail/{date}/{code}")
-def panel_advice_detail(date: str, code: str, request: Request) -> HTMLResponse:
-    """③⑤共用建议卡详情 fragment（四块布局 + rendered 原值 + σ√h 表）。"""
+def panel_advice_detail(
+    date: str, code: str, request: Request, mount: str = Query(default="ad")
+) -> HTMLResponse:
+    """③⑤共用建议卡详情 fragment（四块布局 + rendered 原值 + σ√h 表）。
+
+    mount=mo→③页 #advice-detail / ad→⑤页 #advice-detail-2（按钮 target 按挂点映射；
+    白名单外回落 ad 不 422——呈现参数非安全参数）。
+    """
     from stock_trading_agent.server.panel import render_advice_detail
 
     body = advice_card(date, code, request)  # 复用 JSON 端点（404 语义同源）
-    return HTMLResponse(render_advice_detail(body))
+    return HTMLResponse(render_advice_detail(body, mount=mount if mount in ("mo", "ad") else "ad"))
 
 
 # --- L2 总闸（M3：面板⑦设置区；写者=主 Agent 进程内直调，12-orchestration §⑩） ---
@@ -767,9 +808,9 @@ def panel_briefing_ack(
     runtime = _runtime(request)
     if runtime is None or not runtime.is_active:
         raise HTTPException(status_code=503, detail="运行时未持锁（briefing_ack 需 daemon 持有者）")
-    layout = _layout(request)
     if date != market_today():
         raise HTTPException(status_code=422, detail="仅当日卡可确认")
+    layout = _layout(request)
     if session not in ("", "am", "pm"):
         raise HTTPException(status_code=422, detail="session 仅允许空/am/pm")
     try:
@@ -782,6 +823,46 @@ def panel_briefing_ack(
     except DecisionChainError as exc:
         raise HTTPException(status_code=503, detail=f"{exc}") from exc
     return HTMLResponse(render_briefing_fragment(_briefing_payload(request)))
+
+
+@router.post("/panel/advice/review")
+def panel_advice_review(
+    request: Request,
+    date: str = Form(...),
+    code: str = Form(...),
+    mount: str = Form("ad"),
+) -> HTMLResponse:
+    """T2 建议卡「标记已复核」：advice_reviewed 决策（hash 链留痕；0.0.25 原型对账项）。
+
+    幂等语义沿 briefing_ack（重复 POST 再记一条、呈现取存在即已复核、不 409）；
+    payload 恰 {date, code}（NR-5 零敏感量）。卡不在场 404（端点可独立调用，比
+    briefing_ack 收严——其卡列表先渲染故免检）。
+    """
+    from stock_trading_agent.server.panel import render_advice_detail
+
+    runtime = _runtime(request)
+    if runtime is None or not runtime.is_active:
+        raise HTTPException(
+            status_code=503, detail="运行时未持锁（advice_reviewed 需 daemon 持有者）"
+        )
+    if date != market_today():
+        raise HTTPException(status_code=422, detail="仅当日卡可标记已复核")
+    if not _ADVICE_CODE_RE.fullmatch(code):
+        raise HTTPException(status_code=422, detail="code 仅允许 5/6 位数字")
+    layout = _layout(request)
+    if not layout.advice_card_path(date, code).exists():
+        raise HTTPException(status_code=404, detail=f"建议卡不存在：{date}/{code}")
+    try:
+        runtime.loop.decisions.append(
+            _now_iso(),
+            "advice_reviewed",
+            {"date": date, "code": code},
+            path=layout.decisions_path,
+        )
+    except DecisionChainError as exc:
+        raise HTTPException(status_code=503, detail=f"{exc}") from exc
+    m = mount if mount in ("mo", "ad") else "ad"
+    return HTMLResponse(render_advice_detail(advice_card(date, code, request), mount=m))
 
 
 # --- 模拟盘④（paper 视图 + 确认/驳回提交半边；写者=paper 引擎进程内直调，13-paper §⑥） ---
@@ -1108,6 +1189,7 @@ def advice(request: Request, date: str | None = None) -> dict:
 
     layout = _layout(request)
     day = date or market_today()
+    decision_lines = decisions(request, tail=200)
     cards: list[dict] = []
     day_dir = layout.advice_dir / day
     if day_dir.exists():
@@ -1115,13 +1197,15 @@ def advice(request: Request, date: str | None = None) -> dict:
             meta = parse_advice_card(card_path.read_text(encoding="utf-8"))
             if not meta:
                 continue
+            code = meta.get("code", card_path.stem)
             cards.append(
                 {
-                    "code": meta.get("code", card_path.stem),
+                    "code": code,
                     "path": str(card_path),
                     "mtime": dt.datetime.fromtimestamp(
                         card_path.stat().st_mtime, tz=dt.UTC
                     ).isoformat(timespec="seconds"),
+                    "reviewed": has_review(decision_lines, date=day, code=code),
                     **{k: v for k, v in meta.items() if k != "task_id"},
                 }
             )
@@ -1176,7 +1260,44 @@ def advice_card(date: str, code: str, request: Request) -> dict:
         "meta": parse_advice_card(md),
         # rendered：呈现态原值（12-orchestration §⑫；落盘 md 维持脱敏零改动）
         "rendered": _advice_rendered(request, code),
+        # reviewed：已复核状态（advice_reviewed 决策反查；0.0.25）
+        "reviewed": has_review(decisions(request, tail=200), date=date, code=code),
+        # price：呈现态三源现价（signals 同源单股取值；无价 None——价格非敏感量且系呈现态字段）
+        "price": _advice_price(request, code),
     }
+
+
+def _advice_price(request: Request, code: str) -> dict | None:
+    """⑤卡详情现价：signals 端点同源三源合并单股取值（零网络，只读台账）。"""
+    row = next((r for r in signals(request).get("rows", []) if r.get("code") == code), None)
+    if not row or row.get("price") is None:
+        return None
+    return {
+        "price": row["price"],
+        "asof": str(row.get("price_asof") or ""),
+        "source": str(row.get("price_source") or ""),
+        "stale": bool(row.get("price_stale")),
+    }
+
+
+@router.get("/advice/export/{date}/{code}")
+def advice_export(date: str, code: str, request: Request) -> PlainTextResponse:
+    """导出脱敏卡片：已落盘卡原样下发（NR-5 脱敏在写侧已完成，零改写零重算）。
+
+    路径三保险（沿 0.0.21 audit 先例）：日期正则 + code 正则 + resolve 边界。
+    """
+    layout = _layout(request)
+    if not _ADVICE_DATE_RE.fullmatch(date) or not _ADVICE_CODE_RE.fullmatch(code):
+        raise HTTPException(status_code=404, detail="建议卡路径非法")
+    path = (layout.advice_dir / date / f"{code}.md").resolve()
+    if not path.is_relative_to(layout.advice_dir.resolve()) or not path.exists():
+        raise HTTPException(status_code=404, detail=f"建议卡不存在：{date}/{code}")
+    md = path.read_text(encoding="utf-8")
+    return PlainTextResponse(
+        md,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="advice-{date}-{code}.md"'},
+    )
 
 
 def _advice_rendered(request: Request, code: str) -> dict | None:

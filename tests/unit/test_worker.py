@@ -251,10 +251,32 @@ class TestSubmitAndWatch:
         )
         from stock_trading_agent.loop.watcher import EventsWatcher
 
+        def _append_event(ts: str) -> None:
+            events_file.open("a", encoding="utf-8").write(
+                json.dumps(
+                    {
+                        "ts": ts,
+                        "code": "600519",
+                        "market": "cn",
+                        "kind": "real",
+                        "rule": "stop_break",
+                        "level": "T0",
+                        "notify": True,
+                        "review": "止损复核",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+
         w1 = EventsWatcher(layout=rt.layout, on_events=lambda evs: None)
         assert len(w1.poll_once()) == 1
+        _append_event("09:32:00")
+        assert len(w1.poll_once()) == 1  # 同实例二次消费：偏移必须推进并落盘（W6 别名回归钉）
         w2 = EventsWatcher(layout=rt.layout, on_events=lambda evs: None)  # 新实例（模拟重启）
         assert w2.poll_once() == []  # 偏移断点：不重复消费
+        _append_event("09:33:00")
+        assert len(w2.poll_once()) == 1
 
     def test_watcher_thread_picks_up_new_event(self, make_runtime):
         import threading

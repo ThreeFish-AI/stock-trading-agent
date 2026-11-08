@@ -193,3 +193,26 @@ class TestRepair:
         log = DecisionLog()
         log.append("t1", "task_done", {"a": 1}, path=path)
         assert DecisionLog.load(path).verify_chain()  # 完好链 load 直接过（CLI noop 前置判据）
+
+    def test_concurrent_appends_no_duplicate_seq(self, tmp_path: Path):
+        """进程内并发 append（worker/watcher/线程池 handler 共享实例）：无重复 seq、链完整。"""
+        import threading
+
+        path = tmp_path / "decisions.jsonl"
+        log = DecisionLog()
+        n_threads, per_thread = 8, 25
+
+        def worker(tid: int) -> None:
+            for i in range(per_thread):
+                log.append("2026-11-08T00:00:00Z", "task_done", {"t": tid, "i": i}, path=path)
+
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(log.lines) == n_threads * per_thread
+        assert log.verify_chain()
+        reloaded = DecisionLog.load(path)  # 盘上链同样无重复
+        assert len(reloaded.lines) == n_threads * per_thread and reloaded.verify_chain()

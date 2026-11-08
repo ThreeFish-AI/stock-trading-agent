@@ -286,7 +286,9 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .page.on{display:flex;flex-direction:column;gap:13px}
 .phase-post{color:var(--t2);border:1px solid var(--line2);background:var(--bg2)}
 .phase-closed{color:var(--t3);border:1px solid var(--line);background:var(--bg1)}
+.phase-lunch{color:var(--t2);border:1px solid var(--holdln);background:var(--bg2)}
 .pd-post,.pd-closed{background:var(--t4)}
+.pd-lunch{background:var(--hold)}
 .nr2{display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--px-red) 9%,transparent);border:1px solid var(--upln);
   color:var(--nr2-fg);border-radius:var(--r-lg);padding:10px 14px;font-size:var(--fs-13);font-weight:500}
 .nr2 b{color:var(--nr2-fg-em)}
@@ -468,7 +470,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
     <div class="card-b" id="dg-form" hx-get="/api/panel/dgform" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   <div class="col">
   <div class="card"><div class="card-h"><span class="ct">会话任务</span><span class="cm" id="dg-task-meta"></span><span class="htmx-indicator spin"></span></div>
-    <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="every 5s [panelActive('diagnosis')], sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+    <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="load, every 5s [panelActive('diagnosis')], sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   <div class="card"><div class="card-h"><span class="ct">会话观测</span><span class="cm">五段进度 · 双轨意见板 · 裁决卡</span></div>
     <div class="card-b" id="dg-session"><div class="pipe pipe-dense"><div class="step pend"><div class="sc">1</div><div class="sl">取证据</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">2</div><div class="sl">证据包</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">3</div><div class="sl">出意见</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">4</div><div class="sl">裁决</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">5</div><div class="sl">报告</div><div class="ss num">待启动</div></div></div><div class="loadmsg">提交任务后于此观测五段推进（真实 CC 会话）。</div></div></div>
   </div>

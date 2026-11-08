@@ -201,3 +201,180 @@ class TestLocksRegression:
             with hold_lock(layout_root / "monitor" / "watch.lock"):
                 body = client.get("/api/monitor/status").json()
                 assert body["locks"]["watch"] is True
+
+
+class TestReviewExport:
+    """0.0.25「标记已复核 + 导出脱敏卡片」：advice_reviewed 决策往返、降级序、导出三保险。"""
+
+    def _card_via_full_chain(self, client) -> tuple[str, str]:
+        client.post("/api/queue/submit", json={"kind": "monitor_review", "code": "600519"})
+        task = client.app.state.loop_runtime.consume_one()
+        assert task is not None and task.status == "done"
+        return market_today(), "600519"
+
+    def test_review_roundtrip_and_idempotent(self, tmp_path: Path):
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            day, code = self._card_via_full_chain(client)
+            frag = client.get(f"/api/panel/advice-detail/{day}/{code}?mount=mo").text
+            assert "标记已复核" in frag and 'hx-target="#advice-detail"' in frag
+            assert "导出脱敏卡片" in frag
+
+            assert app.state.loop_runtime.start()
+            resp = client.post(
+                "/api/panel/advice/review", data={"date": day, "code": code, "mount": "mo"}
+            )
+            assert resp.status_code == 200
+            assert "已复核" in resp.text and "标记已复核" not in resp.text  # 按钮位换徽章
+
+            decisions = client.get("/api/decisions").json()
+            reviewed = [d for d in decisions if d["kind"] == "advice_reviewed"]
+            # NR-5：payload 恰两字段
+            assert reviewed and reviewed[-1]["payload"] == {"date": day, "code": code}
+
+            # 幂等：重复 POST 再记一条、呈现不回退（沿 briefing_ack 语义不 409）
+            resp2 = client.post("/api/panel/advice/review", data={"date": day, "code": code})
+            assert resp2.status_code == 200 and "已复核" in resp2.text
+            reviewed2 = [
+                d for d in client.get("/api/decisions").json() if d["kind"] == "advice_reviewed"
+            ]
+            assert len(reviewed2) == len(reviewed) + 1
+
+            # ⑤卡库复核列 + advice 列表 reviewed 字段
+            lib = client.get("/api/panel/advice").text
+            assert "复核</th>" in lib and "已复核" in lib
+            assert client.get("/api/advice").json()["cards"][0]["reviewed"] is True
+        app.state.loop_runtime.stop()
+
+    def test_review_degradations(self, tmp_path: Path):
+        app = make_app(tmp_path)  # runtime 未 start → 503
+        day = market_today()
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            resp = client.post("/api/panel/advice/review", data={"date": day, "code": "600519"})
+            assert resp.status_code == 503
+        rt = app.state.loop_runtime
+        assert rt.start()
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            day, code = self._card_via_full_chain(client)
+            assert (
+                client.post(
+                    "/api/panel/advice/review", data={"date": "2020-01-01", "code": code}
+                ).status_code
+                == 422
+            )  # 非当日
+            assert (
+                client.post(
+                    "/api/panel/advice/review", data={"date": day, "code": "abc"}
+                ).status_code
+                == 422
+            )  # code 非法
+            assert (
+                client.post(
+                    "/api/panel/advice/review", data={"date": day, "code": "601919"}
+                ).status_code
+                == 404
+            )  # 卡不在场
+        rt.stop()
+
+    def test_export_serves_disk_card_verbatim(self, tmp_path: Path):
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            day, code = self._card_via_full_chain(client)
+            md = (
+                Path(client.app.state.state_root) / "monitor" / "advice" / day / f"{code}.md"
+            ).read_text(encoding="utf-8")
+            resp = client.get(f"/api/advice/export/{day}/{code}")
+            assert resp.status_code == 200
+            assert resp.text == md  # 零改写下发
+            assert resp.headers["content-disposition"] == (
+                f'attachment; filename="advice-{day}-{code}.md"'
+            )
+
+    def test_export_path_guards(self, tmp_path: Path):
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            for bad in (
+                "/api/advice/export/2026-11-09/600519/..",  # 多段
+                "/api/advice/export/bad-date/600519",  # 日期正则
+                "/api/advice/export/2026-11-09/61a19",  # code 正则
+                "/api/advice/export/2026-11-09/601919",  # 边界内但卡缺席
+            ):
+                assert client.get(bad).status_code == 404, bad
+
+
+class TestPriceSources:
+    """§⑫ 现价源三源合并 e2e（ticks 轮询价 / T1 evidence 价 / sim·events 既有源）。"""
+
+    @staticmethod
+    def _seed(tmp_path: Path, *, ticks_asof: str, t1: bool = True) -> None:
+        layout_root = tmp_path / "state"
+        layout_root.mkdir(exist_ok=True)
+        (layout_root / "signals.json").write_text(
+            json.dumps([{"code": "600519", "signal": "hold", "key_levels": {"stop": 9.0}}]),
+            encoding="utf-8",
+        )
+        ticks_dir = layout_root / "monitor" / "ticks"
+        ticks_dir.mkdir(parents=True, exist_ok=True)
+        (ticks_dir / f"{market_today()}.jsonl").write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {"code": "600519", "price": 9.4, "ts_utc8": f"{market_today()} 09:31:00"}
+                    ),
+                    json.dumps({"code": "600519", "price": 9.6, "ts_utc8": ticks_asof}),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if t1:
+            t1_dir = layout_root / "agent" / "runs" / market_today() / "t1" / "600519"
+            t1_dir.mkdir(parents=True, exist_ok=True)
+            (t1_dir / "evidence.json").write_text(
+                json.dumps(
+                    {
+                        "blocks": {"quote": {"price": 9.5, "state": "available"}},
+                        "generated_at": f"{market_today()}T08:00:00+08:00",  # 比 ticks 旧
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+    def test_ticks_latest_wins_and_stale_flag(self, tmp_path: Path):
+        today = market_today()
+        self._seed(tmp_path, ticks_asof=f"{today} 10:05:00")  # 市场今日 → 不陈旧
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            row = next(
+                r for r in client.get("/api/signals").json()["rows"] if r["code"] == "600519"
+            )
+            assert row["price"] == 9.6 and row["price_source"] == "ticks"  # 后行覆盖+asof 胜 t1
+            assert row["price_stale"] is False
+
+    def test_stale_asof_marks_row(self, tmp_path: Path):
+        import datetime as _dt
+
+        yesterday = (_dt.datetime.fromisoformat(market_today()) - _dt.timedelta(days=1)).strftime(
+            "%Y-%m-%d"
+        )
+        self._seed(tmp_path, ticks_asof=f"{yesterday} 15:00:00", t1=False)  # 昨日 ticks → 陈旧
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            row = next(
+                r for r in client.get("/api/signals").json()["rows"] if r["code"] == "600519"
+            )
+            assert row["price"] == 9.6 and row["price_stale"] is True
+
+    def test_detail_fragment_price_block_and_mount(self, tmp_path: Path):
+        today = market_today()
+        self._seed(tmp_path, ticks_asof=f"{today} 10:05:00")
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            client.post("/api/queue/submit", json={"kind": "monitor_review", "code": "600519"})
+            task = client.app.state.loop_runtime.consume_one()
+            assert task is not None and task.status == "done"
+            frag = client.get(f"/api/panel/advice-detail/{today}/600519?mount=mo").text
+            assert "现价（多源 asof）" in frag and "ticks" in frag and "10:05" in frag
+            assert 'hx-target="#advice-detail"' in frag  # mount=mo → ③页挂点
+            body = client.get(f"/api/advice/{today}/600519").json()
+            assert body["price"]["price"] == 9.6 and body["price"]["source"] == "ticks"

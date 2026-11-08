@@ -85,8 +85,8 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         action = ""
         if code in advice_codes and day:
             action += (
-                f'<button class="mini" hx-get="/api/panel/advice-detail/{_esc(day)}/{_esc(code)}" '
-                'hx-target="#advice-detail" hx-swap="innerHTML show:top">详情</button> '
+                f'<button class="mini" hx-get="/api/panel/advice-detail/{_esc(day)}/{_esc(code)}'
+                '?mount=mo" hx-target="#advice-detail" hx-swap="innerHTML show:top">详情</button> '
             )
         if review and not suppressed:
             action += (
@@ -1205,15 +1205,23 @@ def render_report_body(code_market: str, filename: str, md: str) -> str:
     )
 
 
-def render_advice_detail(body: dict) -> str:
-    """③⑤建议卡详情：四块布局（候选动作/差异/份额原值 .bignum/σ√h 表）。"""
+def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
+    """③⑤建议卡详情：四块布局（候选动作/差异/份额原值 .bignum/σ√h 表）+ 现价块 + 复核底条。
+
+    mount=mo→③页 #advice-detail / ad→⑤页 #advice-detail-2（按钮 target 按挂点映射）。
+    """
     meta = body.get("meta") or {}
     rendered = body.get("rendered")
+    reviewed = bool(body.get("reviewed"))
+    price_fact = body.get("price") or {}
     from stock_trading_agent.loop.advice import parse_trend_table
 
     band_rows = parse_trend_table(body.get("md", ""))
     prev = meta.get("prev_final_signal", "none")
     final = meta.get("final_signal", "")
+    date = body.get("date", "")
+    code = meta.get("code", body.get("code", ""))
+    target = "#advice-detail" if mount == "mo" else "#advice-detail-2"
     shares = (
         f'<div class="bignum num">{rendered["t1_sell_shares"]:,}</div>'
         f'<p class="tbl-note">持仓 {rendered["held_lots"]} 手 · 冻结后可卖 '
@@ -1226,6 +1234,20 @@ def render_advice_detail(body: dict) -> str:
             "落盘口径见卡面百分比。</span></p>"
         )
     )
+    p = price_fact.get("price")
+    if isinstance(p, (int, float)):
+        asof = str(price_fact.get("asof") or "")
+        asof_txt = f" · asof {_esc(asof[11:16] or asof[:16])}" if asof else ""
+        stale = ' <span class="tag">陈旧</span>' if price_fact.get("stale") else ""
+        price_html = (
+            f'<div class="num">{p}</div><p class="tbl-note">源 {_esc(price_fact.get("source", ""))}'
+            f"{_esc(asof_txt)}{stale}——多源合并取 asof 最新（§⑫ 现价源）</p>"
+        )
+    else:
+        price_html = (
+            '<p class="empty" title="三源现价缺席（paper last_price / 盘中 facts / '
+            'T1 日 K 收盘）">—<span class="empty-tip">三源现价缺席，σ√h 参考带停用。</span></p>'
+        )
     trend_rows = "".join(
         f"<tr><td>{_esc(r['horizon'])}</td>"
         f'<td class="num" title="带下沿 {_esc(r["low"])}">{r["low"]}</td>'
@@ -1242,12 +1264,24 @@ def render_advice_detail(body: dict) -> str:
         if band_rows
         else '<p class="empty">无走势参考表。</p>'
     )
+    reviewed_html = (
+        '<span class="st done">已复核</span>'
+        if reviewed
+        else (
+            f'<button class="mini" hx-post="/api/panel/advice/review" '
+            f'hx-vals=\'{{"date": "{_esc(date)}", "code": "{_esc(code)}", '
+            f'"mount": "{_esc(mount)}"}}\' '
+            f'hx-target="{target}" hx-swap="innerHTML" '
+            f'hx-disabled-elt="this">标记已复核</button>'
+        )
+    )
     return (
         f'<div class="card adv"><div class="card-h">'
         f'<span class="lv lv2" title="monitor-advice/1">T2 卡</span>'
         '<span class="ct">T2 建议卡 · '
-        f'<span class="code num">{_esc(meta.get("code", ""))}</span></span>'
-        '<span class="cm">已重裁决 ✓ NR-1 · 待用户复核</span></div>'
+        f'<span class="code num">{_esc(code)}</span></span>'
+        '<span class="cm">已重裁决 ✓ NR-1 · '
+        f"{'已复核 ✓' if reviewed else '待用户复核'}</span></div>"
         '<div class="card-b"><div class="adv-grid">'
         '<div class="adv-blk"><div class="adv-k" title="vibe-stock/04 五档分类学措辞">'
         f"候选动作（五档措辞）</div>"
@@ -1256,8 +1290,13 @@ def render_advice_detail(body: dict) -> str:
         f'<div class="num">{_esc(prev)} → {_esc(final)}</div></div>'
         f'<div class="adv-blk"><div class="adv-k">T+1 可卖份额（呈现态）</div>{shares}</div>'
         f'<div class="adv-blk"><div class="adv-k">走势参考（σ√h · 零权重）</div>{trend}</div>'
+        f'<div class="adv-blk"><div class="adv-k">现价（多源 asof）</div>{price_html}</div>'
         "</div>"
         '<p class="tbl-note">盘中结论以收盘复核为准 · 候选动作为五档分类学措辞 · 不构成投资建议</p>'
+        '<div class="adv-foot">'
+        '<span class="warn-tx">待收盘复核 · 非投资建议 · AI 生成标注 · 用户复核前置</span>'
+        f'<span class="fx"><a class="mini" href="/api/advice/export/{_esc(date)}/{_esc(code)}" '
+        f"download>导出脱敏卡片</a>{reviewed_html}</span></div>"
         "</div></div>"
     )
 
@@ -1549,10 +1588,12 @@ def render_advice_library(payload: dict) -> str:
             code = _esc(card.get("code", ""))
             link = (
                 f'<a href="#" class="code num" '
-                f'hx-get="/api/panel/advice-detail/{_esc(day)}/{code}" '
+                f'hx-get="/api/panel/advice-detail/{_esc(day)}/{code}?mount=ad" '
                 f'hx-target="#advice-detail-2" hx-swap="innerHTML show:top">{code}</a>'
             )
+            reviewed = '<span class="st done">已复核</span>' if card.get("reviewed") else "—"
             mtime = str(card.get("mtime", ""))
+
             rows.append(
                 "<tr>"
                 f"<td>{link}</td>"
@@ -1563,16 +1604,16 @@ def render_advice_library(payload: dict) -> str:
                 f'<td class="num">{_esc(card.get("t1_sell_pct", ""))}% · '
                 f"{_esc(card.get('t1_sell_tier'))}</td>"
                 f'<td class="num" title="{_esc(mtime)}">{_esc(_ts_hhmm(mtime))}</td>'
+                f"<td>{reviewed}</td>"
                 "</tr>"
             )
         parts.append(
             '<table class="tbl"><colgroup><col class="w-code"><col><col class="w-num">'
-            '<col class="w-num"><col class="w-num"><col class="w-ts"></colgroup>'
+            '<col class="w-num"><col class="w-num"><col class="w-ts"><col class="w-st"></colgroup>'
             '<thead><tr><th scope="col">代码</th><th scope="col">候选动作</th>'
             '<th scope="col">终判</th><th scope="col">上一裁决</th>'
-            '<th scope="col">T+1 可卖</th><th scope="col">落盘</th></tr></thead><tbody>'
-            + "".join(rows)
-            + "</tbody></table>"
+            '<th scope="col">T+1 可卖</th><th scope="col">落盘</th>'
+            '<th scope="col">复核</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table>"
         )
     else:
         parts.append(

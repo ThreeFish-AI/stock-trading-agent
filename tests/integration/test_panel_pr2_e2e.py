@@ -73,7 +73,7 @@ class TestMonitorPageFacts:
         assert "9.5" in frag and "-5.00%" in frag and "dist-breach" in frag  # 现价/距线 breach
         assert "+2.00%" in frag and "dist-near" in frag  # near 判据
         assert "mech_risk high" in frag  # riskchip
-        assert f'hx-get="/api/panel/advice-detail/{day}/600519"' in frag
+        assert f'hx-get="/api/panel/advice-detail/{day}/600519?mount=mo"' in frag
         assert 'hx-target="#advice-detail"' in frag and ">详情</button>" in frag
         # 无复核短语行（000001）无盯盘复核按钮，但有详情（无卡 → 也不给详情）
         assert "盯盘复核 000001" not in frag
@@ -92,7 +92,7 @@ class TestMonitorPageFacts:
             frag = client.get("/api/panel/advice").text
         # 0.0.15 P1 并轨后：code 单元格即链接（无独立详情按钮列）
         assert 'hx-target="#advice-detail-2"' in frag
-        assert f'hx-get="/api/panel/advice-detail/{day}/600519"' in frag
+        assert f'hx-get="/api/panel/advice-detail/{day}/600519?mount=ad"' in frag
 
     def test_notifications_lockscreen_note(self, tmp_path: Path):
         app, _, _layout = _app(tmp_path)

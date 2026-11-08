@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -168,6 +169,33 @@ def _cmd_repair_decisions(_args: argparse.Namespace) -> int:
     print(f"备份：{backup}")
     print(f"新链头：{stats.new_head[:12]}…（建议 launchctl kickstart 重启 serve）")
     return 0
+
+
+def _cmd_archive_state(args: argparse.Namespace) -> int:
+    """六桶状态归档（G1）：默认 dry-run，--apply 落盘（归档非删除，档案 agent/archive/）。
+
+    退出码：0=完成 · 3=daemon 在跑（单写者守卫）。
+    """
+    from stock_trading_agent.loop.monitor_events import market_today
+    from stock_trading_agent.state.paths import StateLayout
+    from stock_trading_agent.state.prune import archive_state
+    from stock_trading_agent.state.store import FileLock, LockTimeout
+
+    layout = StateLayout.from_env()
+    try:
+        with FileLock(layout.daemon_lock, timeout_s=1.0):
+            summary = archive_state(layout, today=market_today(), apply=args.apply)
+            for bucket, stat in summary.items():
+                print(f"  {bucket}: 归档 {stat['archive']} / 保留 {stat['keep']}")
+            print(
+                "已落盘（含 state_archived 留痕）"
+                if args.apply
+                else "dry-run 未落盘（--apply 执行）"
+            )
+            return 0
+    except LockTimeout:
+        print("daemon.lock 被持有（serve/run-once 在跑）——先停守护再归档，exit 3")
+        return 3
 
 
 def _repo_root():
@@ -910,6 +938,316 @@ def _run_selftests() -> list[tuple[str, bool, str]]:
 
     check_case("server.port_guard.probe", port_guard_probe)
 
+    # --- 0.0.15 修复轮独有 case（merge 自修复线；API 已对齐尾对账版） ---
+    def decisions_repair_plan():
+        from stock_trading_agent.state.decisions import DecisionLog, plan_repair
+
+        log = DecisionLog()
+        log.append("2026-11-07T00:00:00Z", "task_done", {"task_id": "t1"})
+        log.append("2026-11-07T00:00:01Z", "task_done", {"task_id": "t2"})
+        replayed = list(log.lines)  # 模拟 I-003 游标重灌：全史重追加
+        broken = DecisionLog(list(log.lines) + replayed)
+        assert not broken.verify_chain()
+        rebuilt, dropped = plan_repair(broken.lines)
+        assert dropped == 2 and len(rebuilt) == 2
+        assert DecisionLog(rebuilt).verify_chain()
+        assert [x.payload["task_id"] for x in rebuilt] == ["t1", "t2"]  # 保首行、payload 不动
+
+    check_case("state.decisions.repair_plan", decisions_repair_plan)
+
+    def store_append_lines_and_cache():
+        import tempfile
+        from pathlib import Path
+
+        from stock_trading_agent.state.store import (
+            atomic_append_lines,
+            read_json_cached,
+            read_jsonl_lines_cached,
+        )
+
+        d = Path(tempfile.mkdtemp())
+        target = d / "audit" / "x.jsonl"
+        atomic_append_lines(target, ["a", "b"])
+        atomic_append_lines(target, ["c"])
+        assert target.read_text(encoding="utf-8") == "a\nb\nc\n"
+        atomic_append_lines(target, [])  # 空列表零 IO
+        assert target.read_text(encoding="utf-8") == "a\nb\nc\n"
+        j = d / "hot.json"
+        j.write_text('{"v": 1}', encoding="utf-8")
+        assert read_json_cached(j) == {"v": 1}
+        assert read_json_cached(j) == {"v": 1}  # 命中缓存
+        j.write_text('{"v": 2}', encoding="utf-8")
+        import os
+
+        os.utime(j, ns=(j.stat().st_mtime_ns + 1_000_000, 0))  # mtime 推进兜底
+        assert read_json_cached(j) == {"v": 2}  # 失效重读
+        jl = d / "hot.jsonl"
+        jl.write_text('{"n": 1}\n', encoding="utf-8")
+        assert len(read_jsonl_lines_cached(jl)) == 1
+        with jl.open("a", encoding="utf-8") as fh:
+            fh.write('{"n": 2}\n')
+        os.utime(jl, ns=(jl.stat().st_mtime_ns + 1_000_000, 0))
+        assert len(read_jsonl_lines_cached(jl)) == 2  # 追加后失效重读
+
+    check_case("state.store.append_lines_cache", store_append_lines_and_cache)
+
+    def prune_plans():
+        from stock_trading_agent.state.prune import (
+            budget_daily_split,
+            split_decisions_rows,
+            split_queue,
+            split_sessions,
+        )
+
+        old = {"task_id": "a", "status": "done", "finished_at": "2026-09-01T10:00:00+00:00"}
+        fresh = {"task_id": "b", "status": "done", "finished_at": "2026-11-08T10:00:00+00:00"}
+        active = {"task_id": "c", "status": "queued", "enqueued_at": "2026-11-08T01:00:00+00:00"}
+        keep, arch = split_queue([old, fresh, active], today="2026-11-08")
+        assert keep == [fresh, active] and arch == [old]  # 旧终态归档、非终态恒留
+        capped_keep, capped_arch = split_queue(
+            [
+                {"task_id": f"t{i}", "status": "done", "finished_at": f"2026-11-{(i % 8) + 1:02d}"}
+                for i in range(600)
+            ],
+            today="2026-11-08",
+        )
+        assert len(capped_arch) == 100 and len(capped_keep) == 500  # 超 500 条上限归档
+        keep_s, arch_s = split_sessions(
+            {
+                "u1": {"session_uuid": "u1", "ts": "2026-08-01T00:00:00+00:00"},
+                "u2": {"session_uuid": "u2", "ts": "2026-11-08T00:00:00+00:00"},
+            },
+            today="2026-11-08",
+        )
+        assert set(keep_s) == {"u2"} and len(arch_s) == 1
+        keep_d, arch_d = budget_daily_split(
+            {
+                "daily": {"2026-04-01": {"usd": 1.0}, "2026-11-08": {"usd": 2.0}},
+                "monthly": {"2026-11": {}},
+            },
+            today="2026-11-08",
+        )
+        assert set(keep_d) == {"2026-11-08"} and set(arch_d) == {"2026-04-01"}
+        rows = [
+            '{"seq":1,"ts":"2026-10-31T23:00:00+00:00","kind":"task_done","payload":{}}',
+            '{"seq":2,"ts":"2026-11-01T23:00:00+00:00","kind":"task_done","payload":{}}',
+            '{"seq":3,"ts":"2026-09-30T23:00:00+00:00","kind":"task_done","payload":{}}',
+            '{"broken',
+        ]
+        keep_r, arch_r = split_decisions_rows(rows, today="2026-11-08")
+        # 10-31 距今 8 天：月前缀 < 当月但在尾随保底窗内 → 恒留（外仓 T+5 回看窗覆盖）；
+        # 09-30 超窗归档；不可解析行随归档迁出（防 _rebuild 中途崩溃）。
+        assert keep_r == [rows[0], rows[1]] and arch_r == [rows[2], rows[3]]
+
+    check_case("state.prune.plans", prune_plans)
+
+    def dirwatch_skip_predicate():
+        import tempfile
+        from pathlib import Path
+
+        from stock_trading_agent.loop.dirwatch import DirWatcher
+
+        d = Path(tempfile.mkdtemp())
+        (d / "ticks").mkdir()
+        (d / "ticks" / "t.jsonl").write_text("x", encoding="utf-8")
+        (d / "queue.json").write_text("{}", encoding="utf-8")
+        ticks = d / "ticks"
+        watcher = DirWatcher(
+            roots=(d,),
+            on_change=lambda _: None,
+            to_event=lambda p: "queue" if p.name == "queue.json" else None,
+            skip=lambda p: p.is_relative_to(ticks),
+        )
+        watcher.poll_once()  # 建基线
+        (d / "ticks" / "t.jsonl").write_text("y", encoding="utf-8")  # 被跳过子树变更
+        assert watcher.poll_once() == set()
+        (d / "queue.json").write_text('{"v":1}', encoding="utf-8")
+        assert watcher.poll_once() == {"queue"}  # 非跳过路径照常捕获
+
+    check_case("loop.dirwatch.skip", dirwatch_skip_predicate)
+
+    def watcher_conditional_save():
+        import json as _json
+        import tempfile
+        from pathlib import Path
+
+        from stock_trading_agent.loop.monitor_events import market_today
+        from stock_trading_agent.loop.watcher import EventsWatcher
+        from stock_trading_agent.state.paths import StateLayout
+
+        layout = StateLayout(root=Path(tempfile.mkdtemp()))
+        ev_file = layout.monitor_events_file(market_today())
+        ev_file.parent.mkdir(parents=True, exist_ok=True)
+        ev_file.write_text("", encoding="utf-8")
+        w = EventsWatcher(layout=layout, on_events=lambda _: None)
+        w.poll_once()  # 建基线（首写）
+        state = layout.watcher_state_path
+        first_mtime = state.stat().st_mtime_ns
+        w.poll_once()  # 偏移零变化（W6：不重写）
+        assert state.stat().st_mtime_ns == first_mtime
+
+        def _ev_line(ts: str) -> str:
+            return _json.dumps(
+                {
+                    "ts": ts,
+                    "code": "600519",
+                    "market": "cn",
+                    "kind": "real",
+                    "rule": "stop_break",
+                    "level": "T0",
+                    "notify": True,
+                    "review": "止损复核",
+                },
+                ensure_ascii=False,
+            )
+
+        with ev_file.open("a", encoding="utf-8") as fh:  # 偏移推进 → 必须重写（别名回归钉）
+            fh.write(_ev_line("09:31:00") + "\n")
+        assert len(w.poll_once()) == 1
+        assert state.stat().st_mtime_ns != first_mtime
+        saved = _json.loads(state.read_text(encoding="utf-8"))
+        assert saved["offsets"] == {ev_file.name: len(_ev_line("09:31:00").encode("utf-8")) + 1}
+        # 偏移快照须与内存解耦：再推进后不落盘的比较不得因别名恒等而漏写
+        with ev_file.open("a", encoding="utf-8") as fh:
+            fh.write(_ev_line("09:32:00") + "\n")
+        assert len(w.poll_once()) == 1
+        saved2 = _json.loads(state.read_text(encoding="utf-8"))
+        assert saved2["offsets"][ev_file.name] > saved["offsets"][ev_file.name]
+
+    check_case("loop.watcher.conditional_save", watcher_conditional_save)
+
+    def state_probe_report():
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
+        import state_probe
+
+        metrics = {
+            "asof": "2026-11-08",
+            "root": "/tmp/x",
+            "decisions_lines": 57,
+            "decisions_bytes": 21_000,
+            "events_today_lines": 12,
+            "queue_tasks": 5,
+            "sources": {
+                "reports_md": {"files": 101, "bytes": 1_000_000},
+                "reports_scans": {"files": 20, "bytes": 8_100_000},
+                "monitor_ticks": {"files": 4, "bytes": 1_800_000},
+                "audit": {"files": 4, "bytes": 1_024},
+            },
+            "total": {"files": 451, "bytes": 12_000_000},
+        }
+        text = state_probe.format_text(metrics)
+        assert "decisions 57 行" in text and "451 文件" in text
+        status = state_probe.trigger_status(metrics)
+        assert status["T1_decisions_scale"]["hit"] is False
+        assert status["T3_file_count"]["hit"] is False
+
+    check_case("ops.state_probe.report", state_probe_report)
+
+    def advice_review_lookup():
+        from stock_trading_agent.loop.advice import has_review
+
+        lines = [
+            {"kind": "advice_reviewed", "payload": {"date": "2026-11-09", "code": "600519"}},
+            {"kind": "briefing_ack", "payload": {"date": "2026-11-09", "code": "600519"}},
+        ]
+        assert has_review(lines, date="2026-11-09", code="600519") is True
+        assert has_review(lines, date="2026-11-08", code="600519") is False
+
+    check_case("loop.advice.review_lookup", advice_review_lookup)
+
+    def price_merge_cases():
+        from stock_trading_agent.server.panel_data import (
+            PriceFact,
+            asof_stale,
+            merge_price_facts,
+            parse_ticks_prices,
+            t1_price,
+        )
+
+        merged = merge_price_facts(
+            {"A": PriceFact(9.0, "2026-11-09T09:00:00+08:00", "sim")},
+            {"A": PriceFact(9.6, "2026-11-09 10:05:00", "ticks")},  # 空间隔形态新者胜
+        )
+        assert merged["A"].price == 9.6 and merged["A"].source == "ticks"
+        merged2 = merge_price_facts(
+            {"A": PriceFact(9.0, "", "sim")}, {"A": PriceFact(9.1, "", "x")}
+        )
+        assert merged2["A"].price == 9.1  # 双无 asof 后到覆盖
+        ticks = parse_ticks_prices(
+            ['{"code":"600519","price":9.4}', '{"code":"600519","price":9.6}', "{bad"]
+        )
+        assert ticks["600519"].price == 9.6  # 尾扫后行覆盖、坏行跳过
+        assert t1_price({"blocks": {"quote": {"price": 9.5, "state": "available"}}}) is not None
+        assert t1_price({"blocks": {"quote": {"price": 9.5, "state": "stale"}}}) is None
+        assert asof_stale("2026-11-08 15:00:00", "2026-11-09") is True
+        assert asof_stale("2026-11-09T01:00:00+00:00", "2026-11-09") is False
+
+    check_case("server.panel.price_merge", price_merge_cases)
+
+    def phase_lunch_matrix():
+        from stock_trading_agent.loop.events import MARKET_TZ
+        from stock_trading_agent.server.panel_data import market_phase
+
+        def at(h: int, m: int) -> dt.datetime:
+            return dt.datetime(2026, 11, 9, h, m, tzinfo=MARKET_TZ)  # 周一
+
+        assert market_phase(at(12, 0))["overall"] == "lunch"  # 双市同休显午休
+        assert market_phase(at(11, 45))["overall"] == "live"  # CN 午休 HK 盘中 → 盘中
+        assert market_phase(at(13, 0))["overall"] == "live"  # 端点不含复牌
+
+    check_case("server.panel.phase_lunch", phase_lunch_matrix)
+
+    def upgrade_gate_diff():
+        from stock_trading_agent.cc_client.upgrade_gate import (
+            Finding,
+            aggregate,
+            diff_snapshots,
+            scan_changelog,
+            snapshot_from_capture,
+        )
+
+        help_text = (
+            "Options:\n"
+            "  --permission-mode <mode>              Permission mode (choices:\n"
+            '                                        "acceptEdits", "dontAsk")\n'
+            "  --zz-example <x>                      Example non-watched\n"
+        )
+        base = snapshot_from_capture("2.1.319", "t", help_text)
+        broken = help_text.replace(
+            "  --zz-example <x>                      Example non-watched\n", ""
+        )
+        findings = diff_snapshots(base, snapshot_from_capture("2.1.320", "t", broken))
+        assert any(f.code == "flag_removed" for f in findings)  # 非在用消失=warn
+        assert aggregate([Finding("x", "fail", "y")]).verdict == "fail"
+        hits = scan_changelog(
+            "# C\n## 2.1.320\n- removed legacy flag\n## 2.1.319\n- stable\n",
+            "2.1.319",
+            "2.1.320",
+        )
+        assert any(f.code == "changelog_keyword" for f in hits)
+
+    check_case("cc_client.upgrade_gate.diff", upgrade_gate_diff)
+
+    def upgrade_gate_baseline_present():
+        import json as _json
+
+        gate_dir = Path(__file__).resolve().parents[2] / "ops" / "upgrade-gate"
+        pinned = _json.loads((gate_dir / "pinned.json").read_text(encoding="utf-8"))
+        ver = pinned["cli_version"]
+        assert (gate_dir / f"claude-{ver}.snapshot.json").exists(), f"基线快照缺席：{ver}"
+        from stock_trading_agent.cc_client.upgrade_gate import load_snapshot, watch_flags
+
+        snap = load_snapshot(gate_dir / f"claude-{ver}.snapshot.json")
+        # 防基线腐化：在用旗标除隐藏面（--max-turns 实测缺席）外必须在基线可见
+        hidden = {"--max-turns"}
+        missing = [f for f in watch_flags() - hidden if f not in snap.flags]
+        assert not missing, f"基线缺在用旗标：{missing}"
+
+    check_case("ops.upgrade-gate.baseline", upgrade_gate_baseline_present)
+
     return results
 
 
@@ -924,6 +1262,138 @@ def _cmd_selftest(_args: argparse.Namespace) -> int:
         else f"\n{len(failed)} 项失败"
     )
     return 1 if failed else 0
+
+
+def _cmd_upgrade_gate(args: argparse.Namespace) -> int:
+    """升级门禁三件套（0.0.26，§② 裁定；仅真实通道、显式人工触发）。
+
+    流程见 docs/ops/upgrade-runbook.md。exit 契约：0=PASS · 1=FAIL/错误 · 2=WARN
+    （逐条人工核后 --ack-warn 复跑登记）。
+    """
+    import datetime as dt
+
+    from stock_trading_agent.cc_client.cli import HeadlessCLIClient, ProbeError
+    from stock_trading_agent.cc_client.upgrade_gate import (
+        Finding,
+        aggregate,
+        load_snapshot,
+        scan_changelog,
+        serialize_snapshot,
+        snapshot_from_capture,
+    )
+    from stock_trading_agent.state.store import atomic_write_text
+
+    gate_dir = (
+        Path(args.out).resolve()
+        if args.out
+        else Path(__file__).resolve().parents[2] / "ops" / "upgrade-gate"
+    )
+    client = HeadlessCLIClient()
+
+    if args.capture:
+        report = client.probe()
+        help_text = client.capture_help()
+        caps = client.probe(deep=True).capabilities if args.deep else None
+        snap = snapshot_from_capture(
+            report.cli_version.split()[0],  # "2.1.319 (Claude Code)" → "2.1.319"
+            dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            help_text,
+            capabilities=caps or None,
+        )
+        gate_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(
+            gate_dir / f"claude-{snap.cli_version}.snapshot.json", serialize_snapshot(snap)
+        )
+        atomic_write_text(gate_dir / f"claude-{snap.cli_version}.help.txt", help_text)
+        print(
+            f"快照已落 {gate_dir}/claude-{snap.cli_version}.snapshot.json（{len(snap.flags)} 旗标）"
+        )
+        return 0
+
+    baseline_ver = args.baseline
+    if not baseline_ver:
+        pinned = gate_dir / "pinned.json"
+        if not pinned.exists():
+            print(f"基线缺席：{pinned} 不存在——先 --capture 建基线或 --baseline <ver> 指定")
+            return 1
+        import json
+
+        baseline_ver = str(json.loads(pinned.read_text(encoding="utf-8"))["cli_version"])
+    baseline_path = gate_dir / f"claude-{baseline_ver}.snapshot.json"
+    if not baseline_path.exists():
+        print(f"基线快照缺席：{baseline_path}")
+        return 1
+    base = load_snapshot(baseline_path)
+
+    findings: list[Finding] = []
+    try:
+        report = client.probe()
+        cur = snapshot_from_capture(
+            report.cli_version.split()[0],
+            dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            client.capture_help(),
+            capabilities=client.probe(deep=True).capabilities if args.deep else None,
+        )
+    except ProbeError as exc:
+        verdict = aggregate([Finding("version_probe_failed", "fail", str(exc))])
+        _upgrade_gate_decide(base.cli_version, "unknown", verdict, args, findings)
+        print(f"FAIL  version_probe_failed  {exc}")
+        return 1
+    if not client.probe_enum_reject():
+        findings.append(
+            Finding("enum_probe_eaten", "fail", "非法枚举探针 exit 0——隐藏别名吃进（F-30）")
+        )
+    findings.extend(_diff_public(base, cur))
+    if args.changelog:
+        try:
+            text = Path(args.changelog).read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(Finding("changelog_unreadable", "warn", f"CHANGELOG 不可读：{exc}"))
+        else:
+            findings.extend(scan_changelog(text, base.cli_version, cur.cli_version))
+    verdict = aggregate(findings)
+    _upgrade_gate_decide(base.cli_version, cur.cli_version, verdict, args, findings)
+    for f in verdict.findings:
+        print(f"{f.severity.upper():4}  {f.code}  {f.detail}")
+    print(f"baseline {base.cli_version} → current {cur.cli_version}：{verdict.verdict.upper()}")
+    return {"pass": 0, "warn": 2, "fail": 1}[verdict.verdict]
+
+
+def _diff_public(base, cur):
+    """diff_snapshots 的延迟导入壳（避免模块级循环）。"""
+    from stock_trading_agent.cc_client.upgrade_gate import diff_snapshots
+
+    return diff_snapshots(base, cur)
+
+
+def _upgrade_gate_decide(baseline_ver: str, cur_ver: str, verdict, args, findings) -> None:
+    """upgrade_gate_run 决策留痕（payload 零敏感量，NR-5；断链不静默吞——打指引）。
+
+    坑位：DecisionLog.append 内部已持 decisions.lock——外层不得再包同路径 FileLock
+    （不同 fd 的 flock 不认进程内重入，自死锁至 LockTimeout）。
+    """
+    import datetime as dt
+
+    from stock_trading_agent.state.decisions import DecisionChainError, DecisionLog
+    from stock_trading_agent.state.paths import StateLayout
+
+    layout = StateLayout.from_env()
+    try:
+        DecisionLog().append(
+            dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
+            "upgrade_gate_run",
+            {
+                "baseline_version": baseline_ver,
+                "current_version": cur_ver,
+                "verdict": verdict.verdict,
+                "codes": [f.code for f in findings],
+                "ack": bool(args.ack_warn),
+                "deep": bool(args.deep),
+            },
+            path=layout.decisions_path,
+        )
+    except DecisionChainError as exc:
+        print(f"决策链断裂，结果照常输出但不落决策——先跑 repair-decisions：{exc}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -951,6 +1421,32 @@ def main(argv: list[str] | None = None) -> int:
         "repair-decisions",
         help="一次性修复 decisions.jsonl 断链（保行重链+备份不删行；strict load 配套）",
     )
+    archive_p = sub.add_parser(
+        "archive-state",
+        help="六桶状态归档（queue/sessions/audit/runs/budget/decisions；默认 dry-run）",
+    )
+    archive_p.add_argument("--apply", action="store_true", help="执行归档（默认只打印计划）")
+    gate_p = sub.add_parser(
+        "upgrade-gate",
+        help="CLI 升级门禁三件套（--version/--help 快照 diff/非法枚举探针；exit 0/1/2）",
+    )
+    gate_p.add_argument(
+        "--baseline", default=None, help="基线版本（缺省读 ops/upgrade-gate/pinned.json）"
+    )
+    gate_p.add_argument(
+        "--deep", action="store_true", help="追加 deep 探针采 capabilities（真实花钱）"
+    )
+    gate_p.add_argument(
+        "--changelog",
+        default=None,
+        help="CHANGELOG 文件路径（ops/upgrade_changelog.py 拉取后喂入）",
+    )
+    gate_p.add_argument("--ack-warn", action="store_true", help="WARN 已逐条人工核过后复跑登记")
+    gate_p.add_argument("--json", action="store_true", help="JSON 输出（预留）")
+    gate_p.add_argument("--capture", action="store_true", help="采现行快照落盘（不 diff）")
+    gate_p.add_argument(
+        "--out", default=None, help="快照目录（缺省仓内 ops/upgrade-gate/；测试注入用）"
+    )
     sub.add_parser("selftest", help="聚合纯函数回归（与 pytest 同源判据）")
     args = parser.parse_args(argv)
     handlers = {
@@ -958,6 +1454,8 @@ def main(argv: list[str] | None = None) -> int:
         "run-once": _cmd_run_once,
         "probe": _cmd_probe,
         "repair-decisions": _cmd_repair_decisions,
+        "archive-state": _cmd_archive_state,
+        "upgrade-gate": _cmd_upgrade_gate,
         "selftest": _cmd_selftest,
     }
     return handlers[args.command](args)

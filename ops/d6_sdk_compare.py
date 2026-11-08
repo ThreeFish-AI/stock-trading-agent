@@ -21,8 +21,11 @@ import statistics
 import time
 
 
-def build_cli_argv(prompt: str) -> list[str]:
+def build_cli_argv(prompt: str, run_idx: int = 0) -> list[str]:
+    """每跑新鲜 uuid（12-orchestration §② 坑位③：--session-id 复用已存在会话会接续旧
+    上下文；uuid5 按日期派生会在同日重跑时撞「already in use」——uuid4 真新鲜）。"""
     import sys
+    import uuid as _uuid
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -31,7 +34,7 @@ def build_cli_argv(prompt: str) -> list[str]:
 
     req = CCRequest(
         task_id="d6-compare",
-        session_uuid="00000000-0000-4000-8000-0000000000d6",
+        session_uuid=str(_uuid.uuid4()),
         prompt=prompt,
         schema=None,
         budget_usd=0.5,
@@ -42,10 +45,10 @@ def build_cli_argv(prompt: str) -> list[str]:
     return build_argv(req)
 
 
-def run_cli_once(prompt: str) -> dict:
+def run_cli_once(prompt: str, run_idx: int = 0) -> dict:
     import subprocess
 
-    argv = build_cli_argv(prompt)
+    argv = build_cli_argv(prompt, run_idx)
     start = time.monotonic()
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=150)
     elapsed = time.monotonic() - start
@@ -71,12 +74,14 @@ def run_cli_once(prompt: str) -> dict:
 async def run_sdk_once(prompt: str, cli_path: str) -> dict:
     from claude_agent_sdk import ClaudeAgentOptions, query
 
+    # API 漂移实证（D6 首跑发现）：claude-agent-sdk 0.2.179 已无 preset/setting_sources
+    # 形参（脚本原按调研时点 API 写就）——现版对齐口径=cli_path 钉同二进制 + 默认 system
+    # prompt（CLI -p 同源）+ allowed_tools/max_turns/max_budget_usd 同值。
     options = ClaudeAgentOptions(
         cli_path=cli_path,
-        preset="claude_code",
-        setting_sources=[],
         allowed_tools=["Read"],
         max_turns=4,
+        max_budget_usd=0.5,
     )
     start = time.monotonic()
     subtype = None
@@ -126,7 +131,7 @@ def main() -> int:
     cli_path = shutil.which("claude") or str(
         __import__("pathlib").Path.home() / ".local" / "bin" / "claude"
     )
-    cli_runs = [run_cli_once(args.prompt) for _ in range(args.n)]
+    cli_runs = [run_cli_once(args.prompt, i) for i in range(args.n)]
     sdk_runs = [asyncio.run(run_sdk_once(args.prompt, cli_path)) for _ in range(args.n)]
     report = {"cli": summarize(cli_runs), "sdk": summarize(sdk_runs)}
     print(json.dumps(report, ensure_ascii=False, indent=2))

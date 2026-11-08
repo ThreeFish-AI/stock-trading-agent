@@ -413,9 +413,12 @@ class AgentLoop:
         atomic_write_json(self.layout.budget_path, updated)
 
     def _persist_all(self, queue: QueueState, sessions: SessionsState) -> None:
-        """queue/sessions 原子写（decisions 已在 _decide 即写即落，0.0.15 删增量游标）。"""
-        atomic_write_json(self.layout.queue_path, queue.to_dict())
+        """从属账先落、queue 终态最后落（W5 写序：崩溃残留 running 由启动期 recover_orphans 自愈）。
+
+        decisions 已在 _decide 即写即落（append(path=...) 单一入口，0.0.15 删增量游标）。
+        """
         atomic_write_json(self.layout.sessions_path, sessions.to_dict())
+        atomic_write_json(self.layout.queue_path, queue.to_dict())
 
     def load_queue(self) -> QueueState:
         return QueueState.from_dict(read_json(self.layout.queue_path, expect_version=1))

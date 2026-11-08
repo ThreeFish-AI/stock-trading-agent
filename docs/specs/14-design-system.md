@@ -1,4 +1,4 @@
-# 14 · 面板设计系统规约（0.0.19 建）
+# 14 · 面板设计系统规约（0.0.23 建；文件头原标 0.0.19 属虚标——git 历史首库于 0.0.23 eba8ddf）
 
 **SSOT = `src/stock_trading_agent/server/static/index.html` `:root`**（三层 token 唯一权威定义源；本文档为投影与规范，不双写值）。方法论：三层 token 架构（Primitive→Semantic→Component，ui-ux-pro-max design-system）。
 

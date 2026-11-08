@@ -12,6 +12,7 @@ from stock_trading_agent.loop.advice import (
     ADVICE_ACTIONS,
     advice_context,
     count_t2_done,
+    has_review,
     parse_advice_card,
     read_last_signal,
     render_advice_card,
@@ -323,3 +324,25 @@ class TestAdviceContext:
         ctx = advice_context(layout, "600519")  # 无 signals.json → 放行
         assert ctx.today == market_today()
         assert ctx.last_signal is None and ctx.signals_read_ok is True
+
+
+class TestHasReview:
+    """已复核反查（0.0.25）：kind+date+code 三态命中，沿 has_ack 同构。"""
+
+    def _lines(self, kind: str, date: str, code: str) -> list[dict]:
+        return [{"kind": kind, "payload": {"date": date, "code": code}}]
+
+    def test_hit(self):
+        lines = self._lines("advice_reviewed", "2026-11-09", "600519")
+        assert has_review(lines, date="2026-11-09", code="600519") is True
+
+    def test_date_mismatch(self):
+        lines = self._lines("advice_reviewed", "2026-11-08", "600519")
+        assert has_review(lines, date="2026-11-09", code="600519") is False
+
+    def test_kind_mismatch(self):
+        lines = self._lines("briefing_ack", "2026-11-09", "600519")
+        assert has_review(lines, date="2026-11-09", code="600519") is False
+
+    def test_empty(self):
+        assert has_review([], date="2026-11-09", code="600519") is False

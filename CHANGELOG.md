@@ -4,7 +4,7 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
-## [0.0.24] - 2026-11-09
+## [0.0.27] - 2026-11-09
 
 ### Changed
 
@@ -18,6 +18,27 @@
 ### Added
 
 - `GET /api/panel/paper/ca-form`（④表单外置容器，load-only）；`render_error_card`/`render_ca_form`/`_ts_short`/`_notification_group_html` 纯函数；`TestErrorSurface` e2e 8 例与 unit `TestDesignUpgrade024` 15 例、token 门禁增 `TestDesignUpgradeNorms` 8 例（30 例全组）。测试 559 passed 全绿。
+## [0.0.26] - 2026-11-08
+
+### Added
+
+- **升级门禁三件套 + versions/ 回滚（§⑮ 唯一「顺延」项提前清偿；§② 新增裁定节；R-03 缓解主体闭合）**。①**四层拆分**：纯函数 `cc_client/upgrade_gate.py`（--help 解析/watched diff/CHANGELOG 窗口扫描/聚合）+ 通道层 `cli.capture_help()/probe_enum_reject()` + CLI 子命令 `stock-trading-agent upgrade-gate`（exit 契约 0=PASS/1=FAIL/2=WARN，--ack-warn 登记人工已核）+ 网络层 `ops/upgrade_changelog.py`（stdlib urllib，**网络面只落 ops/**，src/ 零网络纪律不动）。②**watched 旗标面从 build_argv 派生**（非手抄，与 argv_snapshot selftest 同源）；diff 分级判据只收严：FAIL=在用旗标消失/choices 收窄/非法枚举吃进（F-30 探针：`--permission-mode __sta_invalid__ --version` 实测 exit 1 秒拒零成本）/--version 探针失败；WARN=非在用消失·改名/capabilities 消失/CHANGELOG 关键词；INFO=新增·指纹变化·隐藏旗标。③**坑位实证**：`--max-turns` 属隐藏旗标（--help 不可见但在用）——diff 只比基线可见面、隐藏态 INFO 登记；--help 描述换行随终端宽度漂移——capture 钉 COLUMNS=100、diff 不比描述原文。④**versions/ 回滚定谳**：`~/.local/share/claude/versions/` 多版本共存（实测 2.1.294/310/319）+ 软链重指；仓侧 `ops/upgrade-gate/pinned.json` + 基线快照族入库（真机 2.1.319 首基线：58 旗标）；selftest 钉基线不腐化。⑤**决策留痕** `upgrade_gate_run`（payload 零敏感量；真机自检 PASS 已落生产链）；坑位：append 内部已持 decisions.lock，外层再包同路径 FileLock 自死锁（已修）。⑥**runbook** docs/ops/upgrade-runbook.md（升级前盘点回滚位→自检→install→三件套→capture 入库→kickstart；FAIL→回滚双路径）。测试 +22 例（unit 17+integration 5）、selftest 47→49。
+
+## [0.0.25] - 2026-11-08
+
+### Added
+
+- **§⑮ 裁定收口轮（悬空项登记表四行翻绿；用户 2026-11-08 三项裁定：③页按钮立项落地、现价源按预案提前落地、升级门禁另轮推进）**。①**③/⑤页「导出脱敏卡片 + 标记已复核」按钮立项（原型对账项）**：新决策 kind `advice_reviewed`（payload 恰 `{date, code}`，NR-5；沿 briefing_ack 先例 hash 链留痕、幂等重记不 409）；`POST /api/panel/advice/review` 校验序 503→422（非当日）→422（code 非法）→404（卡不在场）；反查纯函数 `has_review`（loop/advice.py）；`GET /api/advice/export/{date}/{code}` 只读下载（卡本落盘即 NR-5 脱敏零改写下发，路径三保险沿 0.0.21 audit 先例，原生 `<a download>`）；③⑤双挂点 `mount=mo|ad` 参数（fragment GET/POST 同映射 hx-target）；⑤卡库表增「复核」列。②**§⑫ 现价源落地（含实证勘误）**：`PriceFact(price, asof, source)` 三源零网络合并——sim 持仓价/盯盘事件 facts 价/`monitor/ticks` 轮询价/T1 evidence 价，**asof 时序最新者优先**（datetime 解析比较，空间隔与 ISO T 形态字典序不可比）；`price_stale` 陈旧标注（无时区串按市场钟面解读）；⑤卡详情现价块+`/api/signals` 四新键；③事件表保持事件时点价不叠加（防两口径混列误导）。**勘误：§⑮ 原预案句「monitor/state.json watch 快照价」与机制事实不符（trailing 为追踪高水位非现价），现价真实落点是 ticks 台账**。③**§⑫ 午休分态**：market_phase 增 lunch 态（CN 11:30–13:00/HK 12:00–13:00，双市同休才显「午休」），零新 token。④**budget 读写矩阵勘误**：面板列「读写」→「读」（写影响经 POST /api/l2 联动达成，state/paths.py docstring 同步）。⑤**D6 脚本修错**：`ops/d6_sdk_compare.py` CLI 侧固定 session_uuid 会按 §② 坑位③接续旧会话污染对照口径，改每跑新鲜 uuid（uuid5 加 run 序号）。⑥**文档口径收口**：§③⑥ 独立画像记分补 vibe-stock agent_postmortem.py（0.0.30）落地指针；§③ 裁定 3 与 worker.py 头注释「M3 预留 replayables 消费方」双处过时句勘误（R5 已 0.0.10 落地）；CHANGELOG 拆独立 `[0.0.22]` 段（git 历史 9a3fb83=#27 坐实，此前内容并在 0.0.23 段）；14-design-system.md 文件头「0.0.19 建」勘误为 0.0.23（knowledge-map 同步）。
+
+### Fixed
+
+- **FileLock 默认超时 1s→5s（并发 flake 根治）**：flock 无公平性，多线程数据锁（queue/decisions/sim）高争抢下单线程可饿过 1s——`LockTimeout` 误杀正常写者（0.0.24 新增并发 append 测试在本机间歇性 166/200 行）；daemon 快速失败路径由调用方显式传 `timeout_s=1.0` 保持原语义。另修复 0.0.24 遗留的 `__init__.__version__` 滞后（0.0.23 vs pyproject 0.0.24）。
+
+## [0.0.24] - 2026-11-08
+
+### Added
+
+- **状态归档与巡检补齐（[存储选型决策记录](docs/research/storage-db-decision.md) §5/§6 G 族落地；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑯；与 main 0.0.14–0.0.23 并轨合流）**。①**`archive-state [--apply]` 六桶归档（G1）**：归档非删除，档案 `agent/archive/`（queue 终态 30 天/500 条、sessions 90 天、audit 90 天 gzip、runs/ 14 天 tgz、budget daily 180 天、decisions 月度切分带 14 天尾随保底窗——外仓 agent_postmortem T+5 回看不受裁；不可解析行随归档迁出；档案按月聚合单次批量写），默认 dry-run，daemon.lock 守卫；热链重建+`state_archived` 留痕。②**`ops/state_probe.py` 巡检（G2）**：stdlib 只读三源分列体量+T1/T3 判据状态（决策记录 §4 数据源）。③**W5 写序收敛**：任务终态 budget→decisions→sessions→queue 最后落；paper `confirmed` 残留启动期清出留痕。④**DirWatcher skip**：roots 单根化+跳过 monitor/ticks（O(总文件数) 与外仓增长解耦）。**并轨说明**：决策链修复主题两线同源（本线 0.0.14 决策记录/取证为共同源头），代码以 main 0.0.15「决策链写拓扑裁定」版为准收敛（`DecisionChainError`/锁内尾部对账/repair-decisions 保行重链）；本 PR 相对 main 的净增量即上述 G/W5/R5' 项；SSE 建连 multi 初始快照按 main 0.0.17 裁定不采纳（load 触发同效、SSE 契约钉死）。
 
 ## [0.0.23] - 2026-11-08
 
@@ -25,9 +46,11 @@
 
 - **面板设计系统三层 token 化（借 ui-ux-pro-max design-system 方法论；规约新设 [14-design-system.md](docs/specs/14-design-system.md)，SSOT 仍=index.html :root）**。①**三层架构**：Primitive 48 枚（17 色板+9 档字号+5 档圆角+7 档间距+三档阴影+四枚 glow+动效 3，全库唯一 hex/px 字面落点）/ Semantic 30 个既有名**名与计算值双不动**（值改指 primitive；`rgba` 与 `color-mix` srgb 预乘逐位相等，组件类与 panel.py 241 处 var() 引用零改动）/ Component 8 枚（--inp-*/--btn-*/--step-cur-grad/--nr2-fg*/--ev-risk-fg，变体作用域覆写入口）；孤儿变量 --nr2ln 消灭（吸附 --upln）。②**裸值清剿 60 处/50 异色**（规则 R1–R6 沉淀进 14 规约）：36 rgba→color-mix(in srgb)（@keyframes pu 三帧/毛玻璃底/8 渐变色标/20 box-shadow）；近似异色归族（rgba(255,93,93,*) 红系、体系外蓝 #58a6ff→--acc）；**文本色禁 color-mix**（R5：降级环境文本永不失效）；残余异色 3+3 收编 Component token。③**标尺收敛**：字号 78 条 14 档→9 档（10.5→11、11.5→12、12.5→13、16.5→17、9.5→10、25→26）；圆角 33 条 10 档→5 档 token+50% 白名单；阴影/glow 归一（8 种 alpha→70%/35% 两档）；间距 7 档建标尺但**不回溯迁移**（防布局像素漂移；13px 密度基因字面保留）。④**四态补齐**：.tab/:not(.on) hover+active、.btn-pri brightness 1.07/.93、.mini:active、a:hover、.inp/.sel hover 边框+disabled（0.5+not-allowed）；统一 transition 120/180ms ease-in-out；@media prefers-reduced-motion 关脉冲与过渡。⑤**panel.py 28 处 inline 类化**（.note*/.verd 族/.pipe-dense/.opins-dense/.chips/.nv-chips/.w-sess-* 五列宽类/.td-tx 复用）；④权益曲线 _axis_equity_svg 裸蓝归 --acc、SVG presentation 属性统一迁 style=（修复属性位不解析 var() 的潜在缺陷）。⑥**机器门禁** tests/unit/test_design_tokens.py 22 例：(a) :root 外零裸色+SVG fill/stroke 仅 var() (b) 孤儿 var() 绝根 (c) 字号/圆角仅 token (d) panel.py inline/SVG 仅 var() (钉面) 30 兼容名+色板逐字钉死+四态/reduced-motion 存在性+hx- 计数 ≥ 基线。验证：8731 demo Playwright 前后对比（差异白名单：字号 6 组/圆角 3 组/glow 归一/归族色/权益曲线线色变亮）+ getComputedStyle 使用点探针 23 语义 token 计算值与基线逐项相等。
 
+## [0.0.22] - 2026-11-08
+
 ### Added
 
-- **观测指标族管线（方案 §15 decision log 指标族承诺全量闭合；规约 12-orchestration §⑨ 新增「§15 指标族管线」条）**。①**AssertVerdict typed codes**：15 桶键枚举（exit_nonzero/envelope_missing/result_line_missing 三段判据三类 + structured_missing/result_subtype_error/mcp_server_errors/signal_enum_invalid/disclaimer_missing/schema_invalid/sensitive_field/stale_data/anchor_escalation/anchor_unreadable/advice_contract/advice_ctx_missing + uncategorized 兜底）；`assert_refuse`/`advice_refused(assert)` 决策 payload 增 `reason_codes`（与 reasons 平行；legacy 存量无码归 uncategorized——可聚合不拒读；新增检查必须配码，判据只收严）。②**worker UNKNOWN_KIND 拒绝带 `reason_code=route_unknown`**（§15 意图路由命中率兜底计数）。③**stats 三聚合函数**：`assertion_buckets`（断言违例率分桶）、`route_hit_rate`（分母=提交总量/分子=兜底拒；坑位登记：server 白名单先拦使面板路径恒 100% 属预期，防线在 CLI/内部直建路径）、`cost_by_kind`（sessions×queue 终态任务经 task_id join 的 per-kind 成本分布，join 不上归 unknown 不丢账）。④**/api/stats 增三键 + ⑥页三块呈现**（断言违例分桶表/意图路由命中率行/会话成本分布表）。⑤顺手修 ④页公司行动表单两处 `\d` 转义 SyntaxWarning。测试 +9 例（507 passed 全绿）：typed codes 五象限（三段/structured/subtype/signal+sensitive/anchor+stale/advice 族）、refuse 兼容 uncategorized、三聚合纯函数锚（分桶排序/命中率半分/per-kind join+unknown+usd 降序）、assert_refuse 决策行带码 e2e、⑥页三块呈现 e2e（分桶/命中率/成本 join 数值锚）；selftest 37→38 case。
+- **观测指标族管线（方案 §15 decision log 指标族承诺全量闭合；规约 12-orchestration §⑨ 新增「§15 指标族管线」条；0.0.25 拆独立段——git 历史 9a3fb83=#27 坐实本版本，此前误并在 0.0.23 段）**。①**AssertVerdict typed codes**：15 桶键枚举（exit_nonzero/envelope_missing/result_line_missing 三段判据三类 + structured_missing/result_subtype_error/mcp_server_errors/signal_enum_invalid/disclaimer_missing/schema_invalid/sensitive_field/stale_data/anchor_escalation/anchor_unreadable/advice_contract/advice_ctx_missing + uncategorized 兜底）；`assert_refuse`/`advice_refused(assert)` 决策 payload 增 `reason_codes`（与 reasons 平行；legacy 存量无码归 uncategorized——可聚合不拒读；新增检查必须配码，判据只收严）。②**worker UNKNOWN_KIND 拒绝带 `reason_code=route_unknown`**（§15 意图路由命中率兜底计数）。③**stats 三聚合函数**：`assertion_buckets`（断言违例率分桶）、`route_hit_rate`（分母=提交总量/分子=兜底拒；坑位登记：server 白名单先拦使面板路径恒 100% 属预期，防线在 CLI/内部直建路径）、`cost_by_kind`（sessions×queue 终态任务经 task_id join 的 per-kind 成本分布，join 不上归 unknown 不丢账）。④**/api/stats 增三键 + ⑥页三块呈现**（断言违例分桶表/意图路由命中率行/会话成本分布表）。⑤顺手修 ④页公司行动表单两处 `\d` 转义 SyntaxWarning。测试 +9 例（507 passed 全绿）：typed codes 五象限（三段/structured/subtype/signal+sensitive/anchor+stale/advice 族）、refuse 兼容 uncategorized、三聚合纯函数锚（分桶排序/命中率半分/per-kind join+unknown+usd 降序）、assert_refuse 决策行带码 e2e、⑥页三块呈现 e2e（分桶/命中率/成本 join 数值锚）；selftest 37→38 case。
 
 ## [0.0.21] - 2026-11-08
 
