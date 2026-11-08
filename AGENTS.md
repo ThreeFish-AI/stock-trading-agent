@@ -40,7 +40,7 @@
 | docs/research/ | 调研报告与产品技术方案（自 vibe-stock 0.0.28 迁入，0.0.29 起以此仓为准） |
 | docs/diagrams/main-agent/ | 四张架构图 archify A 档四件套（json/html/svg/visual-check） |
 | docs/prototypes/main-agent/ | 四页产品原型（自包含 HTML + 整页 PNG，1440px，全合成数据） |
-| docs/specs/ | 实施规约：[12-orchestration.md](docs/specs/12-orchestration.md)（§⑧ T2 链 0.0.5 增）、[13-paper.md](docs/specs/13-paper.md)（0.0.6 建） |
+| docs/specs/ | 实施规约：[12-orchestration.md](docs/specs/12-orchestration.md)（§⑧ 0.0.5、§⑨ SSE/晨报 0.0.7 增）、[13-paper.md](docs/specs/13-paper.md)（0.0.6 建） |
 | docs/.agents/ | [knowledge-map](docs/.agents/knowledge-map.md) 与 [issue.md](docs/.agents/issue.md) |
 | src/stock_trading_agent/cc_client/ | CCRequest/CCResult/ProbeReport 契约、CLI 旗标构建、dry-run 与真实 headless 通道（STA_ALLOW_REAL_CC=1 门） |
 | src/stock_trading_agent/loop/ | 事件信封、YAML 意图路由、NR-3 断言器、Loop 六段、T1 刷新链、monitor 监听、LoopRuntime 消费者 |

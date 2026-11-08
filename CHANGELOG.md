@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.7] - 2026-11-08
+
+### Added
+
+- **SSE 实时流 + 晨报/复盘行动项卡 + 面板⑥（M2 第三 PR；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑨）**。①**SSE 单流** `GET /api/stream`（sse-starlette>=2.1，15s ping）：泛型 `loop/dirwatch.py`（mtime 快照 diff，与 EventsWatcher 分立——T1 偏移断点领域态不混桥）+ `server/stream_hub.py`（线程→asyncio 线程安全扇出，无订阅/停机静默）+ 命名事件映射（queue/decisions/budget/monitor/advice/status/outlook/paper/briefing，同拍并包 multi）；**锁态快照坑位**：flock 获取/释放不改 mtime——锁态走 30s 节拍快照 diff 推 status；面板 compound trigger `every 180s, sse:X` 轮询兜底（I-23/I-27/I-45）；htmx-ext-sse 2.2.4 本地 vendor（sha256 锚）。②**晨报/复盘卡**：`loop/briefing.py`（build_card_md 行动项措辞限定「复核」/scan 数量词+指令词负断言/persist 落 `agent/briefing/<date>/<code>.md` 每日每股一卡/has_ack）；worker 钩子（briefing_review done→卡落盘+`briefing_card` 决策，失败即 failed）；ack 走 decision log（`briefing_ack`，降级态 503、仅当日）；面板 briefing 区（卡列表+确认按钮+触发复用 submit）。③**面板⑥后验战绩**：`server/stats.py`（aggregate_decisions kind 分布+三态成功率（样本<30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）+budget_curve 双口径日桶）+`/api/stats`+fragment（「全样本登记含亏损、模拟绩效假设性」常驻标注）。测试 +19 例（328 passed 全绿）：事件映射表/DirWatcher mtime 增量/hub 扇出与静默/stats 聚合与样本不足/卡脱敏负断言与指令词拒绝/SSE 首事件短生命周期冒烟/briefing 全链含 ack（503→200）/vendor 锚/compound trigger 在场；selftest 27 case（+2）。
+
 ## [0.0.6] - 2026-11-08
 
 ### Added

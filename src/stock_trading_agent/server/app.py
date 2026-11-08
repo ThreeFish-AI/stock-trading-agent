@@ -20,8 +20,11 @@ from fastapi.staticfiles import StaticFiles
 from stock_trading_agent import __version__
 from stock_trading_agent.budget.gate import BudgetConfig
 from stock_trading_agent.cc_client.dryrun import DryRunCCClient
+from stock_trading_agent.loop.dirwatch import DirWatcher
 from stock_trading_agent.loop.worker import LoopRuntime
 from stock_trading_agent.server import routes
+from stock_trading_agent.server.sse import router as sse_router
+from stock_trading_agent.server.stream_hub import StreamHub, to_event_name
 from stock_trading_agent.state.paths import StateLayout
 
 HOST = "127.0.0.1"
@@ -59,6 +62,22 @@ def create_app(
         budget=BudgetConfig(),
     )
     app.include_router(routes.router)
+    app.include_router(sse_router)
+    # SSE 装配（只读桥，不依赖 daemon 锁）：hub 绑事件循环 + DirWatcher 盯台账目录
+    hub = StreamHub()
+    app.state.stream_hub = hub
+    app.state.sse_layout = layout
+    watcher = DirWatcher(
+        roots=(
+            layout.agent_dir,
+            layout.monitor_dir,
+            layout.outlook_dir,
+            layout.root,
+        ),
+        on_change=hub.publish_threadsafe,
+        to_event=lambda path: to_event_name(path, layout),
+    )
+    app.state.dir_watcher = watcher
     app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
     return app
 
@@ -69,7 +88,12 @@ def _make_lifespan(enable: bool, runtime: LoopRuntime | None, layout: StateLayou
         rt = app.state.loop_runtime
         if enable and not rt.start():  # daemon 锁失败：降级只读（面板照常服务）
             print(f"[sta] daemon.lock 被持有，降级只读（root={layout.root}）")
+        import asyncio
+
+        app.state.stream_hub.bind_loop(asyncio.get_running_loop())
+        app.state.dir_watcher.start()
         yield
+        app.state.dir_watcher.stop()
         if enable:
             rt.stop()
 

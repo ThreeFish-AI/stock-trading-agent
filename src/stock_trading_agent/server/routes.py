@@ -243,6 +243,78 @@ def reports(request: Request) -> dict:
     return {"reports": out}
 
 
+# --- 后验战绩⑥ + 晨报卡（M2） ---
+
+
+@router.get("/stats")
+def stats(request: Request) -> dict:
+    from stock_trading_agent.server.stats import aggregate_decisions, budget_curve
+
+    return {
+        "decisions": aggregate_decisions(decisions(request, tail=200)),
+        "budget_curve": budget_curve(list(sessions(request).get("sessions", {}).values())),
+    }
+
+
+@router.get("/panel/stats")
+def panel_stats(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_stats_fragment
+
+    return HTMLResponse(render_stats_fragment(stats(request)))
+
+
+@router.get("/panel/briefing")
+def panel_briefing(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_briefing_fragment
+
+    return HTMLResponse(render_briefing_fragment(_briefing_payload(request)))
+
+
+def _briefing_payload(request: Request) -> dict:
+
+    from stock_trading_agent.loop.briefing import has_ack
+    from stock_trading_agent.loop.monitor_events import market_today
+
+    layout = _layout(request)
+    day = market_today()
+    cards = []
+    day_dir = layout.briefing_dir / day
+    if day_dir.exists():
+        decision_lines = decisions(request, tail=200)
+        for card_path in sorted(day_dir.glob("*.md")):
+            code = card_path.stem
+            cards.append(
+                {
+                    "code": code,
+                    "ack": has_ack(decision_lines, date=day, code=code),
+                    "md": card_path.read_text(encoding="utf-8"),
+                }
+            )
+    return {"date": day, "cards": cards}
+
+
+@router.post("/panel/briefing/ack")
+def panel_briefing_ack(
+    request: Request, date: str = Form(...), code: str = Form(...)
+) -> HTMLResponse:
+    """确认状态走 decision log（hash 链防篡改；降级只读态 503）。"""
+    from dataclasses import asdict
+
+    from stock_trading_agent.loop.monitor_events import market_today
+    from stock_trading_agent.server.panel import render_briefing_fragment
+    from stock_trading_agent.state.store import atomic_append_jsonl
+
+    runtime = _runtime(request)
+    if runtime is None or not runtime.is_active:
+        raise HTTPException(status_code=503, detail="运行时未持锁（briefing_ack 需 daemon 持有者）")
+    layout = _layout(request)
+    if date != market_today():
+        raise HTTPException(status_code=422, detail="仅当日卡可确认")
+    line = runtime.loop.decisions.append(_now_iso(), "briefing_ack", {"date": date, "code": code})
+    atomic_append_jsonl(layout.decisions_path, asdict(line))
+    return HTMLResponse(render_briefing_fragment(_briefing_payload(request)))
+
+
 # --- 模拟盘④（paper 视图 + 确认/驳回提交半边；写者=paper 引擎进程内直调，13-paper §⑥） ---
 
 
