@@ -1,4 +1,4 @@
-"""0.0.18 早晚分卡：六层加槽（kind/UUID/dedup/卡路径/ack/面板）+ 自动触发判据。"""
+"""0.0.19 早晚分卡：六层加槽（kind/UUID/dedup/卡路径/ack/面板）+ 自动触发判据。"""
 
 from __future__ import annotations
 

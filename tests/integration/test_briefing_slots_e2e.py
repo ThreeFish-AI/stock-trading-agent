@@ -1,4 +1,4 @@
-"""0.0.18 早晚分卡端到端：全链落 .am/.pm 卡 + 决策 session + 面板分组 + ack 槽位
+"""0.0.19 早晚分卡端到端：全链落 .am/.pm 卡 + 决策 session + 面板分组 + ack 槽位
 + worker 自动触发（L2 闸、universe、幂等、universe 不可读留痕）。
 """
 
