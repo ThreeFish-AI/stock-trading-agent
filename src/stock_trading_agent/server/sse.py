@@ -39,7 +39,9 @@ async def stream(request: Request) -> EventSourceResponse:
         q = hub.subscribe()
         last_status = _status_fingerprint(layout)
         try:
-            yield {"event": "retry", "data": "3000"}
+            from sse_starlette.sse import ServerSentEvent
+
+            yield ServerSentEvent(data="", retry=3000)  # 真 retry: 字段（改 EventSource 重连间隔）
             while True:
                 if await request.is_disconnected():
                     break

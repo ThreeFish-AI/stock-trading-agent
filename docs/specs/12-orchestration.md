@@ -138,6 +138,7 @@
 - **0.0.16 并轨裁定（与 0.0.15 P1 内容补全同日合流）**：③事件表在其列头/表格三规范之上并入 facts 消费（现价/距线 breach|near/mech_risk riskchip/名称列）；④绩效三格复用其 `_perf_grid` 单一渲染件（本 PR 另补表尾汇总条/坐标轴曲线/名称列/状态 pill/tr.open）；⑤卡详情取其 code 链接形态；⑥t1_review 取其文案。
 - **0.0.15 落地（P1 内容补全）**：列头全中文（机器值保留英文原词）；表格三规范（colgroup 固定列宽 + 列宽 SSOT 类跨表同宽 + scope/title Tooltip/空值 —）；④绩效三格与盈亏红涨绿跌、⑥T+1 命中率两处「已算未渲」补齐；⑦链校验呈现（DecisionLog.load 断链不抛仍渲染 + verify_chain 状态行）；⑤卡详情链接接通 + 拒卡 reasons 回退/五源图例/钟面短格式；oob 计数兑现三处死位；fragment 语义类（.muted/.ok/.warn/.task-card/h3）与 .mini 按钮类归位。
 - **0.0.17 落地（P1 交互与壳层）**：全部轮询容器 load 首绘（裁定不动 sse.py multi init——SSE 契约钉死，load 同效零变更）；全局错误条（#global-err + responseError/sendError/afterSwap 三监听）；六按钮+表单 hx-disabled-elt 防重；②表单行式（label 同行 1/12 + Tooltip + for/id 关联，全局表单规范）；a11y 基线（tablist/tab/aria-selected/:focus-visible/scrollTo）；--t4 提亮 #7E8AA5 过 AA。
+- **0.0.18 落地（P2 打磨收官，§⑭ 升级位清零）**：CSS 去重 + 死码 95 块清除（发射面重盘先行；活码保留清单 .op/.verd/.sc/.sl/.ss/.stats/.stat 为审计证伪项）；报告 _md_lite 结构化渲染（全文本先转义，免责段检测对原始 md）；_sparkline_svg 泛化 + ⑥预算双曲线 + 三处硬编码色归 token；briefing 行动项 chip 接线；响应式 @media 1180/880 + color-scheme dark；htmx-indicator ①页试点；④ NR-2 行类化字样保留；SSE retry 真化（ServerSentEvent retry 字段）；删三死函数。
 
 
 ## ⑮ 悬空项登记表（0.0.16 建；消灭「既未落地也未登记」态）

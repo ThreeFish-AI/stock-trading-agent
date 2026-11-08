@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.18] - 2026-11-08
+
+### Changed
+
+- **面板 UI/UX 审计修复第四 PR（收官）：P2 打磨（规约 [12-orchestration.md](docs/specs/12-orchestration.md) §⑭ 升级位清零）**。①**CSS 去重与死码清理（95 块，先按发射面重盘后删）**：字节级重复 `.card/.tbl×2/.lv/.foot` 删早版；冲突双定义 `.nr2/.pf/.nf/tr.open` 各留终版；原型残留死码整段清除（`.dawn*` 晨报块、`.op-row/.op-conf/.op.loading`、裁决卡 `.v-*/.buckets/.capbar/.track/.fill/.capmark` 族、报告列表 `.rpt-*`、通知 `.notif*`、`.ghostbtn`、`.split×2`、`.inrow/.f/.recent`、`.proto/.date`、`.tab .m2`、`tr.sel/open/breach`、`.near/.breach`、`.btn-ok/.btn-no`、逐笔确认 `.fill` 族）——**活码保留清单**（.op/.opins/.verd/.sc/.sl/.ss/.stats/.stat/.kchip/.step*/.sig*/.ev* 为审计证伪的误删风险项）；`@keyframes rot{` 补开括号修活 `.spin`；②**报告结构化渲染**：新增 `_md_lite`（~70 行状态机：#/##/###/####、| 表格→.tbl、``` 围栏、列表、**粗体**；全部文本先 `_esc` 再包标签），`render_report_body` 的 `<pre>` md 直读 → `<div class="md">` 结构化（免责段检测保持对原始 md）；③**⑥预算双 sparkline**：`_sparkline_svg` 泛化（values 参数 + aria-label 必填 + `stroke:var(--acc)` 归 token，删 #58a6ff/#8792A6/#8b949e 三处硬编码色），tokens 与等效 USD 两枚曲线（<2 桶降级文案）；④**briefing 行动项接线**：`briefing_action_items`（此前仅测试引用）接入 `render_briefing_fragment`，行动项 kchip 置顶；pre 色类化 `.md-pre`；⑤**响应式两档**：@media 1180px（grid3 双列）/880px（单列 + tabs 横滚）；②页 inline grid 迁 `.grid-2` 类（@media 可作用）；`<meta name="color-scheme" content="dark">`（dark-only 显式声明）；⑥**htmx 重载指示①页试点**：七卡头 `.htmx-indicator spin`（:has 选择器驱动，请求期显形）；⑦④fragment 内 NR-2 行 `.nr2-mini` 类化（字样全保留，test 钉死负断言照过）；⑧**SSE retry 真化**：命名事件伪 retry 改 `ServerSentEvent(data="", retry=3000)` 真 `retry:` 字段（此前不改 EventSource 重连间隔，纯装饰）；⑨删死代码 `render_overview/render_status_badges/render_slots_row`（`render_budget_line` 保留——render_audit 在用）。测试 +9 例（460 passed 全绿）：_md_lite 三态（含 `<script>` 转义）、sparkline 泛化/aria/降级、报告结构化 e2e、⑥双曲线 svg 计数、壳层 color-scheme/@media/grid-2/indicator×7/keyframes + 死码负断言、briefing chip。本 PR 合入时与并发呈现层 PR（#20，0.0.16 并轨裁定）合并解冲突：briefing 关键价位 kchip 与行动项 chip 共存、④权益曲线取 #20 `_axis_equity_svg`（泛化 sparkline 保留于①净值/⑥双曲线）、`tr.open` 行高亮恢复为活码、死三函数维持删除；合并后 470 passed 全绿。
+
 ## [0.0.17] - 2026-11-08
 
 ### Added

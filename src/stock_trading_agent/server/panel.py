@@ -7,6 +7,7 @@ NR-5：只透出脱敏态数据（monitor events/universe 本身脱敏；session
 from __future__ import annotations
 
 import html
+import re
 
 TERMINAL_STATUSES = frozenset({"done", "failed", "abandoned"})
 
@@ -18,35 +19,6 @@ def _status_pill(status: str) -> str:
 
 def _esc(value: object) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
-
-
-def _badge(text: str, cls: str = "") -> str:
-    return f'<span class="badge {cls}">{text}</span>'
-
-
-def render_status_badges(status: dict) -> str:
-    loop = status.get("loop") or {}
-    locks = status.get("locks") or {}
-    active = bool(loop.get("active"))
-    watch = "在场" if locks.get("watch") else "无"
-    fetch = "在场" if locks.get("fetch") else "无"
-    return (
-        _badge(f"loop {'运行中' if active else '只读降级'}", "ok" if active else "warn")
-        + _badge(f"queued {int(loop.get('queued', 0))} · running {int(loop.get('running', 0))}")
-        + _badge(f"watch.lock {watch}", "warn" if locks.get("watch") else "")
-        + _badge(f"fetch.lock {fetch}", "warn" if locks.get("fetch") else "")
-    )
-
-
-def render_slots_row(status: dict) -> str:
-    slots = status.get("slots") or {}
-    cells = []
-    for name in ("monitor", "outlook", "postmortem"):
-        info = slots.get(name) or {}
-        done = bool(info.get("done"))
-        label = "已收口" if done else "未收口/未装"
-        cells.append(_badge(f"{_esc(name)} 槽 {label}", "ok" if done else ""))
-    return " ".join(cells)
 
 
 def render_budget_line(budget: dict) -> str:
@@ -306,21 +278,24 @@ def _axis_equity_svg(history: list[dict], *, width: int = 470, height: int = 150
     return "".join(parts)
 
 
-def _sparkline_svg(points: list[dict], *, width: int = 220, height: int = 44) -> str:
-    """权益 sparkline（服务端手搓内联 SVG，零 CDN/零前端库）。"""
-    navs = [float(p.get("nav") or 0) for p in points]
-    if len(navs) < 2:
-        return '<p class="muted">权益曲线待积累（≥2 个交易日点）。</p>'
-    lo, hi = min(navs), max(navs)
+def _sparkline_svg(
+    values: list[float], *, aria_label: str, width: int = 220, height: int = 44
+) -> str:
+    """序列 sparkline（服务端手搓内联 SVG，零 CDN/零前端库；aria-label 必填）。"""
+    if len(values) < 2:
+        return '<p class="muted">曲线待积累（≥2 个数据点）。</p>'
+    lo, hi = min(values), max(values)
     span = (hi - lo) or 1e-9
-    step = width / (len(navs) - 1)
+    step = width / (len(values) - 1)
     coords = [
         f"{i * step:.1f},{height - (v - lo) / span * (height - 6) - 3:.1f}"
-        for i, v in enumerate(navs)
+        for i, v in enumerate(values)
     ]
     return (
-        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img">'
-        f'<polyline fill="none" stroke="#58a6ff" stroke-width="1.5" points="{" ".join(coords)}"/>'
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="{_esc(aria_label)}">'
+        f'<polyline fill="none" stroke-width="1.5" style="stroke:var(--acc)" '
+        f'points="{" ".join(coords)}"/>'
         f"</svg>"
     )
 
@@ -400,6 +375,16 @@ def render_stats_fragment(payload: dict) -> str:
             "</tr>"
             for p in curve
         )
+        if len(curve) >= 2:
+            parts.append(
+                '<div class="svgs">'
+                + _sparkline_svg([p.get("tokens", 0) for p in curve], aria_label="token 日桶曲线")
+                + _sparkline_svg(
+                    [float(p.get("cost_usd_equiv") or 0) for p in curve],
+                    aria_label="等效 USD 日桶曲线",
+                )
+                + "</div>"
+            )
         parts.append(
             '<table class="tbl"><colgroup><col class="w-ts"><col class="w-num">'
             '<col class="w-num"><col class="w-num"></colgroup>'
@@ -429,6 +414,16 @@ def render_briefing_fragment(payload: dict) -> str:
     cards = payload.get("cards") or []
     key_levels = payload.get("key_levels") or {}
     parts = [f"<h3>晨报 / 复盘行动项卡 · {day}</h3>"]
+    from stock_trading_agent.server.panel_data import briefing_action_items
+
+    action_items = briefing_action_items([str(c.get("md", "")) for c in cards])
+    if action_items:
+        chips = "".join(
+            f'<div class="kchip"><span class="code num">{_esc(i["code"])}</span>'
+            f"<span>复核：{_esc(i['item'])}</span></div>"
+            for i in action_items[:8]
+        )
+        parts.append(f'<div class="svgs">{chips}</div>')
     if cards:
         for card in cards:
             ack = bool(card.get("ack"))
@@ -465,7 +460,7 @@ def render_briefing_fragment(payload: dict) -> str:
             parts.append(
                 f'<div class="task-card"><p><strong>{code}</strong> · {state} {action}</p>'
                 f"{chip_html}"
-                f'<pre style="white-space:pre-wrap;font-size:12px;color:#8b949e">'
+                f'<pre class="md-pre">'
                 f"{body}</pre></div>"
             )
     else:
@@ -600,7 +595,7 @@ def render_notifications(payload: dict) -> str:
             '<svg width="16" height="16" viewBox="0 0 16 16" style="flex:none;margin-top:2px">'
             '<path d="M8 1a4 4 0 0 0-4 4v3l-1.5 2.5h11L12 8V5a4 4 0 0 0-4-4z'
             'M6.5 12.5a1.5 1.5 0 0 0 3 0" '
-            'stroke="#8792A6" stroke-width="1.3" fill="none"/></svg>'
+            'stroke-width="1.3" fill="none" style="stroke:var(--t3)"/></svg>'
             f'<div style="flex:1;min-width:0">'
             f'<div class="num" style="font-size:11px;color:var(--t4)">'
             f"{_esc(row.get('ts', ''))} · 现在</div>"
@@ -774,7 +769,7 @@ def render_navcard(view: dict) -> str:
         else ""
     ) + (
         f'<span class="chip chip-neutral">成立以来 {since_pct:+.2f}%</span></div>'
-        + _sparkline_svg([{"nav": n} for n in navs])
+        + _sparkline_svg(navs, aria_label=f"模拟盘净值走势，最新 NAV {nav:.4f}")
         + '<p class="tbl-note">初始 1.0000 · 含费用与滑点（假设性推演）</p>'
     )
 
@@ -858,14 +853,90 @@ def render_reports_list(payload: dict) -> str:
     )
 
 
+def _md_lite(md: str) -> str:
+    """报告 md 极简结构化渲染（状态机 ~70 行；支持 #/##/###/####、| 表格、``` 围栏、
+    - 列表、**粗体**；全部文本先 _esc 再包标签——零依赖零前端库，无构建链约束内）。"""
+    out: list[str] = []
+    in_code = False
+    in_table = False
+    in_list = False
+
+    def close_table() -> None:
+        nonlocal in_table
+        if in_table:
+            out.append("</tbody></table>")
+            in_table = False
+
+    def close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+
+    for raw in md.splitlines():
+        line = raw.rstrip()
+        if line.startswith("```"):
+            close_table()
+            close_list()
+            out.append("</pre>" if in_code else "<pre>")
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(_esc(raw))
+            continue
+        if not line.strip():
+            close_table()
+            close_list()
+            continue
+        if line.lstrip().startswith("|") and line.rstrip().endswith("|"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if set("".join(cells)) <= {"-", ":", " "}:
+                continue  # 分隔行
+            if not in_table:
+                close_list()
+                out.append('<table class="tbl"><tbody>')
+                in_table = True
+            tds = "".join(f"<td>{_esc(c)}</td>" for c in cells)
+            out.append(f"<tr>{tds}</tr>")
+            continue
+        close_table()
+        if line.startswith("####"):
+            close_list()
+            out.append(f'<h4 class="md">{_esc(line.lstrip("#").strip())}</h4>')
+        elif line.startswith("###"):
+            close_list()
+            out.append(f'<h3 class="md">{_esc(line.lstrip("#").strip())}</h3>')
+        elif line.startswith("##"):
+            close_list()
+            out.append(f'<h2 class="md">{_esc(line.lstrip("#").strip())}</h2>')
+        elif line.startswith("#"):
+            close_list()
+            out.append(f'<h1 class="md">{_esc(line.lstrip("#").strip())}</h1>')
+        elif line.lstrip().startswith(("-", "* ")) and not line.lstrip().startswith("---"):
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            item = line.lstrip()[1:].strip()
+            out.append(f"<li>{_esc(item)}</li>")
+        else:
+            close_list()
+            text = _esc(line)
+            text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+            out.append(f'<p class="md">{text}</p>')
+    close_table()
+    close_list()
+    if in_code:
+        out.append("</pre>")
+    return "".join(out)
+
+
 def render_report_body(code_market: str, filename: str, md: str) -> str:
     has_disclaimer = "不构成投资建议" in md
     warn = "" if has_disclaimer else '<p class="riskchip">免责段缺失（异常）</p>'
     return (
         f'<div class="card"><div class="card-h"><span class="ct">报告 · {_esc(code_market)} · '
-        f'{_esc(filename)}</span><span class="cm">md 直读</span></div>'
-        f'<div class="card-b">{warn}<pre style="white-space:pre-wrap;font-size:12.5px;'
-        f'line-height:1.75;color:var(--t2)">{_esc(md)}</pre></div></div>'
+        f'{_esc(filename)}</span><span class="cm">md 结构化渲染</span></div>'
+        f'<div class="card-b">{warn}<div class="md">{_md_lite(md)}</div></div></div>'
     )
 
 
@@ -926,7 +997,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     if notice:
         parts.append(f'<p class="ok">{_esc(notice)}</p>')
     parts.append(
-        '<p class="warn"><strong>NR-2</strong>：模拟盘永不接真实下单接口；'
+        '<p class="nr2-mini"><b>NR-2</b>：模拟盘永不接真实下单接口；'
         "全部模拟绩效为假设性推演（含费用与滑点）。</p>"
     )
     names = payload.get("names") or {}
