@@ -187,14 +187,23 @@ class AgentLoop:
         return task
 
     def _budget_precheck(self, *, session_est_usd: float) -> None:
-        """§13 外闸（发送前预检 + 硬次数闸；enabled=False 全放行——骨架默认关）。"""
+        """§13 外闸（发送前预检 + 硬次数闸；enabled=False 全放行——默认关）。
+
+        0.0.9 起读日/月分桶（market_today 钟面，与 count_t2_done 同口径）——修月闸空转
+        与 tasks 全期计数两个实 bug（12-orchestration §⑩）。
+        """
+        from stock_trading_agent.loop.monitor_events import market_today
+
         ledger = read_json(self.layout.budget_path) or {}
+        today = market_today()
+        day_bucket = (ledger.get("daily") or {}).get(today) or {}
+        month_bucket = (ledger.get("monthly") or {}).get(today[:7]) or {}
         verdict = check(
             self.budget,
             session_est_usd=session_est_usd,
-            day_spent_usd=float(ledger.get("cost_usd_equiv", 0.0)),
-            month_spent_usd=float(ledger.get("month_cost_usd_equiv", 0.0)),
-            day_task_count=int(ledger.get("tasks", 0)),
+            day_spent_usd=float(day_bucket.get("usd", 0.0)),
+            month_spent_usd=float(month_bucket.get("usd", 0.0)),
+            day_task_count=int(day_bucket.get("tasks", 0)),
         )
         if not verdict.allowed:
             raise LoopReject(f"预算闸拒绝：{verdict.reason}", RejectReason.BUDGET)
@@ -265,7 +274,12 @@ class AgentLoop:
         self.decisions.append(
             _now_iso(),
             kind="task_done",
-            payload={"task_id": task.task_id, "kind": task.kind, "code": task.code},
+            payload={
+                "task_id": task.task_id,
+                "kind": task.kind,
+                "code": task.code,
+                "permission_denials": getattr(result, "permission_denials", 0),  # F-28 审计消费
+            },
         )
         self._persist_all(queue, sessions)
         return True
@@ -383,12 +397,17 @@ class AgentLoop:
         return None
 
     def _record_budget(self, result) -> None:
-        """订阅轨双口径记账（F-34：token + 等效美元；原子写 budget.json，§11 写者=主 Agent）。"""
+        """双口径记账（F-34：token+等效美元+日/月分桶；原子写，§11 写者=主 Agent）。"""
+        from stock_trading_agent.loop.monitor_events import market_today
+
         ledger = read_json(self.layout.budget_path) or {}
+        day = market_today()
         updated = record_dual_axis(
             dict(result.usage_tokens),
             float((result.envelope or {}).get("total_cost_usd", 0.0)),
             ledger,
+            day=day,
+            month=day[:7],
         )
         atomic_write_json(self.layout.budget_path, updated)
 

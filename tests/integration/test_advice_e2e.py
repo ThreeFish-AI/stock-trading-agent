@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from conftest import ORIGIN_HEADERS
 from stock_trading_agent.cc_client.contract import CCResult
 from stock_trading_agent.cc_client.dryrun import DryRunCCClient
 from stock_trading_agent.loop.monitor_events import market_today
@@ -51,7 +52,7 @@ def make_app(tmp_path: Path, cc=None):
 class TestFullChain:
     def test_card_written_and_served(self, tmp_path: Path):
         app = make_app(tmp_path)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             resp = client.post(
                 "/api/queue/submit", json={"kind": "monitor_review", "code": "600519"}
             )
@@ -102,7 +103,7 @@ class TestFullChain:
             }
         )
         app = make_app(tmp_path, cc=bad)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             client.post("/api/queue/submit", json={"kind": "monitor_review", "code": "600519"})
             task = client.app.state.loop_runtime.consume_one()
             assert task is not None and task.status == "failed"
@@ -121,7 +122,7 @@ class TestFullChain:
             }
         )
         app = make_app(tmp_path, cc=degraded)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             client.post("/api/queue/submit", json={"kind": "monitor_review", "code": "600519"})
             task = client.app.state.loop_runtime.consume_one()
             assert task is not None and task.status == "done"  # 会话自报降级=正常 done
@@ -158,7 +159,7 @@ class TestFullChain:
             }
         )
         app = make_app(tmp_path, cc=aggressive)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             client.post("/api/queue/submit", json={"kind": "monitor_review", "code": "600519"})
             task = client.app.state.loop_runtime.consume_one()
             assert task is not None and task.status == "failed"
@@ -171,7 +172,7 @@ class TestFullChain:
         runtime = app.state.loop_runtime
         market_today()
         # 预置 5 条当日 done monitor_review（不同 code，enqueued_at=now 即市场今日）
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             for i in range(5):
                 client.post(
                     "/api/queue/submit", json={"kind": "monitor_review", "code": f"60051{i}"}
@@ -194,7 +195,7 @@ class TestLocksRegression:
         layout_root = Path(app.state.state_root)
         (layout_root / "monitor").mkdir(parents=True, exist_ok=True)
         (layout_root / "monitor" / "watch.lock").touch()  # 陈旧锁文件
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             body = client.get("/api/monitor/status").json()
             assert body["locks"]["watch"] is False  # 存在≠持有（0.0.5 收敛回归钉）
             with hold_lock(layout_root / "monitor" / "watch.lock"):

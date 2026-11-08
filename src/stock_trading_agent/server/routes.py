@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from stock_trading_agent import __version__
 from stock_trading_agent.loop.advice import parse_advice_card
@@ -249,6 +249,72 @@ def reports(request: Request) -> dict:
                 break
     out.sort(key=lambda r: r["latest"], reverse=True)
     return {"reports": out}
+
+
+# --- L2 总闸（M3：面板⑦设置区；写者=主 Agent 进程内直调，12-orchestration §⑩） ---
+
+
+@router.get("/l2")
+def l2_state(request: Request) -> dict:
+    from stock_trading_agent.state.agent_config import load_agent_config
+
+    cfg = load_agent_config(_layout(request).agent_config_path)
+    runtime = _runtime(request)
+    return {
+        "l2_enabled": cfg.l2_enabled,
+        "billing_mode": cfg.billing_mode,
+        "updated_at": cfg.updated_at,
+        "budget_enabled": bool(runtime and runtime.loop.budget.enabled),
+    }
+
+
+class L2ToggleRequest(BaseModel):  # L2 开关请求契约（局部）
+    enabled: bool
+
+
+@router.post("/l2")
+def l2_toggle(payload: L2ToggleRequest, request: Request) -> dict:
+    from dataclasses import asdict
+
+    from stock_trading_agent.state.agent_config import load_agent_config, save_agent_config
+    from stock_trading_agent.state.store import FileLock, atomic_append_jsonl
+
+    runtime = _runtime(request)
+    if runtime is None or not runtime.is_active:
+        raise HTTPException(status_code=503, detail="运行时未持锁（L2 开关需 daemon 持有者）")
+    layout = _layout(request)
+    with FileLock(layout.queue_lock):  # _decide 锁内调用契约
+        cfg = load_agent_config(layout.agent_config_path)
+        cfg.l2_enabled = payload.enabled
+        save_agent_config(layout.agent_config_path, cfg)
+        cfg = runtime.apply_l2_config(probe=payload.enabled)  # 开启即探测认证态并联动预算闸
+        line = runtime.loop.decisions.append(
+            _now_iso(),
+            "l2_toggled",
+            {"enabled": payload.enabled, "by": "panel", "billing_mode": cfg.billing_mode},
+        )
+        atomic_append_jsonl(layout.decisions_path, asdict(line))
+    return {
+        "l2_enabled": cfg.l2_enabled,
+        "billing_mode": cfg.billing_mode,
+        "budget_enabled": runtime.loop.budget.enabled,
+    }
+
+
+@router.get("/panel/l2")
+def panel_l2(request: Request) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_settings_fragment
+
+    return HTMLResponse(render_settings_fragment(l2_state(request)))
+
+
+@router.post("/panel/l2")
+def panel_l2_toggle(request: Request, enabled: str = Form(...)) -> HTMLResponse:
+    from stock_trading_agent.server.panel import render_settings_fragment
+
+    payload = L2ToggleRequest(enabled=enabled.lower() in ("true", "1", "on"))
+    body = l2_toggle(payload, request)
+    return HTMLResponse(render_settings_fragment(body))
 
 
 # --- 后验战绩⑥ + 晨报卡（M2） ---

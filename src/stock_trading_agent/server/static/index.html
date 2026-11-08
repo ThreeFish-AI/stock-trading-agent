@@ -87,6 +87,9 @@
 
   <section class="wide">
     <h2>⑦ 审计与预算</h2>
+    <div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="every 180s, sse:decisions, sse:multi" hx-swap="outerHTML">
+      <p class="muted">加载中……</p>
+    </div>
     <div id="audit" hx-get="/api/panel/audit" hx-trigger="every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML">
       <p class="muted">加载中……</p>
     </div>

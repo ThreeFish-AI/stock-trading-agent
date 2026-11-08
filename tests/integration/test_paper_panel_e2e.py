@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from conftest import ORIGIN_HEADERS
 from stock_trading_agent.loop.monitor_events import parse_line
 from stock_trading_agent.loop.t1 import T1Runner
 from stock_trading_agent.loop.worker import LoopRuntime
@@ -61,7 +62,7 @@ class TestConfirmChain:
     def test_t2_event_to_confirm_to_ledger(self, tmp_path: Path):
         app, layout = make_app(tmp_path)
         seed_position(layout)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             runtime = client.app.state.loop_runtime
             ev = parse_line(T2_EVENT)
             assert ev is not None
@@ -87,7 +88,7 @@ class TestConfirmChain:
     def test_reject_keeps_tranche_pending(self, tmp_path: Path):
         app, layout = make_app(tmp_path)
         seed_position(layout)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             runtime = client.app.state.loop_runtime
             ev = parse_line(T2_EVENT)
             runtime.record_monitor_event(ev)
@@ -104,7 +105,7 @@ class TestConfirmChain:
     def test_view_and_fragment(self, tmp_path: Path):
         app, layout = make_app(tmp_path)
         seed_position(layout)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             view = client.get("/api/paper/view").json()
             assert view["exists"] is True
             pos = view["positions"][0]
@@ -114,7 +115,7 @@ class TestConfirmChain:
 
     def test_confirm_unknown_404_and_bad_request_422(self, tmp_path: Path):
         app, _ = make_app(tmp_path)
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             assert client.post("/api/paper/confirm", json={"request_id": "nope"}).status_code == 404
             assert client.post("/api/paper/confirm", json={}).status_code == 422
 
@@ -149,7 +150,7 @@ class TestConfirmChain:
             )
         paper_pending.save(q, layout.sim_pending_fills_path)
 
-        with TestClient(app) as client:
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
             results: dict[str, int] = {}
 
             def hit(rid: str) -> None:

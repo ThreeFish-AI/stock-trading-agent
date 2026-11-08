@@ -71,15 +71,32 @@ def check(
     return GateVerdict(allowed=True)
 
 
-def record_dual_axis(tokens: dict[str, int], cost_usd_equiv: float, ledger: dict) -> dict:
-    """订阅轨双口径记账（F-34：token 数 + 等效美元同记；纯累加）。"""
+def record_dual_axis(
+    tokens: dict[str, int], cost_usd_equiv: float, ledger: dict, *, day: str, month: str
+) -> dict:
+    """双口径记账（F-34）：全期累计 + 日/月分桶（daily {day:{usd,tasks}} / monthly {month:{usd}}）。
+
+    坑位（0.0.9 修实 bug）：旧实现无分桶——月闸空转（读从不写的 month_cost_usd_equiv）、
+    tasks 全期计数使次数闸随时间恒拒；旧 ledger 无桶键回落空桶零迁移。
+    """
     totals = dict(ledger.get("tokens", {}))
     for key, val in tokens.items():
         totals[key] = totals.get(key, 0) + val
+    daily = dict(ledger.get("daily") or {})
+    day_bucket = dict(daily.get(day) or {})
+    monthly = dict(ledger.get("monthly") or {})
+    month_bucket = dict(monthly.get(month) or {})
+    daily[day] = {
+        "usd": round(float(day_bucket.get("usd", 0.0)) + cost_usd_equiv, 4),
+        "tasks": int(day_bucket.get("tasks", 0)) + 1,
+    }
+    monthly[month] = {"usd": round(float(month_bucket.get("usd", 0.0)) + cost_usd_equiv, 4)}
     return {
         "tokens": totals,
         "cost_usd_equiv": round(ledger.get("cost_usd_equiv", 0.0) + cost_usd_equiv, 4),
         "tasks": ledger.get("tasks", 0) + 1,
+        "daily": daily,
+        "monthly": monthly,
     }
 
 

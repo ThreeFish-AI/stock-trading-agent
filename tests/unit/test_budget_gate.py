@@ -50,11 +50,27 @@ class TestGates:
 
 class TestDualAxisLedger:
     def test_accumulates_tokens_and_cost(self):
-        ledger = record_dual_axis({"input_tokens": 100, "output_tokens": 10}, 0.25, {})
-        ledger = record_dual_axis({"input_tokens": 50}, 0.35, ledger)
+        ledger = record_dual_axis(
+            {"input_tokens": 100, "output_tokens": 10}, 0.25, {}, day="2026-11-08", month="2026-11"
+        )
+        ledger = record_dual_axis(
+            {"input_tokens": 50}, 0.35, ledger, day="2026-11-08", month="2026-11"
+        )
         assert ledger["tokens"] == {"input_tokens": 150, "output_tokens": 10}
         assert ledger["cost_usd_equiv"] == 0.6
         assert ledger["tasks"] == 2
+        # 0.0.9 分桶：日桶含 usd+tasks 双口径，月桶 USD（修月闸空转实 bug）
+        assert ledger["daily"]["2026-11-08"] == {"usd": 0.6, "tasks": 2}
+        assert ledger["monthly"]["2026-11"] == {"usd": 0.6}
 
     def test_defaults_from_empty(self):
-        assert record_dual_axis({}, 0.0, {}) == {"tokens": {}, "cost_usd_equiv": 0.0, "tasks": 1}
+        out = record_dual_axis({}, 0.0, {}, day="2026-11-08", month="2026-11")
+        assert out["tokens"] == {} and out["cost_usd_equiv"] == 0.0 and out["tasks"] == 1
+        assert out["daily"]["2026-11-08"]["tasks"] == 1  # 空账也记任务次数（次数闸数据源）
+
+    def test_day_bucket_isolation(self):
+        ledger = record_dual_axis({}, 0.5, {}, day="2026-11-07", month="2026-11")
+        ledger = record_dual_axis({}, 1.0, ledger, day="2026-11-08", month="2026-11")
+        assert ledger["daily"]["2026-11-07"]["usd"] == 0.5
+        assert ledger["daily"]["2026-11-08"] == {"usd": 1.0, "tasks": 1}  # 日切隔离
+        assert ledger["monthly"]["2026-11"] == {"usd": 1.5}  # 月桶跨日累计

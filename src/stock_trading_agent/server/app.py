@@ -23,6 +23,7 @@ from stock_trading_agent.cc_client.dryrun import DryRunCCClient
 from stock_trading_agent.loop.dirwatch import DirWatcher
 from stock_trading_agent.loop.worker import LoopRuntime
 from stock_trading_agent.server import routes
+from stock_trading_agent.server.origin_guard import OriginGuardMiddleware
 from stock_trading_agent.server.sse import router as sse_router
 from stock_trading_agent.server.stream_hub import StreamHub, to_event_name
 from stock_trading_agent.state.paths import StateLayout
@@ -55,6 +56,7 @@ def create_app(
         lifespan=_make_lifespan(enable_loop_runtime, runtime, layout),
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(TRUSTED_HOSTS))
+    app.add_middleware(OriginGuardMiddleware)  # R2 CSRF 收严：非 GET 同源校验（§⑩）
     app.state.state_root = str(layout.root) if state_root is not None else None
     app.state.loop_runtime = runtime or LoopRuntime(
         layout=layout,
@@ -91,6 +93,7 @@ def _make_lifespan(enable: bool, runtime: LoopRuntime | None, layout: StateLayou
             print(f"[sta] daemon.lock 被持有，降级只读（root={layout.root}）")
         import asyncio
 
+        rt.apply_l2_config(probe=True)  # L2 开启时探测认证态联动预算闸（决策 l2_probe）
         app.state.stream_hub.bind_loop(asyncio.get_running_loop())
         app.state.dir_watcher.start()
         yield

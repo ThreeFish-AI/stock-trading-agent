@@ -85,3 +85,14 @@
 - **锁态快照坑位**：vibe-stock 两锁 flock 获取/释放不改 mtime（锁文件不删除）——锁态不可文件监听，SSE 侧 30s 节拍快照 diff 推 status 事件。
 - **晨报/复盘卡**：`agent/briefing/<date>/<code>.md` 每日每股一卡（同日重跑覆盖；早晚分卡留 M3）；行动项措辞限定「复核」禁指令词（R7 同源）；脱敏三层（prompt 禁读模拟台账+断言器键扫+卡面数量词负断言）；ack 走 decision log `briefing_ack`（hash 链防篡改；降级只读态 503、仅当日卡可确认）；worker 钩子=断言放行后落盘+`briefing_card` 决策（失败即 failed 杜绝 done-无卡）。
 - **面板⑥**：stats 聚合（kind 分布/任务三态成功率（样本 <30 标 insufficient，MIN_SAMPLES=30 与 postmortem 同值）/budget 双口径日桶曲线）；「全样本登记含亏损、模拟绩效假设性」常驻标注。
+
+## ⑩ L2 无人值守裁定（0.0.9 落地）
+
+- **触发路线=events 台账驱动**：watcher 偏移断点消费 monitor/events + `t2_worthy` 判据（12 规则枚举 ∪ mech_risk 非 None，与 t1_trigger 同构独立）→ auto-T2 入队。**不依赖 vibe-stock exit 2**（其 0.0.30 为零实现预留且坑位④补拉协调评审未发生；「会话不在场监控照常」是 07 现行合法态）——方案 D5 的 exit 2 时点裁定顺延至机制侧重启评审时再议。代价：重诊窗内 watch 继续产事件（dedup+5 票闸已兜）。
+- **R3 入队纪律**：auto-T2 直建 TaskRecord（不走 loop.ingest——lock_precheck 在 watch.lock 持有中恒拒；不嵌 self.submit——record_monitor_event 已持 queue.lock 会 flock 自死锁）；幂等=`find_any("monitor_review:{code}:{market_today}")` 当日一次含终态（R4；与 panel 路径 UTC 日界差远离市场时段）。
+- **L2 总闸**：`agent/config.json`（AgentConfig{version=1, l2_enabled 默认 False, billing_mode, updated_at}；加载纪律=缺席/坏 JSON/版本不符一律默认关宁拒不放）；面板⑦设置区 GET/POST `/api/l2`（开启方向 hx-confirm 二次确认；POST 要求 daemon 持有者否则 503）；开关变更记 `l2_toggled` 决策。**R1 联动**：l2_enabled→budget.enabled 同步、billing_mode 由 probe 判定持久化（判不准/失败一律 api 收紧，D2）；关闭仅封 monitor 源，panel/cli 人在环照旧。
+- **消费期 L2 闸（NR-4 收口）**：`source=="monitor" ∧ kind==monitor_review ∧ !l2_enabled` → failed + `advice_refused(reason_code=l2_disabled)`；叠加序=defer（锁/窗可恢复）→ L2 闸 → 5 票闸 → 预算闸（终态递进，防终态吞 defer 补跑）；每次消费现读 config（面板关闸即刻生效于在队任务）。
+- **CSRF 中间件（R2 收严）**：OriginGuardMiddleware 覆盖全部非 GET（/api/stream 豁免）——Origin（缺失回落 Referer）皆缺或跨源 403；白名单 host {127.0.0.1/localhost/[::1]/testserver} 任意端口。坑位：curl 脚本须 `-H 'Origin: http://127.0.0.1:8730'`；htmx 同源零影响。
+- **预算分桶（修两实 bug）**：`record_dual_axis` 增 `daily{day:{usd,tasks}}`/`monthly{month:{usd}}`（旧全期键保留兼容面板；旧 ledger 零迁移）；`_budget_precheck` 改读当日/当月桶（market_today 钟面）——旧月闸空转（读从不写的 month_cost_usd_equiv）、tasks 全期计数两 bug 修复。D2 语义不动（subscription 仅次数闸+记账）。
+- **防御件实用集**：①泄漏巡检（D-08）：启动+每小时扫 `pgrep -fl 'claude.*-p'` 差集 live_pids，孤儿记 `cc_orphan_detected`（log-only，kill 留 opt-in）；②`--setting-sources project` 无条件加（D-52：143s→2s；cwd 空目录=空集；不适用依赖 user settings 凭证注入的宿主——登记）；③permission_denials 解析入 CCResult + task_done 决策 payload（F-28 审计消费）。
+- **升级位（只登记不实施）**：D-72 waitingFor 轮询（触发：L2 开启后观测挂起会话实锤）；F-56 PreToolUse hook deny（触发：需宿主侧零例外强制时）。

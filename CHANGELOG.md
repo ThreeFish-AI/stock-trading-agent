@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.9] - 2026-11-08
+
+### Added
+
+- **M3 L2 无人值守核心（PR-G；规约 [12-orchestration.md](docs/specs/12-orchestration.md) 新增 §⑩）**。①**events 台账驱动 auto-T2**：`t2_worthy` 判据（12 规则枚举逐字钉死 ∪ mech_risk 非 None）+ 直建 TaskRecord 入队（R3：绕 lock_precheck watch.lock 恒拒与 queue.lock 自死锁两坑位）+ find_any 当日一次幂等（R4）；**不依赖 vibe-stock exit 2**（零实现预留，D5 时点顺延）。②**L2 总闸**：`agent/config.json`（默认关宁拒不放）+ 面板⑦设置区 GET/POST /api/l2（hx-confirm 二次确认、503 降级守卫、l2_toggled 决策留痕）；R1 单开关联动（l2→budget.enabled、probe 认证态持久化 billing_mode 判不准收紧 api）；消费期 L2 闸（monitor 源 monitor_review 无闸即拒起，NR-4 收口；叠加序 defer→L2→5 票→预算防终态吞 defer）。③**CSRF 中间件（R2 收严向）**：OriginGuard 覆盖全部非 GET（Origin/Referer 同源校验 403，curl 须显式 -H Origin——文档登记）。④**预算分桶（修两实 bug）**：record_dual_axis 增日/月桶、_budget_precheck 改读桶（月闸空转+tasks 全期计数修复）；D2 语义不动。⑤**防御件实用集**：D-08 泄漏巡检（启动+每小时 pgrep 差集 live_pids，log-only 决策 cc_orphan_detected）、--setting-sources project（D-52 慢启动 143s→2s）、permission_denials 解析入 CCResult+task_done 决策（F-28 审计消费）；D-72/F-56 登记升级位。⑥TaskRecord 增 source 字段（panel|cli|monitor，旧记录零迁移）；run-once 接 apply_l2_config。测试 +14 例（355 passed 全绿）：agent_config 三态/12 规则钉死/auto-T2 入队幂等与关闸拒/panel 源不受闸/联动/CSRF 纯函数+端到端 403×2/L2 端点开关全链+503；selftest 31 case（+3）。M3 剩余（PR-H 崩溃重放+--bg 评估+SDK 对照）随下一 PR。
+
 ## [0.0.8] - 2026-11-08
 
 ### Added

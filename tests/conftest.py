@@ -55,3 +55,6 @@ def hold_lock(path: Path):
     finally:
         fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
         fh.close()
+
+
+ORIGIN_HEADERS = {"Origin": "http://testserver"}  # OriginGuard 同源头（CSRF 中间件测试兼容位）
