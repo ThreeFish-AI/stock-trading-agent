@@ -19,6 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from stock_trading_agent import __version__
@@ -118,6 +119,7 @@ def create_app(
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(TRUSTED_HOSTS))
     app.add_middleware(OriginGuardMiddleware)  # R2 CSRF 收严：非 GET 同源校验（§⑩）
+    _register_panel_error_handler(app)
     app.state.state_root = str(layout.root) if state_root is not None else None
     app.state.loop_runtime = runtime or LoopRuntime(
         layout=layout,
@@ -144,6 +146,65 @@ def create_app(
     app.state.dir_watcher = watcher
     app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
     return app
+
+
+def _register_panel_error_handler(app: FastAPI) -> None:
+    """htmx 面板错误卡内容协商（0.0.24）：/api/panel/* + HX-Request 的 4xx/5xx 统一渲
+    HTML 错误卡 fragment（保留原状态码），配合 index.html htmx-config responseHandling
+    swap:true 使错误原因落入操作容器原位；其余（JSON 孪生端点/curl）回落 JSON 原样。
+    """
+
+    from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    def _is_panel_htmx(request) -> bool:
+        return request.url.path.startswith("/api/panel/") and (
+            request.headers.get("hx-request") == "true"
+        )
+
+    def _detail_text(exc: Exception) -> str:
+        if isinstance(exc, RequestValidationError):
+            try:
+                return str(exc.errors(include_url=False))
+            except TypeError:  # 新版 ValidationException 无 include_url 形参
+                return str(exc)
+        return str(getattr(exc, "detail", ""))
+
+    @app.exception_handler(StarletteHTTPException)
+    async def panel_http_exception(request, exc):
+        from stock_trading_agent.server.panel import render_error_card
+
+        if _is_panel_htmx(request):
+            retry = str(request.url) if request.method == "GET" else ""
+            return HTMLResponse(
+                render_error_card(exc.status_code, _detail_text(exc), retry_path=retry),
+                status_code=exc.status_code,
+                headers=getattr(exc, "headers", None),
+            )
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {"detail": getattr(exc, "detail", None)},
+            status_code=exc.status_code,
+            headers=getattr(exc, "headers", None),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def panel_validation_exception(request, exc):
+        from fastapi.responses import JSONResponse
+
+        if _is_panel_htmx(request):
+            from stock_trading_agent.server.panel import render_error_card
+
+            retry = str(request.url) if request.method == "GET" else ""
+            return HTMLResponse(
+                render_error_card(422, _detail_text(exc), retry_path=retry), status_code=422
+            )
+        try:
+            detail = exc.errors(include_url=False)
+        except TypeError:
+            detail = str(exc)
+        return JSONResponse({"detail": detail}, status_code=422)
 
 
 def _make_lifespan(enable: bool, runtime: LoopRuntime | None, layout: StateLayout) -> object:

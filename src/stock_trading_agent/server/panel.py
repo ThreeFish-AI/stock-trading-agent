@@ -27,10 +27,11 @@ def render_budget_line(budget: dict) -> str:
         return '<p class="muted">预算台账未初始化（默认关，仅记账）。</p>'
     tokens = budget.get("tokens") if isinstance(budget.get("tokens"), dict) else {}
     return (
-        f'<p class="muted">模式 {_esc(budget.get("billing_mode", "subscription"))} · '
+        f'<p class="muted" title="订阅轨双口径记账（F-34）">模式 '
+        f"{_esc(budget.get('billing_mode', 'subscription'))} · "
         f"任务数 {int(budget.get('tasks', 0))} · "
         f"token 累计 {int(tokens.get('total', 0))} · "
-        f"等效美元 {budget.get('cost_usd_equiv', 0)}（订阅轨双口径记账，F-34）</p>"
+        f"等效美元 {budget.get('cost_usd_equiv', 0)}（订阅轨双口径记账）</p>"
     )
 
 
@@ -39,19 +40,28 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
 
     advice_codes（当日建议卡 stem 集）在场的行给「详情」按钮，填充③页 #advice-detail；
     距线 = price/level − 1，≤0 标 breach、≤3% 标 near（与①信号卡同判据）。
+    0.0.24：表前异常摘要 chips（零新 IO）；复核按钮带 ctx=mo（③页发起不写②#dg-session）；
+    详情/复核注入带 show:top 滚动定位；mech_risk 分 sev-hi/sev-md 两档视觉。
     """
     events = (payload.get("events") or [])[-tail:]
     if not events:
-        return '<p class="muted">暂无盯盘事件（watch.py 台账为空或未运行）。</p>'
+        return (
+            '<p class="empty" title="watch.py 台账为空或未运行">今日暂无盯盘事件。'
+            '<span class="empty-tip">开盘时段自动盯盘；如持续为空，检查盯盘进程是否在跑'
+            "（①页右列系统状态卡）。</span></p>"
+        )
     names = payload.get("names") or {}
     advice_codes = set(payload.get("advice_codes") or [])
     day = payload.get("date") or ""
+    n_breach = n_near = n_mech = n_sup = 0
     rows = []
     for ev in events:
         code = ev.get("code", "*")
         review = ev.get("review") or ""
         suppress = ev.get("suppress_reason") or ""
         suppressed = bool(suppress)
+        if suppressed:
+            n_sup += 1
         facts = ev.get("facts") or {}
         price = facts.get("price")
         level = facts.get("level")
@@ -60,32 +70,37 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             dist = (price / level - 1) * 100
             dist_txt = f"{dist:+.2f}%"
             dist_cls = "dist-breach" if dist <= 0 else ("dist-near" if dist <= 3 else "")
+            if dist <= 0:
+                n_breach += 1
+            elif dist <= 3:
+                n_near += 1
         mech = ev.get("mech_risk") or {}
-        riskchip = (
-            f'<span class="riskchip">mech_risk {_esc(mech.get("severity", ""))}</span>'
-            if mech
-            else ""
-        )
+        if mech:
+            n_mech += 1
+        sev = str(mech.get("severity", ""))
+        sev_cls = " sev-hi" if (mech and sev == "high") else (" sev-md" if mech else "")
+        riskchip = f'<span class="riskchip{sev_cls}">mech_risk {_esc(sev)}</span>' if mech else ""
         name = names.get(code)
         name_html = f" {_esc(name)}" if name else ""
         action = ""
         if code in advice_codes and day:
             action += (
                 f'<button class="mini" hx-get="/api/panel/advice-detail/{_esc(day)}/{_esc(code)}" '
-                'hx-target="#advice-detail" hx-swap="innerHTML">详情</button> '
+                'hx-target="#advice-detail" hx-swap="innerHTML show:top">详情</button> '
             )
         if review and not suppressed:
             action += (
                 f'<button class="mini" hx-post="/api/panel/submit" '
-                f'hx-vals=\'{{"kind": "monitor_review", "code": "{_esc(code)}"}}\' '
-                f'hx-target="#advice-detail" hx-swap="innerHTML" '
+                f'hx-vals=\'{{"kind": "monitor_review", "code": "{_esc(code)}", "ctx": "mo"}}\' '
+                f'hx-target="#advice-detail" hx-swap="innerHTML show:top" '
                 f'hx-disabled-elt="this">盯盘复核 {_esc(code)}</button>'
             )
         elif suppressed:
             action = '<span class="tag">已压制</span>'
+        ts = str(ev.get("ts", ""))
         rows.append(
             "<tr>"
-            f'<td class="num" title="{_esc(ev.get("ts", ""))}">{_esc(ev.get("ts", ""))}</td>'
+            f'<td class="num" title="{_esc(ts)}">{_esc(_ts_hhmm(ts))}</td>'
             f'<td><span class="code num">{_esc(code)}</span>{name_html}</td>'
             f'<td title="{_esc(ev.get("rule", ""))}">{_esc(ev.get("rule", ""))}</td>'
             f'<td class="num">{_fmt(price)}</td>'
@@ -97,8 +112,17 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             f"<td>{action}</td>"
             "</tr>"
         )
+    summary = (
+        '<div class="chips">'
+        f'<span class="kchip"><i>事件</i> <b>{len(events)}</b></span>'
+        f'<span class="kchip"><i>breach</i> <b>{n_breach}</b></span>'
+        f'<span class="kchip"><i>near</i> <b>{n_near}</b></span>'
+        f'<span class="kchip"><i>mech_risk</i> <b>{n_mech}</b></span>'
+        f'<span class="kchip"><i>已压制</i> <b>{n_sup}</b></span>'
+        "</div>"
+    )
     return (
-        '<table class="tbl"><colgroup><col class="w-ts"><col class="w-code">'
+        summary + '<table class="tbl"><colgroup><col class="w-ts"><col class="w-code">'
         '<col><col class="w-num"><col class="w-num"><col><col><col><col class="w-sup">'
         '<col class="w-op"></colgroup><thead><tr>'
         '<th scope="col">时间</th><th scope="col">股票</th><th scope="col">事件</th>'
@@ -106,8 +130,9 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         '<th scope="col">机械风险</th><th scope="col">复核短语</th><th scope="col">压制</th>'
         '<th scope="col">操作</th>'
         "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
-        '<p class="tbl-note">盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · '
-        "盘中结论以收盘复核为准（R9）</p>"
+        '<p class="tbl-note" title="盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · 盘中结论以'
+        '收盘复核为准（R9）">盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · '
+        "盘中结论以收盘复核为准</p>"
     )
 
 
@@ -115,18 +140,20 @@ def render_tasks_table(queue: dict) -> str:
     tasks = queue.get("tasks") or []
     if not tasks:
         return (
-            '<p class="muted">队列为空。</p><span id="dg-task-meta" hx-swap-oob="true">0 项</span>'
+            '<p class="empty">队列为空。<span class="empty-tip">②页表单或③页复核按钮'
+            "提交后于此跟踪。</span></p>"
+            '<span id="dg-task-meta" hx-swap-oob="true">0 项</span>'
         )
     rows = []
     for t in tasks[-20:]:
         err = t.get("error") or ""
+        enq = str(t.get("enqueued_at", ""))
         rows.append(
             "<tr>"
             f"<td>{_esc(t.get('kind', ''))}</td>"
             f'<td><span class="code num">{_esc(t.get("code", ""))}</span></td>'
             f"<td>{_status_pill(t.get('status', ''))}</td>"
-            f'<td class="num" title="{_esc(t.get("enqueued_at", ""))}">'
-            f"{_esc(t.get('enqueued_at', ''))}</td>"
+            f'<td class="num" title="{_esc(enq)}">{_esc(_ts_hhmm(enq))}</td>'
             f'<td title="{_esc(err)}">{_esc(err or "—")}</td>'
             "</tr>"
         )
@@ -140,10 +167,12 @@ def render_tasks_table(queue: dict) -> str:
     )
 
 
-def render_task_card(task: dict) -> str:
+def render_task_card(task: dict, *, session_target: str | None = "#dg-session") -> str:
     """任务卡：非终态带 5s 快轮询；终态停轮询并展示结果。
 
     0.0.13：有 session_uuid 时同步驱动②页「会话观测」区（同卡轮询双写，P2 案 a）。
+    session_target=None（③页发起的复核）：不持 hook，note 给「在②页观测会话」跳转——
+    消解③操作/②观测的跨页分裂与双任务争写 #dg-session。
     """
     status = str(task.get("status", "queued"))
     task_id = _esc(task.get("task_id", ""))
@@ -154,10 +183,10 @@ def render_task_card(task: dict) -> str:
         else ""
     )
     session_hook = ""
-    if session_uuid:
+    if session_uuid and session_target:
         session_hook = (
             f' hx-get="/api/panel/session/{task_id}" hx-trigger="every 5s" '
-            'hx-target="#dg-session" hx-swap="innerHTML"'
+            f'hx-target="{_esc(session_target)}" hx-swap="innerHTML"'
         )
     note = ""
     if status == "done":
@@ -166,6 +195,11 @@ def render_task_card(task: dict) -> str:
         )
     elif status in ("failed", "abandoned"):
         note = f'<p class="warn">任务 {_esc(status)}：{_esc(task.get("error") or "")}</p>'
+    if session_target is None:
+        note += (
+            '<p><button class="mini" onclick="location.hash=\'#/diagnosis\'">'
+            "在②页观测会话</button></p>"
+        )
     return (
         f'<div class="task-card" id="task-card" {poll}{session_hook}>'
         f"<p><strong>{_esc(task.get('kind', ''))}</strong> · {_esc(task.get('code', ''))} · "
@@ -176,28 +210,46 @@ def render_task_card(task: dict) -> str:
 
 
 def render_audit(decisions: list[dict], budget: dict, *, chain_ok: bool | None = None) -> str:
+    """⑦decisions 台账（0.0.24：链校验/预算摘要 chips 升卡首；head tag 标链尾行）。"""
     rows = []
-    for line in decisions[-20:]:
+    tail = decisions[-20:]
+    for line in tail:
         payload = line.get("payload") or {}
         summary = payload.get("kind") or payload.get("reason") or ""
+        is_head = line is tail[-1] if tail else False
+        head_tag = ' <span class="tag">head</span>' if is_head else ""
+        ts = str(line.get("ts", ""))
         rows.append(
             "<tr>"
             f'<td class="num">{int(line.get("seq", 0))}</td>'
-            f'<td class="num" title="{_esc(line.get("ts", ""))}">{_esc(line.get("ts", ""))}</td>'
+            f'<td class="num" title="{_esc(ts)}">{_esc(_ts_short(ts))}</td>'
             f"<td>{_esc(line.get('kind', ''))}</td>"
             f'<td title="{_esc(summary)}">{_esc(summary or "—")}</td>'
-            f'<td class="num">{_esc(line.get("hash", "")[:12])}…</td>'
+            f'<td class="num">{_esc(line.get("hash", "")[:12])}…{head_tag}</td>'
             "</tr>"
         )
     chain_note = ""
+    summary_chips = ""
+    tokens = budget.get("tokens") if isinstance(budget.get("tokens"), dict) else {}
+    count_chips = (
+        f'<span class="kchip"><i>台账</i> <b>{len(decisions)}</b></span>'
+        f'<span class="kchip"><i>token 累计</i> <b>{int(tokens.get("total", 0))}</b></span>'
+        f'<span class="kchip"><i>等效 USD</i> <b>{budget.get("cost_usd_equiv", 0)}</b></span>'
+    )
     if chain_ok is True:
         chain_note = '<p class="ok">链校验通过 · 台账防篡改完好</p>'
+        summary_chips = (
+            f'<div class="chips"><span class="chip chip-up">链校验通过</span>{count_chips}</div>'
+        )
     elif chain_ok is False:
         from stock_trading_agent.state.decisions import REPAIR_HINT
 
         chain_note = (
             '<p class="warn">hash 链校验失败（seq 乱序或 hash 复算不符）——'
             f"台账可能被改写或并发写入，{_esc(REPAIR_HINT)}</p>"
+        )
+        summary_chips = (
+            f'<div class="chips"><span class="chip chip-warn">链校验失败</span>{count_chips}</div>'
         )
     table = (
         '<table class="tbl"><colgroup><col class="w-seq"><col class="w-ts">'
@@ -206,9 +258,10 @@ def render_audit(decisions: list[dict], budget: dict, *, chain_ok: bool | None =
         '<th scope="col">类型</th><th scope="col">摘要</th><th scope="col">hash 链</th></tr>'
         + f"</thead><tbody>{''.join(rows)}</tbody></table>"
         if rows
-        else '<p class="muted">decision log 为空。</p>'
+        else '<p class="empty">decision log 为空。<span class="empty-tip">首条决策写入后'
+        "于此呈现。</span></p>"
     )
-    body = table + chain_note + render_budget_line(budget)
+    body = summary_chips + table + chain_note + render_budget_line(budget)
     return (
         '<div class="card"><div class="card-h"><span class="ct">decisions 台账（尾部 20 条）</span>'
         '<span class="cm">hash 链防篡改 · 只读投影</span></div>'
@@ -236,10 +289,28 @@ def _pos_status_pill(status: str) -> str:
 
 
 def _axis_equity_svg(history: list[dict], *, width: int = 470, height: int = 150) -> str:
-    """④权益曲线（带轴版）：NAV 网格线 + 刻度 + 末点标签（对齐原型 paper.html；服务端手搓）。"""
+    """④权益曲线（带轴版）：NAV 网格线 + 刻度 + 末点标签（对齐原型 paper.html；服务端手搓）。
+
+    0.0.24：单 style 属性合并（此前双 style 属性致 font-family 恒失效）；
+    <2 点时渲静态空轴骨架（布局稳定 + 传达预期）。
+    """
     navs = [float(p.get("nav") or 0) for p in history]
     if len(navs) < 2:
-        return '<p class="muted">权益曲线待积累（≥2 个交易日点）。</p>'
+        pad_l, pad_r, pad_t, pad_b = 8, 46, 10, 18
+        plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
+        return (
+            f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            'role="img" aria-label="权益曲线待积累（≥2 个交易日点）">'
+            + "".join(
+                f'<line x1="{pad_l}" y1="{pad_t + frac * plot_h:.1f}" '
+                f'x2="{pad_l + plot_w}" y2="{pad_t + frac * plot_h:.1f}" '
+                'style="stroke:var(--line)" stroke-dasharray="3 4"/>'
+                for frac in (0.0, 0.5, 1.0)
+            )
+            + f'<text x="{pad_l + plot_w / 2:.1f}" y="{height / 2:.1f}" text-anchor="middle" '
+            'style="font-size:var(--fs-11);fill:var(--t4);font-family:var(--mono)">'
+            "待积累（≥2 个交易日点）</text></svg>"
+        )
     lo, hi = min(navs), max(navs)
     span = (hi - lo) or 1e-9
     pad_l, pad_r, pad_t, pad_b = 8, 46, 10, 18
@@ -270,9 +341,8 @@ def _axis_equity_svg(history: list[dict], *, width: int = 470, height: int = 150
         if dates[idx]:
             tx = min(max(x(idx), pad_l), pad_l + plot_w)
             parts.append(
-                f'<text x="{tx:.1f}" y="{height - 4}" '
-                'style="font-size:var(--fs-10);fill:var(--t4)" '
-                f'text-anchor="{anchor}" style="font-family:var(--mono)">'
+                f'<text x="{tx:.1f}" y="{height - 4}" text-anchor="{anchor}" '
+                'style="font-size:var(--fs-10);fill:var(--t4);font-family:var(--mono)">'
                 f"{_esc(dates[idx][5:])}</text>"
             )
     lx, ly = x(len(navs) - 1), y(navs[-1])
@@ -280,9 +350,9 @@ def _axis_equity_svg(history: list[dict], *, width: int = 470, height: int = 150
     parts.append(
         f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="6" '
         'style="fill:color-mix(in srgb,var(--acc) 25%,transparent)"/>'
-        f'<text x="{lx - 8:.1f}" y="{ly - 8:.1f}" '
-        'style="font-size:var(--fs-11);fill:var(--t1)" '
-        f'text-anchor="end" style="font-family:var(--mono)">{navs[-1]:.4f}</text>'
+        f'<text x="{lx - 8:.1f}" y="{ly - 8:.1f}" text-anchor="end" '
+        f'style="font-size:var(--fs-11);fill:var(--t1);font-family:var(--mono)">'
+        f"{navs[-1]:.4f}</text>"
     )
     parts.append("</svg>")
     return "".join(parts)
@@ -293,7 +363,7 @@ def _sparkline_svg(
 ) -> str:
     """序列 sparkline（服务端手搓内联 SVG，零 CDN/零前端库；aria-label 必填）。"""
     if len(values) < 2:
-        return '<p class="muted">曲线待积累（≥2 个数据点）。</p>'
+        return '<p class="empty">曲线待积累（≥2 个数据点）。</p>'
     lo, hi = min(values), max(values)
     span = (hi - lo) or 1e-9
     step = width / (len(values) - 1)
@@ -353,10 +423,14 @@ def render_settings_fragment(state: dict) -> str:
 
 
 def render_stats_fragment(payload: dict) -> str:
-    """面板⑥：kind 分布 + 任务成功率（样本不足标注）+ 预算双口径小表（§15）+ T+1 命中率。"""
+    """面板⑥：KPI 摘要行 + 任务画像 + 预算双口径 + 断言分桶/路由/成本 + T+1 命中率。
+
+    0.0.24：核心指标升 .stats KPI 行置顶；kind 分布 chip 化；预算日桶近 14 日封顶
+    （sparkline 仍全量）；六段收 grid-2 双列；§15/F-34 编号入 title。
+    """
     d = payload.get("decisions") or {}
-    rows = "".join(
-        f'<tr><td>{_esc(k)}</td><td class="num">{v}</td></tr>'
+    chips = "".join(
+        f'<span class="kchip"><i>{_esc(k)}</i> <b>{v}</b></span>'
         for k, v in (d.get("kinds") or {}).items()
     )
     rate = d.get("success_rate")
@@ -367,26 +441,43 @@ def render_stats_fragment(payload: dict) -> str:
     )
     if d.get("note"):
         summary += f"（{_esc(d.get('note'))}）"
-    parts = [
+    route = payload.get("route_hit") or {}
+    route_rate = route.get("rate")
+    route_kpi = f"{route_rate:.2%}" if route.get("submitted") and route_rate is not None else "—"
+    t1 = payload.get("t1_review") or {}
+    t1_rate = t1.get("rate")
+    t1_kpi = f"{t1_rate:.0%}" if t1 and t1_rate is not None else "—"
+    kpi_row = (
+        '<div class="stats" role="list" aria-label="核心指标摘要">'
+        f'<div class="stat" role="listitem"><div class="k">任务成功率</div>'
+        f'<div class="v">{rate_text} <small>{d.get("done", 0)}/'
+        f"{int(d.get('done', 0)) + int(d.get('failed', 0)) + int(d.get('abandoned', 0))}"
+        "</small></div></div>"
+        f'<div class="stat" role="listitem"><div class="k">意图路由命中率</div>'
+        f'<div class="v">{route_kpi}</div></div>'
+        f'<div class="stat" role="listitem"><div class="k">T+1 复核命中率</div>'
+        f'<div class="v">{t1_kpi}</div></div>'
+        "</div>"
+    )
+    left = [
         "<h3>任务画像（全样本登记，含失败与弃单）</h3>",
         f'<p class="muted">{summary}</p>',
-        '<table class="tbl"><colgroup><col><col class="w-num"></colgroup>'
-        '<thead><tr><th scope="col">决策类型</th><th scope="col">计数</th></tr></thead>'
-        f"<tbody>{rows}</tbody></table>",
-        "<h3>预算曲线（token + 等效美元双口径，F-34）</h3>",
+        f'<div class="chips">{chips}</div>' if chips else "",
+        "<h3>预算曲线（token + 等效美元双口径）</h3>",
     ]
     curve = payload.get("budget_curve") or []
     if curve:
+        shown = curve[-14:]
         crows = "".join(
             "<tr>"
             f'<td class="num">{_esc(p.get("date"))}</td><td class="num">{p.get("sessions", 0)}</td>'
             f'<td class="num">{p.get("tokens", 0)}</td>'
             f'<td class="num">{float(p.get("cost_usd_equiv") or 0):.2f}</td>'
             "</tr>"
-            for p in curve
+            for p in shown
         )
         if len(curve) >= 2:
-            parts.append(
+            left.append(
                 '<div class="svgs">'
                 + _sparkline_svg([p.get("tokens", 0) for p in curve], aria_label="token 日桶曲线")
                 + _sparkline_svg(
@@ -395,35 +486,36 @@ def render_stats_fragment(payload: dict) -> str:
                 )
                 + "</div>"
             )
-        parts.append(
+        cap_note = (
+            '<p class="tbl-note">近 14 日（全量走势见上方曲线）</p>' if len(curve) > 14 else ""
+        )
+        left.append(
             '<table class="tbl"><colgroup><col class="w-ts"><col class="w-num">'
             '<col class="w-num"><col class="w-num"></colgroup>'
             '<thead><tr><th scope="col">日</th><th scope="col">会话</th>'
             f'<th scope="col">token</th><th scope="col">等效 USD</th></tr></thead>'
-            f"<tbody>{crows}</tbody></table>"
+            f"<tbody>{crows}</tbody></table>{cap_note}"
         )
     else:
-        parts.append('<p class="muted">暂无会话记账。</p>')
+        left.append('<p class="empty">暂无会话记账。</p>')
+    right = []
     buckets = payload.get("assertion_buckets") or {}
     if buckets:
         brows = "".join(
             f"<tr><td>{_esc(k)}</td><td class='num'>{v}</td></tr>" for k, v in buckets.items()
         )
-        parts.append(
-            "<h3>断言违例分桶（NR-3 拒落盘原因，§15）</h3>"
+        right.append(
+            '<h3 title="NR-3 拒落盘原因（§15 指标族管线）">断言违例分桶（NR-3 拒落盘原因）</h3>'
             '<table class="tbl"><colgroup><col><col class="w-num"></colgroup>'
             f"<thead><tr><th scope='col'>违例类型</th><th scope='col'>计数</th></tr></thead>"
             f"<tbody>{brows}</tbody></table>"
             '<p class="tbl-note">legacy 无码行归 uncategorized（0.0.22 前存量）</p>'
         )
-    route = payload.get("route_hit") or {}
     if route.get("submitted"):
-        rate = route.get("rate")
-        rate_text = f"{rate:.2%}" if rate is not None else "—"
-        parts.append(
-            "<h3>意图路由命中率（确定性查表，§15）</h3>"
+        right.append(
+            '<h3 title="确定性查表（§15 指标族管线）">意图路由命中率（确定性查表）</h3>'
             f'<p class="muted">提交 {route.get("submitted", 0)} · 兜底拒 '
-            f"{route.get('fallback', 0)} · 命中率 {rate_text}"
+            f"{route.get('fallback', 0)} · 命中率 {route_kpi}"
             f"（{_esc(route.get('note') or '')}）</p>"
         )
     cbk = payload.get("cost_by_kind") or []
@@ -435,24 +527,29 @@ def render_stats_fragment(payload: dict) -> str:
             "</tr>"
             for r in cbk
         )
-        parts.append(
-            "<h3>会话成本分布（按 kind 归因，§15）</h3>"
+        right.append(
+            '<h3 title="按 kind 归因（§15 指标族管线）">会话成本分布（按 kind 归因）</h3>'
             '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-num">'
             "</colgroup><thead><tr><th scope='col'>kind</th><th scope='col'>会话</th>"
             "<th scope='col'>token</th><th scope='col'>等效 USD</th></tr></thead>"
             f"<tbody>{crows}</tbody></table>"
         )
-    t1 = payload.get("t1_review") or {}
     if t1:
-        t1_rate = t1.get("rate")
-        t1_rate_text = f"{t1_rate:.0%}" if t1_rate is not None else "—"
         t1_note = f"（{_esc(t1.get('note'))}）" if t1.get("note") else ""
-        parts.append("<h3>T+1 复核命中率（advice 卡 vs ledger 投影）</h3>")
-        parts.append(
-            f'<p class="muted">命中 {t1.get("hits", 0)} / 样本 {t1.get("sampled", 0)}'
-            f" · 命中率 {t1_rate_text}{t1_note}——样本 &lt;30 只观察不记分（MIN_SAMPLES=30）</p>"
+        right.append("<h3>T+1 复核命中率（advice 卡 vs ledger 投影）</h3>")
+        right.append(
+            f'<p class="muted" title="MIN_SAMPLES=30">命中 {t1.get("hits", 0)} / '
+            f"样本 {t1.get('sampled', 0)} · 命中率 {t1_kpi}{t1_note}"
+            "——样本 &lt;30 只观察不记分</p>"
         )
-    parts.append('<p class="muted">后验画像：全样本登记含亏损；模拟绩效均为假设性推演。</p>')
+    parts = [
+        kpi_row,
+        '<div class="grid-2">',
+        f'<div class="col">{"".join(left)}</div>',
+        f'<div class="col">{"".join(right)}</div>',
+        "</div>",
+        '<p class="muted">后验画像：全样本登记含亏损；模拟绩效均为假设性推演。</p>',
+    ]
     return "".join(parts)
 
 
@@ -508,14 +605,15 @@ def render_briefing_fragment(payload: dict) -> str:
         return (
             f'<div class="task-card"><p><strong>{code}</strong> {slot_tag} · {state} {action}</p>'
             f"{chip_html}"
-            f'<pre class="md-pre">'
-            f"{body}</pre></div>"
+            '<details class="brief-fold"><summary class="brief-sum">正文（节选 ≤1200 字）'
+            f'</summary><pre class="md-pre">{body}</pre></details></div>'
         )
 
     if not cards:
         parts.append(
-            '<p class="muted">当日无卡（L2 开启时盘前 09:00–09:29 / 盘后 18:15 起自动触发；'
-            "或②页手动触发 briefing_morning / briefing_evening）。</p>"
+            '<p class="empty">当日无晨报/复盘卡。<span class="empty-tip">'
+            "L2 开启时盘前 09:00–09:29 / 盘后 18:15 起自动触发；"
+            "也可在②页手动触发 briefing_morning / briefing_evening。</span></p>"
         )
         return "".join(parts)
     for slot_key, title in (("am", "盘前晨报"), ("pm", "盘后复盘")):
@@ -575,8 +673,8 @@ def render_diag_form() -> str:
         "</div>"
         '<div class="frm-row">'
         '<label></label><button class="btn btn-pri" type="submit">开始</button></div>'
-        '<p class="tbl-note">LLM 只产意见 · 聚合一律确定性裁决 · NR-3 断言器前置门 · '
-        "锁/禁跑窗内提交将被拒（423）</p></form>"
+        '<p class="tbl-note" title="NR-3 断言器前置门">LLM 只产意见 · 聚合一律确定性裁决 · '
+        "断言器前置门 · 锁/禁跑窗内提交将被拒（423）</p></form>"
         '<div id="dg-result" class="dg-result"></div>'
     )
 
@@ -586,12 +684,30 @@ def _ts_hhmm(ts: str) -> str:
     return ts[11:16] if len(ts) > 16 else ts
 
 
+def _ts_short(ts: str) -> str:
+    """跨日台账显示层：ISO 串转本地时区 MM-DD HH:MM；解析失败回退原串（全值走 title）。
+
+    sessions/decisions 等台账为 +00:00 串，纯切片会显示错钟点，必须 astimezone() 转本地。
+    """
+    import datetime as _dt
+
+    try:
+        return _dt.datetime.fromisoformat(str(ts)).astimezone().strftime("%m-%d %H:%M")
+    except ValueError:
+        return str(ts)
+
+
 def render_event_feed(payload: dict) -> str:
-    """①今日事件流：时间轴形态（T 徽章/mech_risk riskchip/风险行高亮/现价与距线）。"""
+    """①今日事件流：时间轴形态（T 徽章/mech_risk riskchip/风险行高亮/现价与距线）。
+
+    0.0.24：整行包 <a href="#/monitor">（.ev-link）——①流条目可跳③页事件表与复核。
+    """
     events = (payload.get("events") or [])[-10:]
     if not events:
         return (
-            '<p class="loadmsg">暂无盯盘事件（watch.py 台账为空或未运行）。</p>'
+            '<p class="empty" title="watch.py 台账为空或未运行">今日暂无盯盘事件。'
+            '<span class="empty-tip">开盘时段自动盯盘；如持续为空，检查①页右列系统状态卡'
+            "或③页事件表。</span></p>"
             '<span id="ov-ev-count" hx-swap-oob="true">0 条</span>'
         )
     rows = []
@@ -609,6 +725,7 @@ def render_event_feed(payload: dict) -> str:
         review_txt = f" · {ev['review']}" if ev.get("review") else ""
         ts = str(ev.get("ts", ""))
         rows.append(
+            f'<a class="ev-link" href="#/monitor" title="在③页查看事件表与复核">'
             f'<div class="ev{risk_cls}"><div class="ev-time num" title="{_esc(ts)}">'
             f"{_esc(_ts_hhmm(ts))}</div>"
             f'<div class="ev-rail"><div class="ev-dot"></div></div>'
@@ -616,7 +733,7 @@ def render_event_feed(payload: dict) -> str:
             f"{_esc(ev.get('code', ''))}</span> {_esc(ev.get('rule', ''))}</span>"
             f'<span class="ev-top">{_esc(price_txt)} {riskchip}'
             f'<span class="lv lv0">{_esc(ev.get("level", "T0"))}</span>'
-            f"{_esc(review_txt)}</span></div></div>"
+            f"{_esc(review_txt)}</span></div></div></a>"
         )
     return "".join(rows) + f'<span id="ov-ev-count" hx-swap-oob="true">{len(events)} 条</span>'
 
@@ -626,8 +743,9 @@ def render_calendar(payload: dict) -> str:
     rows = payload.get("upcoming") or []
     if not rows:
         return (
-            '<p class="loadmsg">暂无日历事件（需 T1 刷新或诊股会话产出 evidence；'
-            "A 股专属块对港股不适用）。</p>"
+            '<p class="empty" title="需 T1 刷新或诊股会话产出 evidence">暂无日历事件。'
+            '<span class="empty-tip">诊股产出证据后自动聚合披露/解禁/公告；'
+            "A 股专属事件不适用于港股。</span></p>"
         )
     items = []
     for row in rows:
@@ -641,31 +759,73 @@ def render_calendar(payload: dict) -> str:
 
 
 def render_notifications(payload: dict) -> str:
-    """③通知预览：已发通知历史重放（macOS 通知样式卡 + 红线 7 说明）。"""
+    """③通知预览：已发通知历史重放（0.0.24 同源聚合折叠 + 时间戳区间）。
+
+    按 (source, code / title+body 前缀) 分组：每组一卡——×N 聚合 chip、首/末时刻区间、
+    首条正文摘要 + details 展开逐条；时间戳显示 HH:MM（title 挂全值），「·现在」删除。
+    """
     rows = payload.get("items") or []
     if not rows:
-        cards = '<p class="loadmsg">暂无已发通知（watch.py osascript 历史；产品仓永不发通知）。</p>'
+        cards = (
+            '<p class="empty" title="watch.py osascript 历史；产品仓永不发通知">'
+            '暂无已发通知。<span class="empty-tip">盯盘触发本地通知后于此只读重放。</span></p>'
+        )
+        status_line = ""
     else:
-        cards = "".join(
-            '<div class="card note"><div class="card-b note-b">'
-            '<svg class="note-ico" width="16" height="16" viewBox="0 0 16 16">'
-            '<path d="M8 1a4 4 0 0 0-4 4v3l-1.5 2.5h11L12 8V5a4 4 0 0 0-4-4z'
-            'M6.5 12.5a1.5 1.5 0 0 0 3 0" '
-            'stroke-width="1.3" fill="none"/></svg>'
-            '<div class="note-main">'
-            f'<div class="num note-time">'
-            f"{_esc(row.get('ts', ''))} · 现在</div>"
-            '<div class="note-title">'
-            f"{_esc(row.get('title', ''))}</div>"
-            '<div class="note-text">'
-            f"{_esc(row.get('body', ''))}</div></div></div></div>"
-            for row in rows
+        groups: list[list[dict]] = []
+        index: dict[tuple[str, str], int] = {}
+        for row in rows:
+            code = str(row.get("code") or "")
+            key = (
+                str(row.get("source") or ""),
+                code if code else f"{row.get('title', '')}|{row.get('body', '')[:24]}",
+            )
+            if key in index:
+                groups[index[key]].append(row)
+            else:
+                index[key] = len(groups)
+                groups.append([row])
+        cards = "".join(_notification_group_html(group) for group in groups)
+        status_line = (
+            f'<p class="tbl-note" role="status" aria-live="polite">'
+            f"重放 {len(groups)} 组 · 共 {len(rows)} 条已发通知</p>"
         )
     return (
-        f"{cards}"
+        f'<div role="region" aria-label="通知预览（历史重放）">{cards}{status_line}</div>'
         '<p class="tbl-note">仅本地 osascript（terminal 通道）· 禁第三方推送（红线 7）· '
         "告警主通道永久留服务端（后台标签页冻结，I-48）· 锁屏不保证送达——离机触达按面板"
         "常驻拉取式主动查看设计（方案 §1）——本卡为只读历史重放</p>"
+    )
+
+
+def _notification_group_html(group: list[dict]) -> str:
+    """同源通知组一卡：首/末时刻 + ×N + 首条摘要 + details 逐条（tail 内全量可查）。"""
+    first, last = group[0], group[-1]
+
+    def _time_span(row: dict) -> str:
+        ts = str(row.get("ts", ""))
+        return f'<span class="num note-time" title="{_esc(ts)}">{_esc(_ts_hhmm(ts))}</span>'
+
+    badge = f' <span class="chip chip-warn">×{len(group)}</span>' if len(group) > 1 else ""
+    expand = ""
+    if len(group) > 1:
+        items = "".join(f"<div>{_time_span(r)} {_esc(r.get('body', ''))}</div>" for r in group)
+        expand = (
+            f'<details class="brief-fold"><summary class="brief-sum">全部 '
+            f'{len(group)} 条</summary><div class="note-text">{items}</div></details>'
+        )
+    return (
+        '<div class="card note"><div class="card-b note-b">'
+        '<svg class="note-ico" width="16" height="16" viewBox="0 0 16 16">'
+        '<path d="M8 1a4 4 0 0 0-4 4v3l-1.5 2.5h11L12 8V5a4 4 0 0 0-4-4z'
+        'M6.5 12.5a1.5 1.5 0 0 0 3 0" '
+        'stroke-width="1.3" fill="none"/></svg>'
+        '<div class="note-main">'
+        f"{_time_span(first)} → {_time_span(last)}{badge}"
+        '<div class="note-title">'
+        f"{_esc(first.get('title', ''))}</div>"
+        '<div class="note-text">'
+        f"{_esc(first.get('body', ''))}</div>{expand}</div></div></div>"
     )
 
 
@@ -673,7 +833,7 @@ def render_session_obs(body: dict) -> str:
     """②会话观测：五段进度条（done/cur/pend）+ 双轨意见板 + 裁决卡（P2 §⑫ 案 a）。"""
     stages = body.get("stages") or []
     if not stages:
-        return '<p class="loadmsg">无会话产物视图。</p>'
+        return '<p class="empty">无会话产物视图。</p>'
     steps = []
     for st in stages:
         cls = {"done": "done", "current": "cur", "pending": "pend"}.get(st.get("state"), "pend")
@@ -707,7 +867,9 @@ def render_session_obs(body: dict) -> str:
         parts.append(f'<h3 class="h3-tight">双轨意见板 · {len(default_cards)} 条{pos_note}</h3>')
         parts.append(f'<div class="opins opins-dense">{cards}</div>')
     else:
-        parts.append('<p class="loadmsg">意见未产出（LLM 意见段待会话推进）。</p>')
+        parts.append(
+            '<p class="empty">意见未产出。<span class="empty-tip">LLM 意见段待会话推进。</span></p>'
+        )
     verdict = body.get("verdict")
     if verdict:
         buckets = verdict.get("buckets") or {}
@@ -730,17 +892,28 @@ def render_session_obs(body: dict) -> str:
         )
     notes = body.get("notes") or []
     if notes:
-        parts.append(f'<p class="loadmsg">{_esc(notes[0])}</p>')
+        parts.append(f'<p class="muted">{_esc(notes[0])}</p>')
     return "".join(parts)
 
 
 def render_signals_table(payload: dict) -> str:
-    """①在册信号卡表 6 列（信号五词/置信/距止损/轨）。"""
+    """①在册信号卡表（信号五词/置信/距止损/轨；0.0.24 breach 置顶 + 表格规范补齐）。
+
+    距止损全表无现价源时条件省列（colgroup/thead/td 三处联动）；
+    置信数值统一两位小数；排序由 panel_data.signals_snapshot 保证（breach→near→常序）。
+    """
     rows = payload.get("rows") or []
     if not rows:
-        note = "" if payload.get("read_ok") else "（signals.json 不可读——宁拒不漏）"
-        return f'<p class="loadmsg">无在册信号{note}。</p>'
+        tip = (
+            '<span class="empty-tip">signals.json 不可读——宁拒不漏，显示为空而非旧数据。</span>'
+            if not payload.get("read_ok")
+            else '<span class="empty-tip">adjudicate 产出登记后于此呈现。</span>'
+        )
+        return f'<p class="empty">无在册信号。{tip}</p>'
     names = payload.get("names") or {}
+    has_stop = any(r.get("to_stop_pct") is not None for r in rows)
+    stop_col = '<col class="w-num">' if has_stop else ""
+    stop_th = '<th scope="col">距止损</th>' if has_stop else ""
     trs = []
     for row in rows:
         signal = row.get("signal")
@@ -757,62 +930,92 @@ def render_signals_table(payload: dict) -> str:
             if to_stop is not None and to_stop <= 0
             else ("dist-near" if to_stop is not None and to_stop <= 3 else "")
         )
+        stop_td = f'<td class="num {_esc(dist_cls)}">{_fmt(to_stop, "%")}</td>' if has_stop else ""
         name = names.get(row["code"])
         name_html = f" {_esc(name)}" if name else ""
+        conf = row.get("confidence")
+        conf_txt = f"{float(conf):.2f}" if isinstance(conf, (int, float)) else _fmt(conf)
         trs.append(
             "<tr>"
             f'<td><span class="code num">{_esc(row["code"])}</span>{name_html}</td>'
             f'<td><span class="sig {sig_cls}"><span class="d"></span>'
             f"{_esc(signal or row.get('signal_raw'))}</span></td>"
-            f'<td class="num">{_fmt(row.get("confidence"))}</td>'
-            f'<td class="num {_esc(dist_cls)}">{_fmt(to_stop, "%")}</td>'
+            f'<td class="num">{conf_txt}</td>'
+            f"{stop_td}"
             f"<td>{_esc('中线' if row.get('profile') == 'position' else '短线')}</td>"
             f'<td class="num">{_esc(row.get("date", ""))}</td>'
             "</tr>"
         )
     return (
-        '<table class="tbl"><thead><tr><th>代码</th><th>最新信号</th><th>置信</th>'
-        f"<th>距止损</th><th>轨</th><th>信号日</th></tr></thead><tbody>{''.join(trs)}</tbody></table>"
-        '<p class="tbl-note">adjudicate 产出 · 盘中结论以收盘复核为准（R9）</p>'
+        '<table class="tbl"><colgroup><col class="w-code"><col>'
+        f'<col class="w-num">{stop_col}<col class="w-st"><col class="w-ts"></colgroup>'
+        '<thead><tr><th scope="col">代码</th><th scope="col">最新信号</th>'
+        '<th scope="col">置信</th>'
+        f"{stop_th}"
+        '<th scope="col">轨</th><th scope="col">信号日</th></tr></thead><tbody>'
+        f"{''.join(trs)}</tbody></table>"
+        '<p class="tbl-note" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）；'
+        "距止损需现价源（paper last_price / 盘中 facts.price），无价显 —；"
+        '排序 breach 置顶">adjudicate 产出 · 盘中结论以收盘复核为准 · '
+        "距止损需现价源（无价显 —）</p>"
     )
 
 
+_TODO_HREF = {
+    "pending_fill": "#/paper",
+    "mech_risk": "#/monitor",
+    "briefing": "#/overview",
+}
+
+
 def render_todos(payload: dict) -> str:
-    """①今日待办卡：三源聚合（pending 优先）。"""
+    """①今日待办卡：三源聚合（pending 优先）；行级 href 按 source 跳对应页（0.0.24）。
+
+    假复选框 .cbx 已换只读圆点（三源派生只读投影，不支持勾选——§11 只读半边）。
+    """
     todos = payload.get("todos") or []
     if not todos:
         return (
-            '<p class="loadmsg">无待办。</p><span id="ov-todo-count" hx-swap-oob="true">0 项</span>'
+            '<p class="empty">无待办。<span class="empty-tip">逐笔确认/降档复核/晨报确认'
+            "产生时于此汇总。</span></p>"
+            '<span id="ov-todo-count" hx-swap-oob="true">0 项</span>'
         )
     rows = []
     for item in todos:
+        href = _TODO_HREF.get(str(item.get("source", "")), "#/overview")
         rows.append(
-            f'<div class="todo"><div class="cbx"></div><div class="td-tx">'
-            f'<span class="code num">{_esc(item["code"])}</span> {_esc(item["text"])}</div>'
+            f'<div class="todo"><span class="sdot sdot-wait" '
+            'title="待办 · 三源派生只读投影，不支持勾选"></span>'
+            f'<div class="td-tx"><a class="todo-link" href="{_esc(href)}">'
+            f'<span class="code num">{_esc(item["code"])}</span> {_esc(item["text"])}</a></div>'
             f'<span class="chip chip-warn">{_esc(item["chip"])}</span></div>'
         )
     return "".join(rows) + f'<span id="ov-todo-count" hx-swap-oob="true">{len(todos)} 项</span>'
 
 
 def render_navcard(view: dict) -> str:
-    """①模拟盘净值卡：NAV 大数字 + 今日%/成立以来% + sparkline。"""
+    """①模拟盘净值卡：NAV 大数字 + 今日%/成立以来% + sparkline。
+
+    0.0.24 修单数据点结构断裂：今日 chip 条件追加、大数字与 chips 容器恒输出。
+    """
     history = view.get("equity_history") or []
     if not history:
-        return '<p class="loadmsg">权益曲线待积累（盘后日终复核产出）。</p>'
+        return (
+            '<p class="empty">净值曲线待积累。<span class="empty-tip">盘后日终复核产出'
+            "权益点后于此呈现。</span></p>"
+        )
     navs = [float(p.get("nav") or 0) for p in history]
     nav = navs[-1]
     today_pct = ((nav / navs[-2] - 1) * 100) if len(navs) >= 2 and navs[-2] else None
     since_pct = (nav - 1.0) * 100
-    up_today = (today_pct or 0) >= 0
-    chip = f'<span class="chip {"chip-up" if up_today else "chip-neutral"}">'
+    chips = []
+    if today_pct is not None:
+        chip_cls = "chip-up" if today_pct >= 0 else "chip-neutral"
+        chips.append(f'<span class="chip {chip_cls}">今日 {today_pct:+.2f}%</span>')
+    chips.append(f'<span class="chip chip-neutral">成立以来 {since_pct:+.2f}%</span>')
     return (
         f'<div class="nv-v num">{nav:.4f}</div>'
-        '<div class="nv-chips">'
-        f"{chip}今日 {today_pct:+.2f}%</span>"
-        if today_pct is not None
-        else ""
-    ) + (
-        f'<span class="chip chip-neutral">成立以来 {since_pct:+.2f}%</span></div>'
+        f'<div class="nv-chips">{"".join(chips)}</div>'
         + _sparkline_svg(navs, aria_label=f"模拟盘净值走势，最新 NAV {nav:.4f}")
         + '<p class="tbl-note">初始 1.0000 · 含费用与滑点（假设性推演）</p>'
     )
@@ -875,25 +1078,31 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
 
 
 def render_reports_list(payload: dict) -> str:
-    """②报告档案列表（目录+latest+count，点击查正文）。"""
+    """②报告档案列表（目录+latest+count，点击查正文；show:top 滚动定位）。"""
     rows = payload.get("reports") or []
     if not rows:
-        return '<p class="loadmsg">暂无诊股报告（提交诊股后由 vibe-stock report 段产出）。</p>'
+        return (
+            '<p class="empty" title="提交诊股后由 vibe-stock report 段产出">暂无诊股报告。'
+            '<span class="empty-tip">在上方表单发起诊股，报告段落完成后于此归档。</span></p>'
+        )
     trs = []
     for row in rows[:20]:
         link = (
             f'<a href="#" hx-get="/api/panel/report/{_esc(row["dir"])}/{_esc(row["latest"])}" '
-            'hx-target="#dg-report-body" hx-swap="innerHTML">'
+            'hx-target="#dg-report-body" hx-swap="innerHTML show:top">'
             f'<span class="code num">{_esc(row["code"])}</span>.{_esc(row["market"])}</a>'
         )
         trs.append(
-            f'<tr><td>{link}</td><td class="num">{_esc(row.get("latest", ""))}</td>'
-            f'<td class="num">{row.get("count", 0)}</td></tr>'
+            f"<tr><td>{link}</td>"
+            f'<td class="num" title="{_esc(row.get("latest", ""))}">{_esc(row.get("latest", ""))}'
+            f"（{row.get('count', 0)} 份在档）</td></tr>"
         )
     return (
-        '<table class="tbl"><thead><tr><th>标的</th><th>最新报告</th><th>在档</th>'
-        f"</tr></thead><tbody>{''.join(trs)}</tbody></table>"
-        '<p class="tbl-note">04 规约结构 · 免责段必含</p>'
+        '<table class="tbl"><colgroup><col class="w-code"><col></colgroup>'
+        '<thead><tr><th scope="col">标的</th><th scope="col">最新报告</th></tr></thead>'
+        f"<tbody>{''.join(trs)}</tbody></table>"
+        '<p class="tbl-note" title="vibe-stock/04 规约结构 · 免责段必含">'
+        "报告按规约结构归档 · 免责段必含</p>"
     )
 
 
@@ -904,12 +1113,25 @@ def _md_lite(md: str) -> str:
     in_code = False
     in_table = False
     in_list = False
+    table_rows: list[list[str]] = []
 
     def close_table() -> None:
-        nonlocal in_table
+        nonlocal in_table, table_rows
         if in_table:
-            out.append("</tbody></table>")
+            # 首行升 thead（报告 md 均含表头行；动态列数豁免——colgroup 不带 .w-*）
+            head = table_rows[0] if table_rows else []
+            colgroup = f"<colgroup>{'<col>' * len(head)}</colgroup>"
+            thead = (
+                "<thead><tr>" + "".join(f'<th scope="col">{c}</th>' for c in head) + "</tr></thead>"
+                if head
+                else ""
+            )
+            body_rows = "".join(
+                "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in table_rows[1:]
+            )
+            out.append(f'<table class="tbl">{colgroup}{thead}<tbody>{body_rows}</tbody></table>')
             in_table = False
+            table_rows = []
 
     def close_list() -> None:
         nonlocal in_list
@@ -938,10 +1160,9 @@ def _md_lite(md: str) -> str:
                 continue  # 分隔行
             if not in_table:
                 close_list()
-                out.append('<table class="tbl"><tbody>')
                 in_table = True
-            tds = "".join(f"<td>{_esc(c)}</td>" for c in cells)
-            out.append(f"<tr>{tds}</tr>")
+                table_rows = []
+            table_rows.append([_esc(c) for c in cells])
             continue
         close_table()
         if line.startswith("####"):
@@ -997,29 +1218,39 @@ def render_advice_detail(body: dict) -> str:
         f'<div class="bignum num">{rendered["t1_sell_shares"]:,}</div>'
         f'<p class="tbl-note">持仓 {rendered["held_lots"]} 手 · 冻结后可卖 '
         f"{rendered['t1_sell_lots']} 手 × {rendered['board_lot']}/手（T+1，asof "
-        f"{_esc(rendered['asof'])}）——呈现态原值（NR-5/R2 豁免面，落盘为百分比）</p>"
+        f"{_esc(rendered['asof'])}）——呈现态原值"
+        f'<span title="NR-5/R2 豁免面，落盘为百分比">（豁免面）</span></p>'
         if rendered
-        else '<p class="loadmsg">无模拟持仓（原值不可现算；落盘口径见卡面百分比）。</p>'
+        else (
+            '<p class="empty">无模拟持仓。<span class="empty-tip">原值不可现算；'
+            "落盘口径见卡面百分比。</span></p>"
+        )
     )
     trend_rows = "".join(
-        f'<tr><td>{_esc(r["horizon"])}</td><td class="num">{r["low"]}</td>'
-        f'<td class="num">{r["high"]}</td><td class="num">{r["prob_touch_low_pct"]}%</td></tr>'
+        f"<tr><td>{_esc(r['horizon'])}</td>"
+        f'<td class="num" title="带下沿 {_esc(r["low"])}">{r["low"]}</td>'
+        f'<td class="num" title="带上沿 {_esc(r["high"])}">{r["high"]}</td>'
+        f'<td class="num" title="触及带下沿概率 {_esc(r["prob_touch_low_pct"])}%">'
+        f"{r['prob_touch_low_pct']}%</td></tr>"
         for r in band_rows
     )
     trend = (
-        '<table class="tbl"><thead><tr><th>h</th><th>带下沿</th><th>带上沿</th>'
-        f"<th>P 触下</th></tr></thead><tbody>{trend_rows}</tbody></table>"
+        '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-num">'
+        '<col class="w-num"></colgroup><thead><tr><th scope="col">h</th>'
+        '<th scope="col">带下沿</th><th scope="col">带上沿</th>'
+        f'<th scope="col">P 触下</th></tr></thead><tbody>{trend_rows}</tbody></table>'
         if band_rows
-        else '<p class="loadmsg">无走势参考表。</p>'
+        else '<p class="empty">无走势参考表。</p>'
     )
     return (
         f'<div class="card adv"><div class="card-h">'
-        f'<span class="lv lv2">monitor-advice/1</span>'
+        f'<span class="lv lv2" title="monitor-advice/1">T2 卡</span>'
         '<span class="ct">T2 建议卡 · '
         f'<span class="code num">{_esc(meta.get("code", ""))}</span></span>'
         '<span class="cm">已重裁决 ✓ NR-1 · 待用户复核</span></div>'
         '<div class="card-b"><div class="adv-grid">'
-        f'<div class="adv-blk"><div class="adv-k">候选动作（04 五档措辞）</div>'
+        '<div class="adv-blk"><div class="adv-k" title="vibe-stock/04 五档分类学措辞">'
+        f"候选动作（五档措辞）</div>"
         f'<div class="quote">「{_esc(meta.get("candidate_action", ""))}」</div></div>'
         f'<div class="adv-blk"><div class="adv-k">与上一裁决差异（adjudicate 重裁决产出）</div>'
         f'<div class="num">{_esc(prev)} → {_esc(final)}</div></div>'
@@ -1040,10 +1271,6 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     parts = []
     if notice:
         parts.append(f'<p class="ok">{_esc(notice)}</p>')
-    parts.append(
-        '<p class="nr2-mini"><b>NR-2</b>：模拟盘永不接真实下单接口；'
-        "全部模拟绩效为假设性推演（含费用与滑点）。</p>"
-    )
     names = payload.get("names") or {}
     positions = payload.get("positions") or []
     if positions:
@@ -1069,8 +1296,8 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 f"<td>{badges}</td>"
                 f'<td class="num">{pos.get("lots", 0)}</td>'
                 f'<td class="num">{pos.get("sellable_lots", 0)}</td>'
-                f'<td class="num">{_esc(pos.get("avg_cost"))}</td>'
-                f'<td class="num">{_esc(pos.get("last_price"))}</td>'
+                f'<td class="num">{_fmt(pos.get("avg_cost"))}</td>'
+                f'<td class="num">{_fmt(pos.get("last_price"))}</td>'
                 f"<td>{pnl_html}</td>"
                 f'<td class="num">{_esc(round(pos.get("market_value") or 0, 2))}</td>'
                 "</tr>"
@@ -1090,7 +1317,29 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             "（盈亏口径：红涨绿跌）</p>"
         )
     else:
-        parts.append('<p class="muted">无模拟持仓（账本未建或全部清仓）。</p>')
+        totals = payload.get("totals") or {}
+        exists = bool(payload.get("exists"))
+        parts.append(
+            '<div class="stats" role="list" aria-label="模拟盘账户摘要">'
+            f'<div class="stat" role="listitem"><div class="k">现金</div>'
+            f'<div class="v">{_fmt(totals.get("cash"))}</div></div>'
+            f'<div class="stat" role="listitem"><div class="k">总市值</div>'
+            f'<div class="v">{"—" if not positions else totals.get("market_value", 0)}</div>'
+            "</div>"
+            f'<div class="stat" role="listitem"><div class="k">总资产</div>'
+            f'<div class="v">{_fmt(totals.get("total"))}</div></div>'
+            f'<div class="stat" role="listitem"><div class="k">净值</div>'
+            f'<div class="v">{_fmt(totals.get("nav"))}</div></div>'
+            "</div>"
+            + (
+                '<p class="empty">无模拟持仓。<span class="empty-tip">T2 触价建议经'
+                '④页逐笔确认后建仓——<a href="#/advice">先去⑤页看建议卡</a>。</span></p>'
+                if exists
+                else '<p class="empty" title="账本未建或全部清仓">无模拟持仓。'
+                '<span class="empty-tip">首笔确认成交后自动建账（T2 触价 → 逐笔确认队列）'
+                "。</span></p>"
+            )
+        )
 
     pending = payload.get("pending") or []
     parts.append("<h3>逐笔确认队列（触价只写待确认；无人工确认不落账）</h3>")
@@ -1103,23 +1352,27 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             confirm_btn = (
                 f'<button class="mini" hx-post="/api/panel/paper/confirm" '
                 f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
-                'hx-swap="innerHTML" hx-disabled-elt="this">确认成交</button>'
+                'hx-swap="innerHTML" hx-disabled-elt="this" '
+                "hx-confirm='确认成交入账？该笔将写入台账与决策链，不可撤销"
+                "（模拟盘 NR-2：永不接真实下单）。'>确认成交</button>"
             )
             reject_btn = (
                 f'<button class="mini" hx-post="/api/panel/paper/reject" '
                 f'hx-vals=\'{{"request_id": "{rid}"}}\' hx-target="#paper" '
-                'hx-swap="innerHTML" hx-disabled-elt="this">驳回</button>'
+                'hx-swap="innerHTML" hx-disabled-elt="this" '
+                "hx-confirm='驳回该笔待确认成交？将从队列移除，不可恢复。'>驳回</button>"
             )
+            ts = str(req.get("ts", ""))
             rows.append(
                 "<tr>"
-                f'<td class="num" title="{_esc(req.get("ts", ""))}">{_esc(req.get("ts", ""))}</td>'
+                f'<td class="num" title="{_esc(ts)}">{_esc(_ts_short(ts))}</td>'
                 f'<td><span class="code num">{_esc(req.get("code", ""))}</span></td>'
                 f"<td>{_esc(req.get('tranche_leg', ''))}</td>"
                 f"<td>{_esc(req.get('side', ''))}</td>"
                 f'<td class="num">{_esc(req.get("lots"))}</td>'
                 f'<td class="num">{_esc(req.get("ref_price"))}</td>'
                 f'<td class="num">{_esc(req.get("bar_date", ""))}</td>'
-                f"<td>{confirm_btn} {reject_btn}</td>"
+                f'<td><span class="opgrp">{confirm_btn}{reject_btn}</span></td>'
                 "</tr>"
             )
         parts.append(
@@ -1132,7 +1385,10 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             f'<th scope="col">操作</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
         )
     else:
-        parts.append('<p class="muted">队列为空。</p>')
+        parts.append(
+            '<p class="empty">队列为空。<span class="empty-tip">触价建议产生后'
+            "于此人工确认。</span></p>"
+        )
 
     perf = payload.get("perf")
     if perf is not None:  # 复用 0.0.15 _perf_grid（单一渲染件，勿并存两版绩效三格）
@@ -1143,6 +1399,10 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             f"{int(perf.get('closed_pairs', 0))} 笔 · {_esc(note)}</p>"
         )
 
+    parts.append(
+        '<p class="nr2-mini"><b>NR-2</b>：模拟盘永不接真实下单接口；'
+        "全部模拟绩效为假设性推演（含费用与滑点）。</p>"
+    )
     parts.append("<h3>权益曲线（NAV = 权益 / 预算）</h3>")
     history = payload.get("equity_history") or []
     parts.append(_axis_equity_svg(history))
@@ -1168,10 +1428,23 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             f'<th scope="col">现金变动</th></tr></thead><tbody>{rows}</tbody></table>'
         )
     else:
-        parts.append('<p class="muted">暂无公司行动登记。</p>')
-    parts.append(
-        '<form class="frm" hx-post="/api/panel/paper/corporate-action" hx-target="#paper" '
-        'hx-swap="innerHTML" hx-disabled-elt="find button">'
+        parts.append(
+            '<p class="empty">暂无公司行动登记。<span class="empty-tip">馈送入口在下方'
+            "「公司行动馈送」卡（需在持仓）。</span></p>"
+        )
+    return "".join(parts)
+
+
+def render_ca_form(*, has_positions: bool = True) -> str:
+    """④公司行动手动馈送表单（0.0.24 外置 load-only 容器：轮询重渲不再擦输入态）。
+
+    提交落点 #paper-ca-result（表单自带）；成功窄通知 + SSE paper 事件驱动 #paper 重拉；
+    无持仓时 details 收起（提交必 422）。
+    """
+    form = (
+        '<form class="frm" hx-post="/api/panel/paper/corporate-action" '
+        'hx-target="#paper-ca-result" hx-swap="innerHTML" hx-disabled-elt="find button" '
+        "hx-confirm='馈送公司行动入账（改写持仓/现金，不可撤销）？'>"
         '<div class="frm-row">'
         '<label for="ca-kind" title="送转=股数重算（10送5 填 15/10）；分红=每股税前现金'
         '（FIFO 分档红利税自动计）。同日除权除息请先提交送转、再提交分红">类型</label>'
@@ -1205,10 +1478,23 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
         'placeholder="0.35"></div>'
         '<div class="frm-row"><label></label>'
         '<button class="btn btn-pri" type="submit">馈送入账</button></div>'
-        '<p class="tbl-note">写者=paper 引擎（sim.lock 内直调）· 幂等：同口径重复馈送 409 · '
-        "决策 payload 零敏感量（NR-5）</p></form>"
+        '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内直调）；决策 payload 零敏感量'
+        '（NR-5）">写者=paper 引擎 · 幂等：同口径重复馈送 409 · '
+        "决策 payload 零敏感量</p></form>"
+        '<div id="paper-ca-result"></div>'
     )
-    return "".join(parts)
+    body = form
+    if not has_positions:
+        body = (
+            '<details class="brief-fold"><summary class="brief-sum">'
+            "公司行动馈送（需在持仓——当前不可用，提交将 422）</summary>"
+            f"{form}</details>"
+        )
+    return (
+        '<div class="card"><div class="card-h"><span class="ct">公司行动馈送</span>'
+        '<span class="cm">手动登记送转/分红</span></div>'
+        f'<div class="card-b">{body}</div></div>'
+    )
 
 
 def _ca_basis(r: dict) -> str:
@@ -1232,11 +1518,11 @@ def _perf_grid(perf: dict) -> str:
         f'<div class="v">{win_rate:.0%}</div>' if win_rate is not None else '<div class="v">—</div>'
     )
     return (
-        '<div class="stats">'
-        f'<div class="stat"><div class="k">Sharpe（日频年化）</div>'
+        '<div class="stats" role="list" aria-label="模拟盘绩效指标">'
+        f'<div class="stat" role="listitem"><div class="k">Sharpe（日频年化）</div>'
         f'<div class="v">{sharpe if sharpe is not None else "—"}</div></div>'
-        f'<div class="stat"><div class="k">最大回撤</div>{dd_v}</div>'
-        f'<div class="stat"><div class="k">胜率（FIFO）</div>{wr_v}</div>'
+        f'<div class="stat" role="listitem"><div class="k">最大回撤</div>{dd_v}</div>'
+        f'<div class="stat" role="listitem"><div class="k">胜率（FIFO）</div>{wr_v}</div>'
         "</div>"
     )
 
@@ -1264,8 +1550,9 @@ def render_advice_library(payload: dict) -> str:
             link = (
                 f'<a href="#" class="code num" '
                 f'hx-get="/api/panel/advice-detail/{_esc(day)}/{code}" '
-                f'hx-target="#advice-detail-2" hx-swap="innerHTML">{code}</a>'
+                f'hx-target="#advice-detail-2" hx-swap="innerHTML show:top">{code}</a>'
             )
+            mtime = str(card.get("mtime", ""))
             rows.append(
                 "<tr>"
                 f"<td>{link}</td>"
@@ -1275,7 +1562,7 @@ def render_advice_library(payload: dict) -> str:
                 f"<td>{_esc(card.get('prev_final_signal', '') or '—')}</td>"
                 f'<td class="num">{_esc(card.get("t1_sell_pct", ""))}% · '
                 f"{_esc(card.get('t1_sell_tier'))}</td>"
-                f'<td class="num">{_esc(card.get("mtime", ""))}</td>'
+                f'<td class="num" title="{_esc(mtime)}">{_esc(_ts_hhmm(mtime))}</td>'
                 "</tr>"
             )
         parts.append(
@@ -1288,7 +1575,11 @@ def render_advice_library(payload: dict) -> str:
             + "</tbody></table>"
         )
     else:
-        parts.append('<p class="muted">当日无建议卡（T2 复核未触发或被降级）。</p>')
+        parts.append(
+            '<p class="empty">当日无建议卡。<span class="empty-tip">T2 复核未触发或被降级——'
+            '可<a href="#/monitor">去③页对事件手动触发盯盘复核 →</a>；'
+            "降级原因见下方通报表。</span></p>"
+        )
     parts.append("<h3>拒卡 / 降级通报</h3>")
     if refused:
         rows = []
@@ -1314,19 +1605,28 @@ def render_advice_library(payload: dict) -> str:
             "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
         )
     else:
-        parts.append('<p class="muted">无拒卡/降级记录。</p>')
+        parts.append('<p class="empty">无拒卡/降级记录。</p>')
     parts.append(
-        '<p class="muted">卡面脱敏口径：只落百分比与档位词（份额原值禁入落盘产物，R2/NR-5）；'
-        "候选动作为 vibe-stock/04 五档分类学措辞。</p>"
+        '<p class="muted" title="份额原值禁入落盘产物（R2/NR-5）；候选动作为 '
+        'vibe-stock/04 五档分类学措辞">卡面脱敏口径：只落百分比与档位词；'
+        "候选动作为五档分类学措辞。</p>"
     )
     return "".join(parts)
 
 
 def render_audit_archive(payload: dict) -> str:
-    """⑦归档索引卡：日期带 + 当日归档行（uuid/size/mtime + 查看按钮 → #au-transcript）。"""
+    """⑦归档索引卡：日期带 + 当日归档行（uuid/size/mtime + 查看按钮 → #au-transcript）。
+
+    0.0.24：#au-transcript 容器外置到 index.html（此前嵌本卡内，180s/sse:decisions
+    重拉会清空正在阅读的转录）；查看按钮 show:top 滚动定位。
+    """
     dates = payload.get("dates") or []
     if not dates:
-        return '<p class="muted">暂无 stream-json 归档（真实通道断言器放行后落 agent/audit/）。</p>'
+        return (
+            '<p class="empty" title="真实通道断言器放行后落 agent/audit/（stream-json）">'
+            '暂无会话转录归档。<span class="empty-tip">真实 CC 会话产物经断言器放行后'
+            "归档，30 天自动清理。</span></p>"
+        )
     day = payload.get("date") or dates[0]
     chips = "".join(
         f'<button class="mini{" on" if d == day else ""}" '
@@ -1339,10 +1639,11 @@ def render_audit_archive(payload: dict) -> str:
         "<tr>"
         f'<td class="num" title="{_esc(f["file"])}">{_esc(f["file"][:30])}…</td>'
         f'<td class="num">{f["size_bytes"]:,} B</td>'
-        f'<td class="num">{_esc(f.get("mtime", ""))}</td>'
+        f'<td class="num" title="{_esc(f.get("mtime", ""))}">'
+        f"{_esc(_ts_short(f.get('mtime', '')))}</td>"
         "<td>"
         f'<button class="mini" hx-get="/api/panel/audit-archive/{_esc(day)}/{_esc(f["file"])}" '
-        'hx-target="#au-transcript" hx-swap="innerHTML">查看</button></td>'
+        'hx-target="#au-transcript" hx-swap="innerHTML show:top">查看</button></td>'
         "</tr>"
         for f in files
     )
@@ -1352,13 +1653,9 @@ def render_audit_archive(payload: dict) -> str:
         '<th scope="col">大小</th><th scope="col">mtime</th><th scope="col"></th>'
         f"</tr></thead><tbody>{rows}</tbody></table>"
         if files
-        else '<p class="muted">当日无归档。</p>'
+        else '<p class="empty">当日无归档。</p>'
     )
-    return (
-        f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">{chips}</div>'
-        + body
-        + '<div id="au-transcript" style="margin-top:10px"></div>'
-    )
+    return f'<div class="chip-row">{chips}</div>' + body
 
 
 def render_audit_transcript(body: dict) -> str:
@@ -1383,7 +1680,7 @@ def render_sessions_table(sessions: dict) -> str:
     rows_map = (sessions.get("sessions") or {}) if isinstance(sessions, dict) else {}
     records = sorted(rows_map.values(), key=lambda r: str(r.get("ts", "")), reverse=True)
     if not records:
-        return '<p class="muted">暂无会话登记。</p>'
+        return '<p class="empty">暂无会话登记。</p>'
     trs = []
     for r in records[:30]:
         tokens = (r.get("usage_tokens") or {}).get("total", 0)
@@ -1397,13 +1694,14 @@ def render_sessions_table(sessions: dict) -> str:
             if date_part and fname:
                 link = (
                     f'<a href="#" hx-get="/api/panel/audit-archive/{_esc(date_part)}/'
-                    f'{_esc(fname)}" hx-target="#au-transcript" hx-swap="innerHTML">'
+                    f'{_esc(fname)}" hx-target="#au-transcript" hx-swap="innerHTML show:top">'
                     f"{_esc(fname[:24])}…</a>"
                 )
         cell = link or f'<span title="{_esc(transcript)}">{_esc(transcript[:28])}…</span>'
+        ts = str(r.get("ts", ""))
         trs.append(
             "<tr>"
-            f'<td class="num">{_esc(r.get("ts", ""))}</td>'
+            f'<td class="num" title="{_esc(ts)}">{_esc(_ts_short(ts))}</td>'
             f'<td class="num" title="{_esc(uuid)}">{_esc(uuid[:13])}…</td>'
             f'<td class="num" title="{_esc(task)}">{_esc(task[:20])}…</td>'
             f'<td class="num">{tokens:,}</td>'
@@ -1414,18 +1712,42 @@ def render_sessions_table(sessions: dict) -> str:
     return (
         '<table class="tbl"><colgroup><col class="w-sess-ts"><col class="w-uuid">'
         '<col class="w-task"><col class="w-tok"><col class="w-usd">'
-        "<col></colgroup><thead><tr><th>ts</th><th>session</th><th>task</th>"
-        "<th>tokens</th><th>等效 USD</th><th>转录路径</th></tr></thead><tbody>"
+        '<col></colgroup><thead><tr><th scope="col">ts</th><th scope="col">session</th>'
+        '<th scope="col">task</th><th scope="col">tokens</th>'
+        '<th scope="col">等效 USD</th><th scope="col">转录路径</th></tr></thead><tbody>'
         f"{''.join(trs)}</tbody></table>"
-        '<p class="tbl-note">三件套互查：decisions（hash 链）× sessions × audit/ stream-json 归档'
-        "（30 天官方清理，F-38）</p>"
+        '<p class="tbl-note" title="audit/ stream-json 归档 30 天官方清理（F-38）">'
+        "三件套互查：decisions（hash 链）× sessions × audit/ stream-json 归档"
+        "（30 天自动清理）</p>"
     )
 
 
-def render_submit_result(task: dict | None, *, status: int, detail: str) -> str:
+def render_submit_result(
+    task: dict | None, *, status: int, detail: str, session_target: str | None = "#dg-session"
+) -> str:
     if task is not None and status < 300:
-        return f'<div id="submit-result">{render_task_card(task)}</div>'
+        return (
+            f'<div id="submit-result">{render_task_card(task, session_target=session_target)}</div>'
+        )
     return (
         f'<div class="task-card" id="submit-result">'
         f'<p class="warn">提交被拒（{status}）：{_esc(detail)}</p></div>'
+    )
+
+
+def render_error_card(status: int, detail: str, *, retry_path: str = "") -> str:
+    """统一 HTML 错误卡（app 级异常处理器 → /api/panel/* htmx 面；状态码保留）。
+
+    GET 附「重试」（错误卡已被换入目标容器，closest div[id] 即容器自身）；
+    POST 不附——重按原按钮即重试。detail 全程 _esc。
+    """
+    retry = (
+        f'<button class="mini" hx-get="{_esc(retry_path)}" '
+        'hx-target="closest div[id]" hx-swap="innerHTML">重试</button>'
+        if retry_path
+        else ""
+    )
+    return (
+        f'<div class="task-card"><p class="warn">操作未生效（HTTP {int(status)}）：'
+        f"{_esc(detail)}</p>{retry}</div>"
     )

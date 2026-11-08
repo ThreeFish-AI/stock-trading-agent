@@ -172,3 +172,43 @@ class TestHtmxUntouched:
 
     def test_hx_attrs_not_removed(self):
         assert HTML.count("hx-") >= self.HX_BASELINE
+
+
+class TestDesignUpgradeNorms:
+    """0.0.24 整体设计升级只收严断言：空态三分 / .sel:focus / cursor 冲突 / token 债清偿。"""
+
+    def test_empty_component_present(self):
+        assert ".empty{" in RULES and ".empty-tip" in RULES
+
+    def test_sel_focus_ring(self):
+        assert ".inp:focus,.sel:focus" in RULES
+
+    def test_btn_cursor_conflict_gone(self):
+        assert "cursor:default" not in RULES
+
+    def test_dur_slow_has_consumer(self):
+        assert "var(--dur-slow)" in RULES  # 0.0.24 .htmx-indicator 接活
+
+    def test_component_hex_lands_primitive(self):
+        # Component 层 6 枚裸 hex 落 Primitive；Component 引用经 var()（计算值逐位不变）
+        for name in (
+            "--px-btn-1",
+            "--px-btn-2",
+            "--px-step-2",
+            "--px-nr2-1",
+            "--px-nr2-2",
+            "--px-evrisk",
+        ):
+            assert f"{name}:" in ROOT_BLOCK, name
+            assert f"var({name})" in ROOT_BLOCK, name
+
+    def test_panel_no_loadmsg_no_inline_flex(self):
+        # 空态三分收口：panel.py 全面退场 loadmsg；inline display:flex 收编 .chip-row
+        assert 'class="loadmsg"' not in PANEL
+        assert 'style="display:flex' not in PANEL
+
+    def test_dead_cbx_rule_gone(self):
+        assert ".cbx{" not in RULES  # ①待办假复选框 → .sdot（防回流）
+
+    def test_htmx_config_response_handling(self):
+        assert 'name="htmx-config"' in HTML and '"[45]..","swap":true,"error":true' in HTML

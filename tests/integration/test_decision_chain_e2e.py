@@ -89,11 +89,13 @@ def test_l2_toggle_and_briefing_ack_keep_chain_valid(tmp_path: Path):
         assert client.post("/api/l2", json={"enabled": True}).status_code == 200
         # briefing 卡先落盘再 ack（当日卡才可确认：直接经 runtime 链路落卡）
         from stock_trading_agent.loop.briefing import persist_card
+        from stock_trading_agent.loop.monitor_events import market_today
 
-        card = layout.briefing_card_path("2026-11-08", "600519")
-        persist_card(layout, "2026-11-08", "600519", "# 盘前晨报 600519\n复核项：示例\n")
+        day = market_today()  # 0.0.24 修跨午夜时敏红（ack 仅当日卡可确认）
+        card = layout.briefing_card_path(day, "600519")
+        persist_card(layout, day, "600519", "# 盘前晨报 600519\n复核项：示例\n")
         assert card.exists()
-        resp = client.post("/api/panel/briefing/ack", data={"date": "2026-11-08", "code": "600519"})
+        resp = client.post("/api/panel/briefing/ack", data={"date": day, "code": "600519"})
         assert resp.status_code == 200
         lines = [
             json.loads(r)
