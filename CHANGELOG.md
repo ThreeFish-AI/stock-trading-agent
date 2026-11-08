@@ -4,6 +4,16 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.14] - 2026-11-08
+
+### Added
+
+- **存储选型决策记录（纯文档，零代码变更）：[docs/research/storage-db-decision.md](docs/research/storage-db-decision.md)**。经四路只读盘点（写入侧/读取侧/文档约束/实测规模）+ 三视角裁决 Panel + 对抗核验全局取证，裁定**本期不引入 SQLite/PostgreSQL/seekdb 任一数据库**，重申方案 §13「数据面单文件/JSON 原子写、不引数据库」：SQLite 列为唯一合法下一档候选（触发判据 T1-T5 达成后以 queryindex 只读索引投影形态进入，蓝图全文入库）；PostgreSQL（server 进程 vs launchd 单进程/uv sync/CI 无 services 三面冲突）与 seekdb（服务端形态 + 向量/全文能力与本仓查询形状零交集）否决。四痛点（面板变慢/无限增长/一致性疑虑/历史检索）全部映射到文件范式内修法路线（W/R/G 三族拆序入库）。knowledge-map 收录指针；issue.md 登记 I-003。
+
+### Fixed
+
+- **登记（未修复，P0 待下期 PR）[I-003](docs/.agents/issue.md)：decisions.jsonl 增量游标 bug 生产破链**——盘上实测 57 行仅 11 个唯一 seq、46 行重复，`verify_chain()=False` 且载入侧忽略返回值（hash 链防篡改静默失效）；根因为双写路径共享可变游标（loop.py:95/worker.py:169/worker.py:204-206/loop.py:422，旁路写点 4 处）。修复路线 W1-W4 已入决策记录 §6，W2 去重已核实不改变外仓 agent_postmortem 消费视图（键控 last-wins）。
+
 ## [0.0.13] - 2026-11-08
 
 ### Added
