@@ -437,7 +437,9 @@ class TestHtmxWiring:
         assert 'role="tablist"' in html and html.count('role="tab"') == 7
         assert "aria-selected" in html  # activate() 同步
         assert ":focus-visible" in html
-        assert "--px-txt-4:#7E8AA5" in html and "--t4:var(--px-txt-4)" in html  # 三层化后钉 primitive（0.0.19）
+        assert (
+            "--px-txt-4:#7E8AA5" in html and "--t4:var(--px-txt-4)" in html
+        )  # 三层化后钉 primitive（0.0.19）
         assert "scrollTo(0,0)" in html
 
     def test_dgform_row_labels(self, tmp_path: Path):

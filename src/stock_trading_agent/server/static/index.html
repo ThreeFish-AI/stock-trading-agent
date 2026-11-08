@@ -357,6 +357,27 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 
 
+/* ── 0.0.19 c5：panel fragment 类化（收编 inline style）── */
+.chips{display:flex;gap:var(--sp-3);flex-wrap:wrap;margin:var(--sp-2) 0}
+.slot-h{margin:var(--sp-5) 0 var(--sp-2);font-size:var(--fs-13);font-weight:600;color:var(--t2)}
+.note{margin-bottom:var(--sp-4)}
+.note-b{display:flex;gap:var(--sp-5);align-items:flex-start}
+.note-ico{flex:none;margin-top:2px}
+.note-ico path{stroke:var(--t3)}
+.note-main{flex:1;min-width:0}
+.note-time{font-size:var(--fs-11);color:var(--t4)}
+.note-title{font-size:var(--fs-13);font-weight:600}
+.note-text{font-size:var(--fs-12);color:var(--t2)}
+.pipe-dense{display:flex;gap:var(--sp-2);flex-wrap:wrap}
+.opins-dense{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--sp-4)}
+.h3-tight{margin:var(--sp-5) 0 var(--sp-3)}
+.verd-box{margin-top:var(--sp-5);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-5)}
+.verd-line{font-size:var(--fs-12);color:var(--t4)}
+.verd-final{font-size:var(--fs-16);color:var(--t1)}
+.verd-sub{font-size:var(--fs-12);color:var(--t3);margin-top:var(--sp-2)}
+.nv-chips{display:flex;gap:var(--sp-4);margin:var(--sp-3) 0 var(--sp-4)}
+.w-sess-ts{width:150px}.w-uuid{width:120px}.w-task{width:160px}.w-tok{width:90px}.w-usd{width:90px}
+
 /* 动效尊重：reduced-motion 下关脉冲与过渡 */
 @media (prefers-reduced-motion:reduce){
   .pd-live,.sdot-ok,.spin{animation:none}
