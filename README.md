@@ -24,7 +24,7 @@
 - 四张架构图（archify A 档四件套）：[总览](docs/diagrams/main-agent/main-architecture/main-architecture.svg) · [Loop 时序](docs/diagrams/main-agent/agent-loop-sequence/agent-loop-sequence.svg) · [状态数据流](docs/diagrams/main-agent/state-extension-dataflow/state-extension-dataflow.svg) · [模拟盘生命周期](docs/diagrams/main-agent/paper-trading-lifecycle/paper-trading-lifecycle.svg)
 - 四页产品原型（合成数据）：[今日总览](docs/prototypes/main-agent/overview.png) · [诊股工作台](docs/prototypes/main-agent/diagnosis.png) · [盯盘与 T2 复核](docs/prototypes/main-agent/monitor-advice.png) · [模拟盘](docs/prototypes/main-agent/paper.png)
 
-## 安装与运行（M1，0.0.3）
+## 安装与运行
 
 前置：[uv](https://docs.astral.sh/uv/)、macOS、可选本机 `claude` CLI（无则跑 dry-run 通道）。
 
@@ -61,7 +61,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktradi
 │   ├── research/           # 调研报告与产品技术方案（自 vibe-stock 0.0.28 迁入）
 │   ├── diagrams/main-agent/  # 四张架构图 archify A 档四件套
 │   ├── prototypes/main-agent/  # 四页产品原型（自包含 HTML + 整页 PNG，全合成数据）
-│   ├── specs/              # 实施规约：12-orchestration.md（已建）；13-paper 随 M2 建
+│   ├── specs/              # 实施规约：12-orchestration.md + 13-paper.md（随实施 PR 增节）
 │   ├── ops/launchd/        # 第四槽 LaunchAgent 模板（面板守护）
 │   └── .agents/            # knowledge-map（文档统一入口）+ issue.md
 ├── src/stock_trading_agent/

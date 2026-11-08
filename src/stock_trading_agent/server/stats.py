@@ -133,3 +133,15 @@ def budget_curve(session_records: list[dict]) -> list[dict]:
         bucket["cost_usd_equiv"] += float(record.get("cost_usd_equiv") or 0.0)
         bucket["sessions"] += 1
     return [buckets[d] for d in sorted(buckets)]
+
+
+def paper_totals(positions: list[dict], cash: float, budget: float) -> dict:
+    """④表尾汇总条（原型 paper.html）：总市值/现金/总资产/净值（呈现态原值，13-paper §⑥）。"""
+    market_value = sum(float(p.get("market_value") or 0) for p in positions or [])
+    total = market_value + float(cash or 0)
+    return {
+        "market_value": round(market_value, 2),
+        "cash": round(float(cash or 0), 2),
+        "total": round(total, 2),
+        "nav": round(total / budget, 4) if budget else None,
+    }
