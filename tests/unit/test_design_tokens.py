@@ -119,8 +119,12 @@ class TestScalesTokensOnly:
             assert "var(--fs-" in sh and "px" not in sh, sh
 
     def test_radius_tokens_only(self):
+        # 0.0.31：允许多角 token 简写（如 subtabs 页签 var(--r-sm) var(--r-sm) 0 0），逐角校验
         for v in re.findall(r"border-radius:\s*([^;}]+)", RULES):
-            assert v.strip() == "50%" or re.fullmatch(r"var\(--r-[\w-]+\)", v.strip()), v
+            corners = v.strip().split()
+            assert all(
+                c == "50%" or c == "0" or re.fullmatch(r"var\(--r-[\w-]+\)", c) for c in corners
+            ), v
 
 
 class TestPanelInlineCompliance:
@@ -254,7 +258,8 @@ class TestLayoutNorms029:
     """
 
     def test_long_table_scroll_container(self):
-        assert ".tbl-wrap{max-height:460px;overflow:auto;overscroll-behavior:contain}" in RULES
+        assert ".tbl-wrap{max-height:300px;overflow:auto;overscroll-behavior:contain}" in RULES
+        assert ".tbl-wrap.sm{max-height:200px}" in RULES  # 一屏化降档
         assert ".tbl-wrap .tbl thead th{position:sticky;top:0" in RULES  # thead 吸顶
 
     def test_sys_row_four_tracks(self):
@@ -263,3 +268,32 @@ class TestLayoutNorms029:
 
     def test_action_cell_touch_spacing(self):
         assert ".tbl-act{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}" in RULES
+
+
+class TestOneScreen031:
+    """0.0.31 一屏化只收严断言：视口锁 / subtabs 页签 / 窄屏解锁。
+
+    规范 SSOT = docs/specs/14-design-system.md §⑫（index.html :root/CSS 为实现层）。
+    一屏判据：≥1280 桌面档 scrollHeight ≤ 视口高（实机探针验证；本门钉机制在场）。
+    """
+
+    def test_screen_lock_present(self):
+        assert ".screen{display:flex;flex-direction:column;height:calc(100vh - 236px)" in RULES
+        assert ".flex-fill{flex:1 1 0;min-height:0}" in RULES
+
+    def test_page_offsets_pinned(self):
+        for page, k in (("overview", 318), ("diagnosis", 273), ("paper", 288)):
+            assert f"#page-{page} .screen{{height:calc(100vh - {k}px)}}" in RULES, page
+        assert (
+            "#page-stats #stats{display:flex;flex-direction:column;height:calc(100vh - 243px)"
+            in RULES
+        )
+
+    def test_subtabs_component(self):
+        assert ".subtabs:has(.st-labels input:nth-of-type(1):checked)" in RULES
+        assert ".subpanels .subpanel:nth-of-type(1)" in RULES
+        assert "radio" in PANEL  # ②④ fragment 页签 radio 在场
+
+    def test_narrow_unlock(self):
+        assert "@media (max-width:1180px){" in RULES
+        assert ".screen,#page-stats #stats{height:auto;min-height:0}" in RULES

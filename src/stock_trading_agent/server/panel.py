@@ -221,7 +221,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
     )
     return (
         summary
-        + '<div class="tbl-wrap">'
+        + '<div class="tbl-wrap sm">'
         + _table(cols, heads, "".join(rows))
         + "</div>"
         + '<p class="tbl-note" title="盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · 盘中结论以'
@@ -575,7 +575,9 @@ def render_stats_fragment(payload: dict) -> str:
             '<p class="tbl-note">近 14 日（全量走势见上方曲线）</p>' if len(curve) > 14 else ""
         )
         left.append(
-            _table("w-ts|w-num|w-num|w-num", "日:num|会话:num|token:num|等效 USD:num", crows)
+            '<div class="tbl-wrap sm">'
+            + _table("w-ts|w-num|w-num|w-num", "日:num|会话:num|token:num|等效 USD:num", crows)
+            + "</div>"
             + cap_note
         )
     else:
@@ -611,7 +613,9 @@ def render_stats_fragment(payload: dict) -> str:
         )
         right.append(
             '<h3 title="按 kind 归因（§15 指标族管线）">会话成本分布（按 kind 归因）</h3>'
+            + '<div class="tbl-wrap sm">'
             + _table("w-kind|w-num|w-tok|w-usd", "kind|会话:num|token:num|等效 USD:num", crows)
+            + "</div>"
         )
     if t1:
         t1_note = f"（{_esc(t1.get('note'))}）" if t1.get("note") else ""
@@ -1361,14 +1365,12 @@ def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
 
 
 def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
-    """面板④（0.0.28 卡片化两栏）：账户与持仓卡（KPI 四格 + 持仓表/空态）+
-    两栏行 [逐笔确认队列 1fr | 权益曲线 + 模拟绩效 rail 500px] + 公司行动登记全宽卡。
+    """面板④（0.0.31 一屏化三签）：账户持仓（KPI 四格 + 持仓表/空态）|
+    逐笔与曲线 [逐笔确认队列 1fr | 权益曲线 + 模拟绩效 rail 500px] | 公司行动登记。
 
     NR-5 呈现态豁免（13-paper §⑥）：面板可显份额原值（导出/落盘卡仍降级脱敏）。
     """
-    parts = []
-    if notice:
-        parts.append(f'<p class="ok">{_esc(notice)}</p>')
+    notice_html = f'<p class="ok">{_esc(notice)}</p>' if notice else ""
     names = payload.get("names") or {}
     positions = payload.get("positions") or []
     totals = payload.get("totals") or {}
@@ -1438,12 +1440,10 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 title="账本未建或全部清仓",
             )
         )
-    parts.append(
-        _card(
-            "账户与持仓",
-            f"{kpi}{pos_body}",
-            meta="严格穿价撮合 · 含费用与滑点|严格穿价撮合 · 静态费用栈",
-        )
+    tab_account = _card(
+        "账户与持仓",
+        f"{kpi}{pos_body}",
+        meta="严格穿价撮合 · 含费用与滑点|严格穿价撮合 · 静态费用栈",
     )
 
     # ── 两栏行：逐笔确认队列（主）| 权益曲线 + 模拟绩效（rail）──
@@ -1509,8 +1509,8 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             )
             + nr2_note
         )
-    parts.append(
-        '<div class="grid-rail"><div class="col">'
+    tab_flow = (
+        '<div class="grid-rail flex-fill"><div class="col">'
         + _card(
             "逐笔确认队列",
             queue_body,
@@ -1546,14 +1546,26 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
         ca_body = _table("w-code|-|w-ts|-|w-num", "代码|类型|除权日:num|口径|现金变动:num", rows)
     else:
         ca_body = _empty("暂无公司行动登记。", "馈送入口在下方「公司行动馈送」卡（需在持仓）。")
-    parts.append(
-        _card(
-            "公司行动登记",
-            ca_body,
-            meta="先送转后分红 · 不产 Operation 行|先送转后分红；不产 Operation 行",
-        )
+    tab_ca = _card(
+        "公司行动登记",
+        ca_body,
+        meta="先送转后分红 · 不产 Operation 行|先送转后分红；不产 Operation 行",
     )
-    return "".join(parts)
+    # 0.0.31 一屏化：三签（账户持仓 | 逐笔与曲线 | 公司行动），radio 零 JS、htmx 契约不动
+    return (
+        notice_html + '<div class="subtabs flex-fill">'
+        '<div class="st-labels">'
+        '<input type="radio" name="pp-st" id="pp-st-1" checked>'
+        '<label for="pp-st-1">账户持仓</label>'
+        '<input type="radio" name="pp-st" id="pp-st-2"><label for="pp-st-2">逐笔与曲线</label>'
+        '<input type="radio" name="pp-st" id="pp-st-3"><label for="pp-st-3">公司行动</label>'
+        "</div>"
+        '<div class="subpanels">'
+        f'<div class="subpanel">{tab_account}</div>'
+        f'<div class="subpanel">{tab_flow}</div>'
+        f'<div class="subpanel">{tab_ca}</div>'
+        "</div></div>"
+    )
 
 
 def render_ca_form(*, has_positions: bool = True) -> str:
@@ -1689,11 +1701,13 @@ def render_advice_library(payload: dict) -> str:
                 "</tr>"
             )
         lib_body = (
-            _table(
+            '<div class="tbl-wrap sm">'
+            + _table(
                 "w-code|-|w-num|w-num|w-num|w-ts|w-st",
                 "代码|候选动作|终判|上一裁决|T+1 可卖:num|落盘:num|复核",
                 "".join(rows),
             )
+            + "</div>"
             + muted_note
         )
     else:
@@ -1831,7 +1845,7 @@ def render_sessions_table(sessions: dict) -> str:
             "</tr>"
         )
     return (
-        '<div class="tbl-wrap">'
+        '<div class="tbl-wrap sm">'
         + _table(
             "w-sess-ts|w-uuid|w-task|w-tok|w-usd|-",
             "ts:num|session|task|tokens:num|等效 USD:num|转录路径",
