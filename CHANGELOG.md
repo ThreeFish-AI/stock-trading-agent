@@ -4,6 +4,20 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.29] - 2026-11-09
+
+### Changed
+
+- **工程代码梳理清减（借 preening-substrate 六阶段流水线；行为等价经 69 份 Golden Master 快照对拍——68 份逐字节相同、1 份仅 HTML 属性引号归一（`scope='col'`→`scope="col"`，DOM 等价））**。四主线：
+  ①**`__main__.py` 1465 → 408 行（-72%）**：1045 行单函数 `_run_selftests` 提取为独立概念主体 [selftest.py](src/stock_trading_agent/selftest.py)（`@_case` 注册表：装饰器序=注册序=原执行序，49 case 名与输出契约逐字不变，CI/selftest 双门禁不动）；case 间 fixture 去重（CCRequest/MonitorEvent/advice payload 构造基线 + 局部导入上提）；`_diff_public` 透传壳内联。
+  ②**panel.py HTML 骨架 SSOT 化**：14 张表的 colgroup/thead 样板、12 处卡壳、18 处空态、3 处 KPI 网格收敛为 `_table/_card/_empty/_stat_grid` 单一定义（`_table` 管道 spec：`"w-code|-|w-num"` / `"时间:num|股票"`）；sig→CSS 类映射两份合一（`_SIG_CLASS`）；`render_advice_library` 死存储清除。
+  ③**routes.py 1537 → 1488 行**：28 处函数内 `from panel import` 上提模块级（favicon 处 app 环除外）；路径三保险（报告正文/建议卡导出/归档转录）收敛为 `_guarded_file`（逐段正则+站点 404 文案逐字保留）；5 处决策留痕 append+断链 503 收敛为 `_record_decision`（`l2_toggle` 外层 503 语义保留）；`paper_ledger_load` 透传内联。
+  ④**市场时区 SSOT 收敛**：`loop.events.MARKET_TZ` 为唯一权威，routes 两处硬编码 +8、`_advice_refused`/`advice.py`/`stats.py` 三处重复 `ZoneInfo("Asia/Shanghai")` 全部改指针引用（paper 自持 `_MARKET_TZ` 系分层约束不动）。
+
+### Added
+
+- `src/stock_trading_agent/selftest.py`（1002 行）：仓级 selftest case 注册表（判据与 pytest 同源，AGENTS.md 双门禁不变）。
+
 ## [0.0.28] - 2026-11-09
 
 ### Changed
