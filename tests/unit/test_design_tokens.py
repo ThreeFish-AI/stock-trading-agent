@@ -212,3 +212,36 @@ class TestDesignUpgradeNorms:
 
     def test_htmx_config_response_handling(self):
         assert 'name="htmx-config"' in HTML and '"[45]..","swap":true,"error":true' in HTML
+
+
+class TestLayoutNorms028:
+    """0.0.28 布局与对齐规约只收严断言：两栏上限 / gap 全量 token 化 / 数值右对齐 / 空态居中。
+
+    规范 SSOT = docs/specs/14-design-system.md §⑪（index.html :root/CSS 为实现层）。
+    """
+
+    def test_three_column_grid_retired(self):
+        assert "grid3" not in HTML, "三栏布局退役（每行分栏上限两栏）"
+        assert ".grid-main{" in RULES and ".grid-rail{" in RULES
+        assert "grid-template-columns:1fr 340px" in RULES  # grid-main 基座
+
+    def test_all_gap_values_tokenized(self):
+        offenders = [
+            v
+            for v in re.findall(r"gap:\s*([^;}]+)", RULES)
+            for v in [v.strip()]
+            if not all(tok == "0" or tok.startswith("var(") for tok in v.split())
+        ]
+        assert not offenders, offenders
+
+    def test_numeric_cells_right_aligned(self):
+        assert ".tbl td.num,.tbl th.num{text-align:right}" in RULES
+
+    def test_empty_state_centered(self):
+        assert (
+            ".empty{color:var(--t3);font-size:var(--fs-12);line-height:1.7;"
+            "text-align:center;padding:18px 12px}" in RULES
+        )
+
+    def test_font_shorthand_none_placeholder_gone(self):
+        assert ")None " not in STYLE

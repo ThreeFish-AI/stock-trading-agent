@@ -120,7 +120,7 @@ class TestTableNorms:
                 ]
             }
         )
-        assert '<th scope="col">时间</th>' in html
+        assert '<th scope="col" class="num">时间</th>' in html
         assert "<colgroup>" in html
         assert ">—</td>" in html  # 空值占位
 
@@ -281,7 +281,7 @@ class TestDesignUpgrade024:
         )
         assert "<colgroup>" in html and '<th scope="col">代码</th>' in html
         assert ">0.50</td>" in html  # 置信两位小数
-        assert '<th scope="col">距止损</th>' in html
+        assert '<th scope="col" class="num">距止损</th>' in html
 
     def test_signals_table_stop_column_conditional(self):
         """全表无现价源时距止损列整列省去。"""
