@@ -12,6 +12,15 @@ import re
 
 TERMINAL_STATUSES = frozenset({"done", "failed", "abandoned"})
 
+# 信号词 → CSS 类（意见板/信号表同源 SSOT，站点内勿再建映射）
+_SIG_CLASS = {
+    "strong_buy": "sig-sb",
+    "buy": "sig-b",
+    "hold": "sig-h",
+    "sell": "sig-s",
+    "strong_sell": "sig-ss",
+}
+
 
 def _status_pill(status: str) -> str:
     cls = _esc(status)
@@ -20,6 +29,70 @@ def _status_pill(status: str) -> str:
 
 def _esc(value: object) -> str:
     return html.escape(str(value if value is not None else ""), quote=True)
+
+
+def _table(cols: str, heads: str, body: str) -> str:
+    """表格骨架 SSOT（.tbl/colgroup/thead/tbody 全仓零漂移）。
+
+    cols：`|` 分隔的 colgroup 宽类（`-` = 无类列）；heads：`|` 分隔表头（`:num` 后缀 =
+    数值列）。body 为已组装的 `<tr>` 行串（转义责任在调用方，沿各站点现惯例）。
+    """
+    colgroup = "".join(f'<col class="{c}">' if c != "-" else "<col>" for c in cols.split("|"))
+    thead = "".join(
+        f'<th scope="col" class="num">{h[:-4]}</th>'
+        if h.endswith(":num")
+        else f'<th scope="col">{h}</th>'
+        for h in heads.split("|")
+    )
+    return (
+        f'<table class="tbl"><colgroup>{colgroup}</colgroup>'
+        f"<thead><tr>{thead}</tr></thead><tbody>{body}</tbody></table>"
+    )
+
+
+def _card(title: str, body: str, *, meta: str = "", cls: str = "") -> str:
+    """卡片壳 SSOT：title/body 传已组装 HTML；meta 为 `显示文案|悬浮全值`（无悬浮则省 `|` 段）。"""
+    meta_html = ""
+    if meta:
+        text, _, tip = meta.partition("|")
+        meta_html = (
+            f'<span class="cm" title="{tip}">{text}</span>'
+            if tip
+            else f'<span class="cm">{text}</span>'
+        )
+    return (
+        f'<div class="card{f" {cls}" if cls else ""}"><div class="card-h">'
+        f'<span class="ct">{title}</span>{meta_html}</div>'
+        f'<div class="card-b">{body}</div></div>'
+    )
+
+
+def _empty(text: str, tip: str = "", *, title: str = "") -> str:
+    """空态 SSOT：text/tip/title 传已组装 HTML（含 `<a>` 引导链等，沿站点现惯例不二次转义）。"""
+    tip_html = f'<span class="empty-tip">{tip}</span>' if tip else ""
+    head = f'<p class="empty" title="{title}">' if title else '<p class="empty">'
+    return f"{head}{text}{tip_html}</p>"
+
+
+def _kchip(key: str, value: str) -> str:
+    return f'<span class="kchip"><i>{key}</i> <b>{value}</b></span>'
+
+
+def _stat_grid(cells: tuple[tuple[str, str, str], ...], *, label: str, cls: str = "") -> str:
+    """KPI 网格 SSOT：cells = (指标名, 值 HTML, 值附加类) 三元组（附加类如 "dn"）。"""
+    body = "".join(
+        f'<div class="stat" role="listitem"><div class="k">{k}</div>'
+        f'<div class="v{f" {v_cls}" if v_cls else ""}">{v}</div></div>'
+        for k, v, v_cls in cells
+    )
+    stats_cls = f"stats {cls}" if cls else "stats"
+    return f'<div class="{stats_cls}" role="list" aria-label="{label}">{body}</div>'
+
+
+def _name_tail(names: dict, code: str) -> str:
+    """代码后缀名称（缺席空串）：三处股票列同源。"""
+    name = names.get(code)
+    return f" {_esc(name)}" if name else ""
 
 
 def render_budget_line(budget: dict) -> str:
@@ -45,10 +118,10 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
     """
     events = (payload.get("events") or [])[-tail:]
     if not events:
-        return (
-            '<p class="empty" title="watch.py 台账为空或未运行">今日暂无盯盘事件。'
-            '<span class="empty-tip">开盘时段自动盯盘；如持续为空，检查盯盘进程是否在跑'
-            "（①页右列系统状态卡）。</span></p>"
+        return _empty(
+            "今日暂无盯盘事件。",
+            "开盘时段自动盯盘；如持续为空，检查盯盘进程是否在跑（①页右列系统状态卡）。",
+            title="watch.py 台账为空或未运行",
         )
     names = payload.get("names") or {}
     advice_codes = set(payload.get("advice_codes") or [])
@@ -80,8 +153,6 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         sev = str(mech.get("severity", ""))
         sev_cls = " sev-hi" if (mech and sev == "high") else (" sev-md" if mech else "")
         riskchip = f'<span class="riskchip{sev_cls}">mech_risk {_esc(sev)}</span>' if mech else ""
-        name = names.get(code)
-        name_html = f" {_esc(name)}" if name else ""
         action = ""
         if code in advice_codes and day:
             action += (
@@ -101,7 +172,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         rows.append(
             "<tr>"
             f'<td class="num" title="{_esc(ts)}">{_esc(_ts_hhmm(ts))}</td>'
-            f'<td><span class="code num">{_esc(code)}</span>{name_html}</td>'
+            f'<td><span class="code num">{_esc(code)}</span>{_name_tail(names, code)}</td>'
             f'<td title="{_esc(ev.get("rule", ""))}">{_esc(ev.get("rule", ""))}</td>'
             f'<td class="num">{_fmt(price)}</td>'
             f'<td class="num {_esc(dist_cls)}">{dist_txt or "—"}</td>'
@@ -112,26 +183,25 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             f"<td>{action}</td>"
             "</tr>"
         )
-    summary = (
-        '<div class="chips">'
-        f'<span class="kchip"><i>事件</i> <b>{len(events)}</b></span>'
-        f'<span class="kchip"><i>breach</i> <b>{n_breach}</b></span>'
-        f'<span class="kchip"><i>near</i> <b>{n_near}</b></span>'
-        f'<span class="kchip"><i>mech_risk</i> <b>{n_mech}</b></span>'
-        f'<span class="kchip"><i>已压制</i> <b>{n_sup}</b></span>'
-        "</div>"
+    chips = "".join(
+        _kchip(k, str(v))
+        for k, v in (
+            ("事件", len(events)),
+            ("breach", n_breach),
+            ("near", n_near),
+            ("mech_risk", n_mech),
+            ("已压制", n_sup),
+        )
     )
+    summary = f'<div class="chips">{chips}</div>'
     return (
-        summary + '<table class="tbl"><colgroup><col class="w-ts"><col class="w-code">'
-        '<col><col class="w-num"><col class="w-num"><col><col><col><col class="w-sup">'
-        '<col class="w-op"></colgroup><thead><tr>'
-        '<th scope="col" class="num">时间</th><th scope="col">股票</th><th scope="col">事件</th>'
-        '<th scope="col" class="num">现价</th><th scope="col" class="num">距线</th>'
-        '<th scope="col">级别</th>'
-        '<th scope="col">机械风险</th><th scope="col">复核短语</th><th scope="col">压制</th>'
-        '<th scope="col">操作</th>'
-        "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
-        '<p class="tbl-note" title="盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · 盘中结论以'
+        summary
+        + _table(
+            "w-ts|w-code|-|w-num|w-num|-|-|-|w-sup|w-op",
+            "时间:num|股票|事件|现价:num|距线:num|级别|机械风险|复核短语|压制|操作",
+            "".join(rows),
+        )
+        + '<p class="tbl-note" title="盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · 盘中结论以'
         '收盘复核为准（R9）">盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · '
         "盘中结论以收盘复核为准</p>"
     )
@@ -141,9 +211,8 @@ def render_tasks_table(queue: dict) -> str:
     tasks = queue.get("tasks") or []
     if not tasks:
         return (
-            '<p class="empty">队列为空。<span class="empty-tip">②页表单或③页复核按钮'
-            "提交后于此跟踪。</span></p>"
-            '<span id="dg-task-meta" hx-swap-oob="true">0 项</span>'
+            _empty("队列为空。", "②页表单或③页复核按钮提交后于此跟踪。")
+            + '<span id="dg-task-meta" hx-swap-oob="true">0 项</span>'
         )
     rows = []
     for t in tasks[-20:]:
@@ -159,12 +228,8 @@ def render_tasks_table(queue: dict) -> str:
             "</tr>"
         )
     return (
-        '<table class="tbl"><colgroup><col class="w-kind"><col class="w-code">'
-        '<col class="w-st"><col class="w-ts"><col></colgroup><thead><tr>'
-        '<th scope="col">类型</th><th scope="col">代码</th><th scope="col">状态</th>'
-        '<th scope="col" class="num">入队</th><th scope="col">错误</th>'
-        f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
-        f'<span id="dg-task-meta" hx-swap-oob="true">{len(tasks)} 项</span>'
+        _table("w-kind|w-code|w-st|w-ts|-", "类型|代码|状态|入队:num|错误", "".join(rows))
+        + f'<span id="dg-task-meta" hx-swap-oob="true">{len(tasks)} 项</span>'
     )
 
 
@@ -232,10 +297,13 @@ def render_audit(decisions: list[dict], budget: dict, *, chain_ok: bool | None =
     chain_note = ""
     summary_chips = ""
     tokens = budget.get("tokens") if isinstance(budget.get("tokens"), dict) else {}
-    count_chips = (
-        f'<span class="kchip"><i>台账</i> <b>{len(decisions)}</b></span>'
-        f'<span class="kchip"><i>token 累计</i> <b>{int(tokens.get("total", 0))}</b></span>'
-        f'<span class="kchip"><i>等效 USD</i> <b>{budget.get("cost_usd_equiv", 0)}</b></span>'
+    count_chips = "".join(
+        _kchip(k, str(v))
+        for k, v in (
+            ("台账", len(decisions)),
+            ("token 累计", int(tokens.get("total", 0))),
+            ("等效 USD", budget.get("cost_usd_equiv", 0)),
+        )
     )
     if chain_ok is True:
         chain_note = '<p class="ok">链校验通过 · 台账防篡改完好</p>'
@@ -253,22 +321,14 @@ def render_audit(decisions: list[dict], budget: dict, *, chain_ok: bool | None =
             f'<div class="chips"><span class="chip chip-warn">链校验失败</span>{count_chips}</div>'
         )
     table = (
-        '<table class="tbl"><colgroup><col class="w-seq"><col class="w-ts">'
-        '<col class="w-kind"><col><col class="w-hash"></colgroup>'
-        '<thead><tr><th scope="col" class="num">序号</th><th scope="col" class="num">时间</th>'
-        '<th scope="col">类型</th><th scope="col">摘要</th>'
-        '<th scope="col" class="num">hash 链</th></tr>'
-        + f"</thead><tbody>{''.join(rows)}</tbody></table>"
+        _table(
+            "w-seq|w-ts|w-kind|-|w-hash", "序号:num|时间:num|类型|摘要|hash 链:num", "".join(rows)
+        )
         if rows
-        else '<p class="empty">decision log 为空。<span class="empty-tip">首条决策写入后'
-        "于此呈现。</span></p>"
+        else _empty("decision log 为空。", "首条决策写入后于此呈现。")
     )
     body = summary_chips + table + chain_note + render_budget_line(budget)
-    return (
-        '<div class="card"><div class="card-h"><span class="ct">decisions 台账（尾部 20 条）</span>'
-        '<span class="cm">hash 链防篡改 · 只读投影</span></div>'
-        f'<div class="card-b">{body}</div></div>'
-    )
+    return _card("decisions 台账（尾部 20 条）", body, meta="hash 链防篡改 · 只读投影")
 
 
 def _tranche_badge(t: dict) -> str:
@@ -417,11 +477,7 @@ def render_settings_fragment(state: dict) -> str:
             'hx-disabled-elt="this">开启 L2</button>'
         )
     body = head + note + btn
-    return (
-        '<div class="card"><div class="card-h"><span class="ct">L2 无人值守总闸</span>'
-        '<span class="cm">默认关 · 显式开启方生效</span></div>'
-        f'<div class="card-b">{body}</div></div>'
-    )
+    return _card("L2 无人值守总闸", body, meta="默认关 · 显式开启方生效")
 
 
 def render_stats_fragment(payload: dict) -> str:
@@ -449,17 +505,15 @@ def render_stats_fragment(payload: dict) -> str:
     t1 = payload.get("t1_review") or {}
     t1_rate = t1.get("rate")
     t1_kpi = f"{t1_rate:.0%}" if t1 and t1_rate is not None else "—"
-    kpi_row = (
-        '<div class="stats" role="list" aria-label="核心指标摘要">'
-        f'<div class="stat" role="listitem"><div class="k">任务成功率</div>'
-        f'<div class="v">{rate_text} <small>{d.get("done", 0)}/'
-        f"{int(d.get('done', 0)) + int(d.get('failed', 0)) + int(d.get('abandoned', 0))}"
-        "</small></div></div>"
-        f'<div class="stat" role="listitem"><div class="k">意图路由命中率</div>'
-        f'<div class="v">{route_kpi}</div></div>'
-        f'<div class="stat" role="listitem"><div class="k">T+1 复核命中率</div>'
-        f'<div class="v">{t1_kpi}</div></div>'
-        "</div>"
+    done_n = int(d.get("done", 0))
+    total_n = done_n + int(d.get("failed", 0)) + int(d.get("abandoned", 0))
+    kpi_row = _stat_grid(
+        (
+            ("任务成功率", f"{rate_text} <small>{done_n}/{total_n}</small>", ""),
+            ("意图路由命中率", route_kpi, ""),
+            ("T+1 复核命中率", t1_kpi, ""),
+        ),
+        label="核心指标摘要",
     )
     left = [
         f'<p class="muted">{summary}</p>',
@@ -491,29 +545,21 @@ def render_stats_fragment(payload: dict) -> str:
             '<p class="tbl-note">近 14 日（全量走势见上方曲线）</p>' if len(curve) > 14 else ""
         )
         left.append(
-            '<table class="tbl"><colgroup><col class="w-ts"><col class="w-num">'
-            '<col class="w-num"><col class="w-num"></colgroup>'
-            '<thead><tr><th scope="col" class="num">日</th>'
-            '<th scope="col" class="num">会话</th>'
-            f'<th scope="col" class="num">token</th>'
-            f'<th scope="col" class="num">等效 USD</th></tr></thead>'
-            f"<tbody>{crows}</tbody></table>{cap_note}"
+            _table("w-ts|w-num|w-num|w-num", "日:num|会话:num|token:num|等效 USD:num", crows)
+            + cap_note
         )
     else:
-        left.append('<p class="empty">暂无会话记账。</p>')
+        left.append(_empty("暂无会话记账。"))
     right = []
     buckets = payload.get("assertion_buckets") or {}
     if buckets:
         brows = "".join(
-            f"<tr><td>{_esc(k)}</td><td class='num'>{v}</td></tr>" for k, v in buckets.items()
+            f'<tr><td>{_esc(k)}</td><td class="num">{v}</td></tr>' for k, v in buckets.items()
         )
         right.append(
             '<h3 title="NR-3 拒落盘原因（§15 指标族管线）">断言违例分桶（NR-3 拒落盘原因）</h3>'
-            '<table class="tbl"><colgroup><col><col class="w-num"></colgroup>'
-            f"<thead><tr><th scope='col'>违例类型</th>"
-            f"<th scope='col' class='num'>计数</th></tr></thead>"
-            f"<tbody>{brows}</tbody></table>"
-            '<p class="tbl-note">legacy 无码行归 uncategorized（0.0.22 前存量）</p>'
+            + _table("-|w-num", "违例类型|计数:num", brows)
+            + '<p class="tbl-note">legacy 无码行归 uncategorized（0.0.22 前存量）</p>'
         )
     if route.get("submitted"):
         right.append(
@@ -526,19 +572,15 @@ def render_stats_fragment(payload: dict) -> str:
     if cbk:
         crows = "".join(
             "<tr>"
-            f"<td>{_esc(r['kind'])}</td><td class='num'>{r['sessions']}</td>"
-            f"<td class='num'>{r['tokens']:,}</td><td class='num'>{r['usd']}</td>"
+            f'<td>{_esc(r["kind"])}</td><td class="num">{r["sessions"]}</td>'
+            f'<td class="num">{r["tokens"]:,}</td><td class="num">{r["usd"]}</td>'
             "</tr>"
             for r in cbk
         )
         right.append(
             '<h3 title="按 kind 归因（§15 指标族管线）">会话成本分布（按 kind 归因）</h3>'
-            '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-num">'
-            "</colgroup><thead><tr><th scope='col'>kind</th>"
-            "<th scope='col' class='num'>会话</th>"
-            "<th scope='col' class='num'>token</th>"
-            "<th scope='col' class='num'>等效 USD</th></tr></thead>"
-            f"<tbody>{crows}</tbody></table>"
+            # colgroup 沿袭原 3 列（第 4 列历史即无宽类，不补列）
+            + _table("-|w-num|w-num", "kind|会话:num|token:num|等效 USD:num", crows)
         )
     if t1:
         t1_note = f"（{_esc(t1.get('note'))}）" if t1.get("note") else ""
@@ -549,19 +591,16 @@ def render_stats_fragment(payload: dict) -> str:
             "——样本 &lt;30 只观察不记分</p>"
         )
     if not right:
-        right.append(
-            '<p class="empty">暂无管线质量样本。<span class="empty-tip">会话与断言'
-            "记录积累后于此呈现。</span></p>"
-        )
+        right.append(_empty("暂无管线质量样本。", "会话与断言记录积累后于此呈现。"))
     parts = [
         kpi_row,
         '<div class="grid-2"><!-- 双卡等宽两栏：任务画像·预算 | 管线质量·T+1 复核 -->',
-        '<div class="card"><div class="card-h"><span class="ct">任务画像 · 预算双口径</span>'
-        '<span class="cm" title="全样本登记，含失败与弃单">全样本登记 · 含失败与弃单'
-        f'</span></div><div class="card-b">{"".join(left)}</div></div>',
-        '<div class="card"><div class="card-h"><span class="ct">管线质量 · T+1 复核</span>'
-        f'<span class="cm" title="§15 指标族管线">§15 指标族管线</span></div>'
-        f'<div class="card-b">{"".join(right)}</div></div>',
+        _card(
+            "任务画像 · 预算双口径",
+            "".join(left),
+            meta="全样本登记 · 含失败与弃单|全样本登记，含失败与弃单",
+        ),
+        _card("管线质量 · T+1 复核", "".join(right), meta="§15 指标族管线|§15 指标族管线"),
         "</div>",
         '<p class="muted">后验画像：全样本登记含亏损；模拟绩效均为假设性推演。</p>',
     ]
@@ -720,10 +759,12 @@ def render_event_feed(payload: dict) -> str:
     events = (payload.get("events") or [])[-10:]
     if not events:
         return (
-            '<p class="empty" title="watch.py 台账为空或未运行">今日暂无盯盘事件。'
-            '<span class="empty-tip">开盘时段自动盯盘；如持续为空，检查①页右列系统状态卡'
-            "或③页事件表。</span></p>"
-            '<span id="ov-ev-count" hx-swap-oob="true">0 条</span>'
+            _empty(
+                "今日暂无盯盘事件。",
+                "开盘时段自动盯盘；如持续为空，检查①页右列系统状态卡或③页事件表。",
+                title="watch.py 台账为空或未运行",
+            )
+            + '<span id="ov-ev-count" hx-swap-oob="true">0 条</span>'
         )
     rows = []
     for ev in events:
@@ -757,10 +798,10 @@ def render_calendar(payload: dict) -> str:
     """①事件日历：日期升序 kchip 条目（披露/解禁/公告）。"""
     rows = payload.get("upcoming") or []
     if not rows:
-        return (
-            '<p class="empty" title="需 T1 刷新或诊股会话产出 evidence">暂无日历事件。'
-            '<span class="empty-tip">诊股产出证据后自动聚合披露/解禁/公告；'
-            "A 股专属事件不适用于港股。</span></p>"
+        return _empty(
+            "暂无日历事件。",
+            "诊股产出证据后自动聚合披露/解禁/公告；A 股专属事件不适用于港股。",
+            title="需 T1 刷新或诊股会话产出 evidence",
         )
     items = []
     for row in rows:
@@ -781,9 +822,10 @@ def render_notifications(payload: dict) -> str:
     """
     rows = payload.get("items") or []
     if not rows:
-        cards = (
-            '<p class="empty" title="watch.py osascript 历史；产品仓永不发通知">'
-            '暂无已发通知。<span class="empty-tip">盯盘触发本地通知后于此只读重放。</span></p>'
+        cards = _empty(
+            "暂无已发通知。",
+            "盯盘触发本地通知后于此只读重放。",
+            title="watch.py osascript 历史；产品仓永不发通知",
         )
         status_line = ""
     else:
@@ -848,7 +890,7 @@ def render_session_obs(body: dict) -> str:
     """②会话观测：五段进度条（done/cur/pend）+ 双轨意见板 + 裁决卡（P2 §⑫ 案 a）。"""
     stages = body.get("stages") or []
     if not stages:
-        return '<p class="empty">无会话产物视图。</p>'
+        return _empty("无会话产物视图。")
     steps = []
     for st in stages:
         cls = {"done": "done", "current": "cur", "pending": "pend"}.get(st.get("state"), "pend")
@@ -862,17 +904,10 @@ def render_session_obs(body: dict) -> str:
     parts.append("</div>")
     opinions = body.get("opinions") or {}
     default_cards = opinions.get("default") or []
-    sig_map = {
-        "strong_buy": "sig-sb",
-        "buy": "sig-b",
-        "hold": "sig-h",
-        "sell": "sig-s",
-        "strong_sell": "sig-ss",
-    }
     if default_cards:
         cards = "".join(
             f'<div class="op"><div class="op-src num">{_esc(c["source"])}</div>'
-            f'<div><span class="sig {sig_map.get(c.get("signal"), "")}">'
+            f'<div><span class="sig {_SIG_CLASS.get(c.get("signal"), "")}">'
             f'<span class="d"></span>{_esc(c.get("signal") or "")}</span> '
             f'<span class="num">{_esc(c.get("confidence"))}</span></div></div>'
             for c in default_cards[:16]
@@ -882,9 +917,7 @@ def render_session_obs(body: dict) -> str:
         parts.append(f'<h3 class="h3-tight">双轨意见板 · {len(default_cards)} 条{pos_note}</h3>')
         parts.append(f'<div class="opins opins-dense">{cards}</div>')
     else:
-        parts.append(
-            '<p class="empty">意见未产出。<span class="empty-tip">LLM 意见段待会话推进。</span></p>'
-        )
+        parts.append(_empty("意见未产出。", "LLM 意见段待会话推进。"))
     verdict = body.get("verdict")
     if verdict:
         buckets = verdict.get("buckets") or {}
@@ -920,25 +953,17 @@ def render_signals_table(payload: dict) -> str:
     rows = payload.get("rows") or []
     if not rows:
         tip = (
-            '<span class="empty-tip">signals.json 不可读——宁拒不漏，显示为空而非旧数据。</span>'
+            "signals.json 不可读——宁拒不漏，显示为空而非旧数据。"
             if not payload.get("read_ok")
-            else '<span class="empty-tip">adjudicate 产出登记后于此呈现。</span>'
+            else "adjudicate 产出登记后于此呈现。"
         )
-        return f'<p class="empty">无在册信号。{tip}</p>'
+        return _empty("无在册信号。", tip)
     names = payload.get("names") or {}
     has_stop = any(r.get("to_stop_pct") is not None for r in rows)
-    stop_col = '<col class="w-num">' if has_stop else ""
-    stop_th = '<th scope="col" class="num">距止损</th>' if has_stop else ""
     trs = []
     for row in rows:
         signal = row.get("signal")
-        sig_cls = {
-            "strong_buy": "sig-sb",
-            "buy": "sig-b",
-            "hold": "sig-h",
-            "sell": "sig-s",
-            "strong_sell": "sig-ss",
-        }.get(signal, "")
+        sig_cls = _SIG_CLASS.get(signal, "")
         to_stop = row.get("to_stop_pct")
         dist_cls = (
             "dist-breach"
@@ -946,13 +971,12 @@ def render_signals_table(payload: dict) -> str:
             else ("dist-near" if to_stop is not None and to_stop <= 3 else "")
         )
         stop_td = f'<td class="num {_esc(dist_cls)}">{_fmt(to_stop, "%")}</td>' if has_stop else ""
-        name = names.get(row["code"])
-        name_html = f" {_esc(name)}" if name else ""
         conf = row.get("confidence")
         conf_txt = f"{float(conf):.2f}" if isinstance(conf, (int, float)) else _fmt(conf)
         trs.append(
             "<tr>"
-            f'<td><span class="code num">{_esc(row["code"])}</span>{name_html}</td>'
+            f'<td><span class="code num">{_esc(row["code"])}</span>'
+            f"{_name_tail(names, row['code'])}</td>"
             f'<td><span class="sig {sig_cls}"><span class="d"></span>'
             f"{_esc(signal or row.get('signal_raw'))}</span></td>"
             f'<td class="num">{conf_txt}</td>'
@@ -961,15 +985,15 @@ def render_signals_table(payload: dict) -> str:
             f'<td class="num">{_esc(row.get("date", ""))}</td>'
             "</tr>"
         )
+    stop_col = "w-num|" if has_stop else ""
+    stop_head = "距止损:num|" if has_stop else ""
     return (
-        '<table class="tbl"><colgroup><col class="w-code"><col>'
-        f'<col class="w-num">{stop_col}<col class="w-st"><col class="w-ts"></colgroup>'
-        '<thead><tr><th scope="col">代码</th><th scope="col">最新信号</th>'
-        '<th scope="col" class="num">置信</th>'
-        f"{stop_th}"
-        '<th scope="col">轨</th><th scope="col" class="num">信号日</th></tr></thead><tbody>'
-        f"{''.join(trs)}</tbody></table>"
-        '<p class="tbl-note" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）；'
+        _table(
+            f"w-code|-|w-num|{stop_col}w-st|w-ts",
+            f"代码|最新信号|置信:num|{stop_head}轨|信号日:num",
+            "".join(trs),
+        )
+        + '<p class="tbl-note" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）；'
         "距止损需现价源（paper last_price / 盘中 facts.price），无价显 —；"
         '排序 breach 置顶">adjudicate 产出 · 盘中结论以收盘复核为准 · '
         "距止损需现价源（无价显 —）</p>"
@@ -991,9 +1015,8 @@ def render_todos(payload: dict) -> str:
     todos = payload.get("todos") or []
     if not todos:
         return (
-            '<p class="empty">无待办。<span class="empty-tip">逐笔确认/降档复核/晨报确认'
-            "产生时于此汇总。</span></p>"
-            '<span id="ov-todo-count" hx-swap-oob="true">0 项</span>'
+            _empty("无待办。", "逐笔确认/降档复核/晨报确认产生时于此汇总。")
+            + '<span id="ov-todo-count" hx-swap-oob="true">0 项</span>'
         )
     rows = []
     for item in todos:
@@ -1015,10 +1038,7 @@ def render_navcard(view: dict) -> str:
     """
     history = view.get("equity_history") or []
     if not history:
-        return (
-            '<p class="empty">净值曲线待积累。<span class="empty-tip">盘后日终复核产出'
-            "权益点后于此呈现。</span></p>"
-        )
+        return _empty("净值曲线待积累。", "盘后日终复核产出权益点后于此呈现。")
     navs = [float(p.get("nav") or 0) for p in history]
     nav = navs[-1]
     today_pct = ((nav / navs[-2] - 1) * 100) if len(navs) >= 2 and navs[-2] else None
@@ -1076,7 +1096,7 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
         rows.append(
             '<div class="sys-row"><div class="sdot sdot-wait"></div>'
             '<div class="sys-l"><span class="sys-name">决策链</span>'
-            f'<div class="sys-desc">{html.escape(str(chain_error))}</div></div>'
+            f'<div class="sys-desc">{_esc(chain_error)}</div></div>'
             '<span class="sys-st">待修复</span></div>'
         )
     sess_count = len(sessions.get("sessions") or {})
@@ -1096,9 +1116,10 @@ def render_reports_list(payload: dict) -> str:
     """②报告档案列表（目录+latest+count，点击查正文；show:top 滚动定位）。"""
     rows = payload.get("reports") or []
     if not rows:
-        return (
-            '<p class="empty" title="提交诊股后由 vibe-stock report 段产出">暂无诊股报告。'
-            '<span class="empty-tip">在上方表单发起诊股，报告段落完成后于此归档。</span></p>'
+        return _empty(
+            "暂无诊股报告。",
+            "在上方表单发起诊股，报告段落完成后于此归档。",
+            title="提交诊股后由 vibe-stock report 段产出",
         )
     trs = []
     for row in rows[:20]:
@@ -1113,10 +1134,8 @@ def render_reports_list(payload: dict) -> str:
             f"（{row.get('count', 0)} 份在档）</td></tr>"
         )
     return (
-        '<table class="tbl"><colgroup><col class="w-code"><col></colgroup>'
-        '<thead><tr><th scope="col">标的</th><th scope="col">最新报告</th></tr></thead>'
-        f"<tbody>{''.join(trs)}</tbody></table>"
-        '<p class="tbl-note" title="vibe-stock/04 规约结构 · 免责段必含">'
+        _table("w-code|-", "标的|最新报告", "".join(trs))
+        + '<p class="tbl-note" title="vibe-stock/04 规约结构 · 免责段必含">'
         "报告按规约结构归档 · 免责段必含</p>"
     )
 
@@ -1135,16 +1154,10 @@ def _md_lite(md: str) -> str:
         if in_table:
             # 首行升 thead（报告 md 均含表头行；动态列数豁免——colgroup 不带 .w-*）
             head = table_rows[0] if table_rows else []
-            colgroup = f"<colgroup>{'<col>' * len(head)}</colgroup>"
-            thead = (
-                "<thead><tr>" + "".join(f'<th scope="col">{c}</th>' for c in head) + "</tr></thead>"
-                if head
-                else ""
-            )
             body_rows = "".join(
                 "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>" for row in table_rows[1:]
             )
-            out.append(f'<table class="tbl">{colgroup}{thead}<tbody>{body_rows}</tbody></table>')
+            out.append(_table("|".join("-" * len(head)), "|".join(head), body_rows))
             in_table = False
             table_rows = []
 
@@ -1213,10 +1226,10 @@ def _md_lite(md: str) -> str:
 def render_report_body(code_market: str, filename: str, md: str) -> str:
     has_disclaimer = "不构成投资建议" in md
     warn = "" if has_disclaimer else '<p class="riskchip">免责段缺失（异常）</p>'
-    return (
-        f'<div class="card"><div class="card-h"><span class="ct">报告 · {_esc(code_market)} · '
-        f'{_esc(filename)}</span><span class="cm">md 结构化渲染</span></div>'
-        f'<div class="card-b">{warn}<div class="md">{_md_lite(md)}</div></div></div>'
+    return _card(
+        f"报告 · {_esc(code_market)} · {_esc(filename)}",
+        f'{warn}<div class="md">{_md_lite(md)}</div>',
+        meta="md 结构化渲染",
     )
 
 
@@ -1244,10 +1257,7 @@ def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
         f"{_esc(rendered['asof'])}）——呈现态原值"
         f'<span title="NR-5/R2 豁免面，落盘为百分比">（豁免面）</span></p>'
         if rendered
-        else (
-            '<p class="empty">无模拟持仓。<span class="empty-tip">原值不可现算；'
-            "落盘口径见卡面百分比。</span></p>"
-        )
+        else _empty("无模拟持仓。", "原值不可现算；落盘口径见卡面百分比。")
     )
     p = price_fact.get("price")
     if isinstance(p, (int, float)):
@@ -1259,9 +1269,10 @@ def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
             f"{_esc(asof_txt)}{stale}——多源合并取 asof 最新（§⑫ 现价源）</p>"
         )
     else:
-        price_html = (
-            '<p class="empty" title="三源现价缺席（paper last_price / 盘中 facts / '
-            'T1 日 K 收盘）">—<span class="empty-tip">三源现价缺席，σ√h 参考带停用。</span></p>'
+        price_html = _empty(
+            "—",
+            "三源现价缺席，σ√h 参考带停用。",
+            title="三源现价缺席（paper last_price / 盘中 facts / T1 日 K 收盘）",
         )
     trend_rows = "".join(
         f"<tr><td>{_esc(r['horizon'])}</td>"
@@ -1272,12 +1283,9 @@ def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
         for r in band_rows
     )
     trend = (
-        '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-num">'
-        '<col class="w-num"></colgroup><thead><tr><th scope="col" class="num">h</th>'
-        '<th scope="col" class="num">带下沿</th><th scope="col" class="num">带上沿</th>'
-        f'<th scope="col" class="num">P 触下</th></tr></thead><tbody>{trend_rows}</tbody></table>'
+        _table("-|w-num|w-num|w-num", "h:num|带下沿:num|带上沿:num|P 触下:num", trend_rows)
         if band_rows
-        else '<p class="empty">无走势参考表。</p>'
+        else _empty("无走势参考表。")
     )
     reviewed_html = (
         '<span class="st done">已复核</span>'
@@ -1330,17 +1338,15 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
     totals = payload.get("totals") or {}
 
     # ── 卡A 账户与持仓（KPI 四格恒置顶；有持仓时表 + 汇总条）──
-    kpi = (
-        '<div class="stats stats-4" role="list" aria-label="模拟盘账户摘要">'
-        f'<div class="stat" role="listitem"><div class="k">现金</div>'
-        f'<div class="v">{_fmt(totals.get("cash"))}</div></div>'
-        f'<div class="stat" role="listitem"><div class="k">总市值</div>'
-        f'<div class="v">{_fmt(totals.get("market_value"))}</div></div>'
-        f'<div class="stat" role="listitem"><div class="k">总资产</div>'
-        f'<div class="v">{_fmt(totals.get("total"))}</div></div>'
-        f'<div class="stat" role="listitem"><div class="k">净值</div>'
-        f'<div class="v">{_fmt(totals.get("nav"))}</div></div>'
-        "</div>"
+    kpi = _stat_grid(
+        (
+            ("现金", _fmt(totals.get("cash")), ""),
+            ("总市值", _fmt(totals.get("market_value")), ""),
+            ("总资产", _fmt(totals.get("total")), ""),
+            ("净值", _fmt(totals.get("nav")), ""),
+        ),
+        label="模拟盘账户摘要",
+        cls="stats-4",
     )
     if positions:
         rows = []
@@ -1356,11 +1362,10 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 else "—"
             )
             open_cls = ' class="open"' if str(pos.get("status")) == "pending_open" else ""
-            name = names.get(pos["code"])
-            name_html = f" {_esc(name)}" if name else ""
             rows.append(
                 f"<tr{open_cls}>"
-                f'<td><span class="code">{_esc(pos["code"])}</span>{name_html}</td>'
+                f'<td><span class="code">{_esc(pos["code"])}</span>'
+                f"{_name_tail(names, pos['code'])}</td>"
                 f"<td>{_pos_status_pill(pos['status'])}</td>"
                 f"<td>{badges}</td>"
                 f'<td class="num">{pos.get("lots", 0)}</td>'
@@ -1371,36 +1376,35 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 f'<td class="num">{_esc(round(pos.get("market_value") or 0, 2))}</td>'
                 "</tr>"
             )
-        pos_body = (
-            '<table class="tbl"><colgroup><col class="w-code"><col class="w-st">'
-            '<col class="w-batch"><col class="w-num"><col class="w-num">'
-            '<col class="w-num"><col class="w-num"><col class="w-num"><col class="w-num">'
-            '</colgroup><thead><tr><th scope="col">股票</th><th scope="col">状态</th>'
-            '<th scope="col">建仓批</th><th scope="col" class="num">手数</th>'
-            '<th scope="col" class="num">可卖(T+1)</th>'
-            '<th scope="col" class="num">成本价</th><th scope="col" class="num">现价</th>'
-            '<th scope="col" class="num">盈亏%</th>'
-            f'<th scope="col" class="num">市值</th></tr></thead><tbody>{"".join(rows)}'
-            f'</tbody></table><p class="tbl-note">总市值 '
-            f"{totals.get('market_value', 0):,.2f} · 现金 {totals.get('cash', 0):,.2f} · "
-            f"总资产 {totals.get('total', 0):,.2f} · 净值 {totals.get('nav', 0):.4f}"
-            "（盈亏口径：红涨绿跌）</p>"
+        pos_body = _table(
+            "w-code|w-st|w-batch|w-num|w-num|w-num|w-num|w-num|w-num",
+            "股票|状态|建仓批|手数:num|可卖(T+1):num|成本价:num|现价:num|盈亏%:num|市值:num",
+            "".join(rows),
+        ) + (
+            f'<p class="tbl-note">总市值 {totals.get("market_value", 0):,.2f} · '
+            f"现金 {totals.get('cash', 0):,.2f} · 总资产 {totals.get('total', 0):,.2f} · "
+            f"净值 {totals.get('nav', 0):.4f}（盈亏口径：红涨绿跌）</p>"
         )
     else:
         exists = bool(payload.get("exists"))
         pos_body = (
-            '<p class="empty">无模拟持仓。<span class="empty-tip">T2 触价建议经'
-            '④页逐笔确认后建仓——<a href="#/advice">先去⑤页看建议卡</a>。</span></p>'
+            _empty(
+                "无模拟持仓。",
+                'T2 触价建议经④页逐笔确认后建仓——<a href="#/advice">先去⑤页看建议卡</a>。',
+            )
             if exists
-            else '<p class="empty" title="账本未建或全部清仓">无模拟持仓。'
-            '<span class="empty-tip">首笔确认成交后自动建账（T2 触价 → 逐笔确认队列）'
-            "。</span></p>"
+            else _empty(
+                "无模拟持仓。",
+                "首笔确认成交后自动建账（T2 触价 → 逐笔确认队列）。",
+                title="账本未建或全部清仓",
+            )
         )
     parts.append(
-        '<div class="card"><div class="card-h"><span class="ct">账户与持仓</span>'
-        '<span class="cm" title="严格穿价撮合 · 静态费用栈">严格穿价撮合 · 含费用与滑点'
-        f"</span></div>"
-        f'<div class="card-b">{kpi}{pos_body}</div></div>'
+        _card(
+            "账户与持仓",
+            f"{kpi}{pos_body}",
+            meta="严格穿价撮合 · 含费用与滑点|严格穿价撮合 · 静态费用栈",
+        )
     )
 
     # ── 两栏行：逐笔确认队列（主）| 权益曲线 + 模拟绩效（rail）──
@@ -1437,21 +1441,13 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 f'<td><span class="opgrp">{confirm_btn}{reject_btn}</span></td>'
                 "</tr>"
             )
-        queue_body = (
-            '<table class="tbl"><colgroup><col class="w-ts"><col class="w-code">'
-            '<col class="w-batch"><col class="w-num"><col class="w-num">'
-            '<col class="w-num"><col class="w-ts"><col class="w-op"></colgroup>'
-            '<thead><tr><th scope="col" class="num">时间</th><th scope="col">代码</th>'
-            '<th scope="col">批</th><th scope="col">方向</th>'
-            '<th scope="col" class="num">手数</th>'
-            '<th scope="col" class="num">参考价</th><th scope="col" class="num">bar 日</th>'
-            f'<th scope="col">操作</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        queue_body = _table(
+            "w-ts|w-code|w-batch|w-num|w-num|w-num|w-ts|w-op",
+            "时间:num|代码|批|方向|手数:num|参考价:num|bar 日:num|操作",
+            "".join(rows),
         )
     else:
-        queue_body = (
-            '<p class="empty">队列为空。<span class="empty-tip">触价建议产生后'
-            "于此人工确认。</span></p>"
-        )
+        queue_body = _empty("队列为空。", "触价建议产生后于此人工确认。")
 
     history = payload.get("equity_history") or []
     perf = payload.get("perf")
@@ -1467,24 +1463,32 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
         )
     else:
         perf_body = (
-            '<p class="empty" title="perf 样本不足时不记分">暂无可记分绩效样本。'
-            f'<span class="empty-tip">平仓对积累后自动记分（样本 ≥30）。</span></p>{nr2_note}'
+            _empty(
+                "暂无可记分绩效样本。",
+                "平仓对积累后自动记分（样本 ≥30）。",
+                title="perf 样本不足时不记分",
+            )
+            + nr2_note
         )
     parts.append(
         '<div class="grid-rail"><div class="col">'
-        '<div class="card"><div class="card-h"><span class="ct">逐笔确认队列</span>'
-        '<span class="cm" title="触价只写待确认；无人工确认不落账">触价只写待确认 · '
-        "无人工确认不落账</span></div>"
-        f'<div class="card-b">{queue_body}</div></div></div>'
-        '<div class="col">'
-        '<div class="card"><div class="card-h"><span class="ct">权益曲线</span>'
-        '<span class="cm">NAV = 权益 / 预算</span></div>'
-        f'<div class="card-b"><div class="eq-svg">{_axis_equity_svg(history)}</div></div>'
-        "</div>"
-        '<div class="card"><div class="card-h"><span class="ct">模拟绩效</span>'
-        '<span class="cm" title="假设性推演（含费用与滑点）；样本 ≥30 可记分">'
-        "假设性推演 · 样本 ≥30 可记分</span></div>"
-        f'<div class="card-b">{perf_body}</div></div></div></div>'
+        + _card(
+            "逐笔确认队列",
+            queue_body,
+            meta="触价只写待确认 · 无人工确认不落账|触价只写待确认；无人工确认不落账",
+        )
+        + '</div><div class="col">'
+        + _card(
+            "权益曲线",
+            f'<div class="eq-svg">{_axis_equity_svg(history)}</div>',
+            meta="NAV = 权益 / 预算",
+        )
+        + _card(
+            "模拟绩效",
+            perf_body,
+            meta="假设性推演 · 样本 ≥30 可记分|假设性推演（含费用与滑点）；样本 ≥30 可记分",
+        )
+        + "</div></div>"
     )
 
     # ── 公司行动登记全宽卡（馈送表单在 index.html #paper-ca 独立卡）──
@@ -1500,24 +1504,15 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             "</tr>"
             for r in records[-10:]
         )
-        ca_body = (
-            '<table class="tbl"><colgroup><col class="w-code"><col><col class="w-ts">'
-            '<col><col class="w-num"></colgroup><thead><tr><th scope="col">代码</th>'
-            '<th scope="col">类型</th><th scope="col" class="num">除权日</th>'
-            '<th scope="col">口径</th>'
-            f'<th scope="col" class="num">现金变动</th></tr></thead><tbody>{rows}'
-            "</tbody></table>"
-        )
+        ca_body = _table("w-code|-|w-ts|-|w-num", "代码|类型|除权日:num|口径|现金变动:num", rows)
     else:
-        ca_body = (
-            '<p class="empty">暂无公司行动登记。<span class="empty-tip">馈送入口在下方'
-            "「公司行动馈送」卡（需在持仓）。</span></p>"
-        )
+        ca_body = _empty("暂无公司行动登记。", "馈送入口在下方「公司行动馈送」卡（需在持仓）。")
     parts.append(
-        '<div class="card"><div class="card-h"><span class="ct">公司行动登记</span>'
-        '<span class="cm" title="先送转后分红；不产 Operation 行">先送转后分红 · '
-        "不产 Operation 行</span></div>"
-        f'<div class="card-b">{ca_body}</div></div>'
+        _card(
+            "公司行动登记",
+            ca_body,
+            meta="先送转后分红 · 不产 Operation 行|先送转后分红；不产 Operation 行",
+        )
     )
     return "".join(parts)
 
@@ -1577,11 +1572,7 @@ def render_ca_form(*, has_positions: bool = True) -> str:
             "公司行动馈送（需在持仓——当前不可用，提交将 422）</summary>"
             f"{form}</details>"
         )
-    return (
-        '<div class="card"><div class="card-h"><span class="ct">公司行动馈送</span>'
-        '<span class="cm">手动登记送转/分红</span></div>'
-        f'<div class="card-b">{body}</div></div>'
-    )
+    return _card("公司行动馈送", body, meta="手动登记送转/分红")
 
 
 def _ca_basis(r: dict) -> str:
@@ -1596,21 +1587,17 @@ def _perf_grid(perf: dict) -> str:
     sharpe = perf.get("sharpe")
     max_dd = perf.get("max_drawdown")
     win_rate = perf.get("win_rate")
-    dd_v = (
-        f'<div class="v dn">{max_dd * 100:.1f}%</div>'
-        if max_dd is not None
-        else '<div class="v">—</div>'
-    )
-    wr_v = (
-        f'<div class="v">{win_rate:.0%}</div>' if win_rate is not None else '<div class="v">—</div>'
-    )
-    return (
-        '<div class="stats" role="list" aria-label="模拟盘绩效指标">'
-        f'<div class="stat" role="listitem"><div class="k">Sharpe（日频年化）</div>'
-        f'<div class="v">{sharpe if sharpe is not None else "—"}</div></div>'
-        f'<div class="stat" role="listitem"><div class="k">最大回撤</div>{dd_v}</div>'
-        f'<div class="stat" role="listitem"><div class="k">胜率（FIFO）</div>{wr_v}</div>'
-        "</div>"
+    return _stat_grid(
+        (
+            ("Sharpe（日频年化）", sharpe if sharpe is not None else "—", ""),
+            (
+                "最大回撤",
+                f"{max_dd * 100:.1f}%" if max_dd is not None else "—",
+                "dn" if max_dd is not None else "",
+            ),
+            ("胜率（FIFO）", f"{win_rate:.0%}" if win_rate is not None else "—", ""),
+        ),
+        label="模拟盘绩效指标",
     )
 
 
@@ -1630,7 +1617,6 @@ def render_advice_library(payload: dict) -> str:
     day = payload.get("date", "")
     parts = [f"<h3>建议卡 · {_esc(day)}</h3>"]
     if cards:
-        day = payload.get("date") or ""
         rows = []
         for card in cards:
             code = _esc(card.get("code", ""))
@@ -1656,18 +1642,19 @@ def render_advice_library(payload: dict) -> str:
                 "</tr>"
             )
         parts.append(
-            '<table class="tbl"><colgroup><col class="w-code"><col><col class="w-num">'
-            '<col class="w-num"><col class="w-num"><col class="w-ts"><col class="w-st"></colgroup>'
-            '<thead><tr><th scope="col">代码</th><th scope="col">候选动作</th>'
-            '<th scope="col">终判</th><th scope="col">上一裁决</th>'
-            '<th scope="col" class="num">T+1 可卖</th><th scope="col" class="num">落盘</th>'
-            '<th scope="col">复核</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table>"
+            _table(
+                "w-code|-|w-num|w-num|w-num|w-ts|w-st",
+                "代码|候选动作|终判|上一裁决|T+1 可卖:num|落盘:num|复核",
+                "".join(rows),
+            )
         )
     else:
         parts.append(
-            '<p class="empty">当日无建议卡。<span class="empty-tip">T2 复核未触发或被降级——'
-            '可<a href="#/monitor">去③页对事件手动触发盯盘复核 →</a>；'
-            "降级原因见下方通报表。</span></p>"
+            _empty(
+                "当日无建议卡。",
+                'T2 复核未触发或被降级——可<a href="#/monitor">去③页对事件手动触发盯盘复核'
+                " →</a>；降级原因见下方通报表。",
+            )
         )
     parts.append("<h3>拒卡 / 降级通报</h3>")
     if refused:
@@ -1687,14 +1674,10 @@ def render_advice_library(payload: dict) -> str:
                 "</tr>"
             )
         parts.append(
-            '<table class="tbl"><colgroup><col class="w-ts"><col class="w-code">'
-            '<col class="w-num"><col class="w-kind"><col></colgroup>'
-            '<thead><tr><th scope="col">时间</th><th scope="col">代码</th>'
-            '<th scope="col">来源</th><th scope="col">原因</th><th scope="col">通报</th>'
-            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+            _table("w-ts|w-code|w-num|w-kind|-", "时间|代码|来源|原因|通报", "".join(rows))
         )
     else:
-        parts.append('<p class="empty">无拒卡/降级记录。</p>')
+        parts.append(_empty("无拒卡/降级记录。"))
     parts.append(
         '<p class="muted" title="份额原值禁入落盘产物（R2/NR-5）；候选动作为 '
         'vibe-stock/04 五档分类学措辞">卡面脱敏口径：只落百分比与档位词；'
@@ -1711,10 +1694,10 @@ def render_audit_archive(payload: dict) -> str:
     """
     dates = payload.get("dates") or []
     if not dates:
-        return (
-            '<p class="empty" title="真实通道断言器放行后落 agent/audit/（stream-json）">'
-            '暂无会话转录归档。<span class="empty-tip">真实 CC 会话产物经断言器放行后'
-            "归档，30 天自动清理。</span></p>"
+        return _empty(
+            "暂无会话转录归档。",
+            "真实 CC 会话产物经断言器放行后归档，30 天自动清理。",
+            title="真实通道断言器放行后落 agent/audit/（stream-json）",
         )
     day = payload.get("date") or dates[0]
     chips = "".join(
@@ -1737,13 +1720,9 @@ def render_audit_archive(payload: dict) -> str:
         for f in files
     )
     body = (
-        '<table class="tbl"><colgroup><col><col class="w-num"><col class="w-ts">'
-        '<col class="w-op"></colgroup><thead><tr><th scope="col">转录</th>'
-        '<th scope="col" class="num">大小</th><th scope="col" class="num">mtime</th>'
-        '<th scope="col"></th>'
-        f"</tr></thead><tbody>{rows}</tbody></table>"
+        _table("-|w-num|w-ts|w-op", "转录|大小:num|mtime:num|", rows)
         if files
-        else '<p class="empty">当日无归档。</p>'
+        else _empty("当日无归档。")
     )
     return f'<div class="chip-row">{chips}</div>' + body
 
@@ -1754,10 +1733,10 @@ def render_audit_transcript(body: dict) -> str:
     total = body.get("total_lines", 0)
     shown = f"（尾 {len(lines)} / 共 {total} 行）" if len(lines) < total else f"（共 {total} 行）"
     text = _esc("\n".join(lines))
-    return (
-        f'<div class="card"><div class="card-h"><span class="ct">转录 · '
-        f'{_esc(body.get("file", ""))}</span><span class="cm">stream-json {shown}</span></div>'
-        f'<div class="card-b"><pre class="md-pre">{text}</pre></div></div>'
+    return _card(
+        f"转录 · {_esc(body.get('file', ''))}",
+        f'<pre class="md-pre">{text}</pre>',
+        meta=f"stream-json {shown}",
     )
 
 
@@ -1770,7 +1749,7 @@ def render_sessions_table(sessions: dict) -> str:
     rows_map = (sessions.get("sessions") or {}) if isinstance(sessions, dict) else {}
     records = sorted(rows_map.values(), key=lambda r: str(r.get("ts", "")), reverse=True)
     if not records:
-        return '<p class="empty">暂无会话登记。</p>'
+        return _empty("暂无会话登记。")
     trs = []
     for r in records[:30]:
         tokens = (r.get("usage_tokens") or {}).get("total", 0)
@@ -1800,13 +1779,12 @@ def render_sessions_table(sessions: dict) -> str:
             "</tr>"
         )
     return (
-        '<table class="tbl"><colgroup><col class="w-sess-ts"><col class="w-uuid">'
-        '<col class="w-task"><col class="w-tok"><col class="w-usd">'
-        '<col></colgroup><thead><tr><th scope="col" class="num">ts</th><th scope="col">session</th>'
-        '<th scope="col">task</th><th scope="col" class="num">tokens</th>'
-        '<th scope="col" class="num">等效 USD</th><th scope="col">转录路径</th></tr></thead><tbody>'
-        f"{''.join(trs)}</tbody></table>"
-        '<p class="tbl-note" title="audit/ stream-json 归档 30 天官方清理（F-38）">'
+        _table(
+            "w-sess-ts|w-uuid|w-task|w-tok|w-usd|-",
+            "ts:num|session|task|tokens:num|等效 USD:num|转录路径",
+            "".join(trs),
+        )
+        + '<p class="tbl-note" title="audit/ stream-json 归档 30 天官方清理（F-38）">'
         "三件套互查：decisions（hash 链）× sessions × audit/ stream-json 归档"
         "（30 天自动清理）</p>"
     )
