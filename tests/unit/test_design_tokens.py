@@ -245,3 +245,21 @@ class TestLayoutNorms028:
 
     def test_font_shorthand_none_placeholder_gone(self):
         assert ")None " not in STYLE
+
+
+class TestLayoutNorms029:
+    """0.0.29 布局只收严断言：长表滚动容器 / sys-row 列数与子元素对齐 / 操作列触点间距。
+
+    规范 SSOT = docs/specs/14-design-system.md §⑪（index.html :root/CSS 为实现层）。
+    """
+
+    def test_long_table_scroll_container(self):
+        assert ".tbl-wrap{max-height:460px;overflow:auto;overscroll-behavior:contain}" in RULES
+        assert ".tbl-wrap .tbl thead th{position:sticky;top:0" in RULES  # thead 吸顶
+
+    def test_sys_row_four_tracks(self):
+        # 4 子元素（sdot/sys-l/sys-sched/sys-st）配 4 轨；修复前 3 轨致第 4 元素掉隐式行
+        assert "grid-template-columns:14px minmax(0,1fr) 56px 56px" in RULES
+
+    def test_action_cell_touch_spacing(self):
+        assert ".tbl-act{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}" in RULES

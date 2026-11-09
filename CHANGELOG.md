@@ -4,6 +4,22 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.30] - 2026-11-09
+
+### Changed
+
+- **面板 UI/UX 第三轮逐页打磨（17 只读代理审计 workflow：8 页审计 → 8 对抗核验 → 28 条确认 / 4 条证伪；实机隔离实例七页 DOM 探针 + 1412/1180/880 三档验证；规约 [14-design-system.md](docs/specs/14-design-system.md) §⑪ 增补四条 + 机器门 `TestLayoutNorms029` 3 例；基于 0.0.29 骨架 SSOT 重放，全部走 `_table/_card/_empty` 单一定义）**。六主线：
+  ①**长表倾倒收口（③页页高 5370→1219px，-77%）**：行数无上界或常态 ≥20 行的表（③事件/⑦decisions 台账/⑦sessions）统一 `.tbl-wrap` 滚动容器（`max-height:460px` + `thead th` sticky 吸顶 `var(--bg1)` 底，`overscroll-behavior:contain`）；③通知预览卡 `#mo-notif` 限高 520px；⑦转录槽 `#au-transcript .md-pre` 60vh 封顶；数据层 `tail` 截断与 API 契约零变化（htmx target 仍指 card-b 级容器）。
+  ②**①页系统状态卡网格错配修复（P1，至少 0.0.25 起错位）**：`.sys-row` 3 轨对 4 子元素致状态词掉隐式行/描述压 3 字省略——改四轨 `14px minmax(0,1fr) 56px 56px` + probe/链错误缺位行补空 `<span>` 占位 + `sys-desc` 恒挂 `title` 全值（§⑪ 新钉「网格子元素数=轨道数」规约）。
+  ③**列宽与信息可达**：③股票列 `.w-stock` 150px + title 全值（35 行中文名此前 ellipsis 不可达）；③距线列条件省去（全表无 dist 数据时 colgroup/thead/td 三处联动，§⑨ 先例复用）；⑦hash 列 110→176px（head 徽章此前被整体裁掉）+ title 全值；⑦归档索引 4 列在 310px 边栏塌缩为 0 宽列——收敛「转录 + 操作」两列（`.w-act` 76px 新增），mtime/大小入 title；⑦sessions 代码列回归左对齐（`span.code num` 内包，td.num 与 th 头体配对修正）；②报告表「最新报告」th 补 `num` 配对。
+  ④**两栏失衡收口**：`.grid-main .col>.card:last-child{flex:1 1 auto}`（①右栏/③通知栏末卡拉伸，两栏等高意图落地）；④grid-rail 矮列单卡 `flex-grow` + 卡体垂直居中；④KPI 账未建四格统一 `—`（§⑨ 缺数非零，此前假零 0.0 与 — 混排）；④空轴骨架对称内边距 + 提示文字按画布真居中（x=235/470）。
+  ⑤**⑤页卡片化（对齐 ④⑥ 0.0.28 基线）**：建议卡节与拒卡/降级通报节各自 `_card` 包壳（裸 h3 退役）；拒卡空态补 `empty-tip` 引导 + 五源 title；卡面脱敏 muted 注记归位建议卡卡内（§⑧ .muted 语义复位）；③复核区初始空态同构卡片化（选中前后布局零跳变，空态同构规约）。
+  ⑥**触点间距与跨页一致性**：顶栏 tabs 间距 2px→8px 与 ③操作列 `.tbl-act` 8px（≥8px 触点判据）；页脚左右 22px 对齐版心；②表单提示 `tbl-note`→`frm-tip`（双重 padding 消除）；②会话观测空态引导行随流水线居中（作用域规则）；⑥等效 USD 全页两位小数统一 + cost_by_kind colgroup 补齐（4 列 4 col）+ 预算双 sparkline 加 token/USD 标签 chip（双蓝不可辨修复）。
+
+### Added
+
+- 机器门 `TestLayoutNorms029` 3 例（长表滚动容器/网格四轨/操作列触点间距钉面）。
+
 ## [0.0.29] - 2026-11-09
 
 ### Changed
