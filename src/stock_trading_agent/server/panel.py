@@ -800,17 +800,24 @@ def render_diag_form() -> str:
 
 
 def _ts_hhmm(ts: str) -> str:
-    """①时间轴显示层：ISO 串转本地时区取 HH:MM；非 ISO 短串原样（全值走 title Tooltip）。
+    """①时间轴显示层：ISO 串转市场钟面取 HH:MM；非 ISO 短串原样（全值走 title Tooltip）。
 
-    0.0.32：台账/落盘串多为 +00:00，纯切片会把 UTC 钟面当本地钟面（⑤页落盘 13:26 vs
-    拒卡 21:26 双钟面并存）——与 _ts_short 同法 astimezone() 后再取钟面。
+    0.0.32：台账/落盘串多为 +00:00，纯切片会把 UTC 钟面当市场钟面（⑤页落盘 13:26 vs
+    拒卡 21:26 双钟面并存）——aware 串 astimezone(MARKET_TZ)（市场时区 SSOT；与 routes
+    拒卡列同源，系统本地 astimezone() 在非市场时区机上会错钟面，CI/UTC 实证）；朴素串
+    视为已在市场钟面原样取位（监控事件/文件 stat 均为 aware 串，此分支仅兜底）。
     """
     import datetime as _dt
 
+    from stock_trading_agent.loop.events import MARKET_TZ
+
     try:
-        return _dt.datetime.fromisoformat(str(ts)).astimezone().strftime("%H:%M")
+        parsed = _dt.datetime.fromisoformat(str(ts))
     except ValueError:
         return str(ts)[11:16] if len(str(ts)) > 16 else str(ts)
+    if parsed.tzinfo is None:
+        return parsed.strftime("%H:%M")
+    return parsed.astimezone(MARKET_TZ).strftime("%H:%M")
 
 
 def _ts_short(ts: str) -> str:
