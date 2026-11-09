@@ -171,6 +171,87 @@ def _cmd_repair_decisions(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_paper_import(args: argparse.Namespace) -> int:
+    """allocation.json 导入建仓（vibe-stock batch/portfolio 产物零格式发明，06 Stage D）。
+
+    账本缺席 → 以 allocation budget 起始全新建账；已在账 → 追加（dup code 整批拒）。
+    决策 paper_allocation_imported payload 零价格零数量（NR-5：仅 date 与 code 列表）。
+    """
+    import json as _json
+
+    from stock_trading_agent.loop.monitor_events import market_today
+    from stock_trading_agent.paper import ledger as paper_ledger
+    from stock_trading_agent.paper.allocation import (
+        AllocationError,
+        import_allocation,
+        new_portfolio_from_allocation,
+        parse_allocation,
+    )
+    from stock_trading_agent.state.paths import StateLayout
+    from stock_trading_agent.state.store import FileLock
+
+    layout = StateLayout.from_env()
+    try:
+        data = _json.loads(Path(args.file).read_text(encoding="utf-8"))
+        rows = parse_allocation(data)
+    except (OSError, _json.JSONDecodeError, AllocationError, ValueError) as exc:
+        print(f"allocation 解析失败：{exc}")
+        return 1
+    date = args.date or market_today()
+    with FileLock(layout.sim_lock):
+        portfolio = paper_ledger.load(layout.sim_portfolio_path)
+        try:
+            portfolio = (
+                new_portfolio_from_allocation(data, opened_date=date)
+                if portfolio is None
+                else import_allocation(portfolio, rows, opened_date=date)
+            )
+        except Exception as exc:
+            print(f"导入失败（整批拒绝，账本未变）：{exc}")
+            return 1
+        paper_ledger.persist(portfolio, layout.sim_portfolio_path)
+    _cli_decide(
+        layout,
+        "paper_allocation_imported",
+        {"date": date, "codes": [r.code for r in rows]},
+    )
+    print(f"已导入 {len(rows)} 只（T1/T2/T3 三批建仓；opened_date={date}）")
+    for r in rows:
+        print(f"  {r.code} [{r.market}] 三批 {r.t1_lots}/{r.t2_lots}/{r.t3_lots}")
+    return 0
+
+
+def _cmd_paper_eod(args: argparse.Namespace) -> int:
+    """paper 日终驱动（手动/补跑：ticks 末轮 bar → 触价请求/GTC 到期/权益点）。
+
+    与 serve worker 自动驱动同幂等锚（paper_eod_done/skipped 当日一条）；--date 补跑历史日。
+    """
+    from stock_trading_agent.loop.paper_eod import run_paper_eod
+    from stock_trading_agent.state.paths import StateLayout
+
+    layout = StateLayout.from_env()
+    outcome = run_paper_eod(layout, date=args.date, decide=lambda k, p: _cli_decide(layout, k, p))
+    if outcome is None:
+        print("无事可做（无账本 / 已跑 / 窗前 / 窗内无 ticks 已留痕）")
+        return 0
+    print(
+        f"date={outcome.date} bars={outcome.bars} requests={outcome.requests} "
+        f"expired={outcome.expired} converted={outcome.converted} judged={outcome.judged} "
+        f"marked={int(outcome.marked)}"
+    )
+    if outcome.skipped_codes:
+        print(f"  无 ticks 跳过（停牌/未入盯盘宇宙）：{','.join(outcome.skipped_codes)}")
+    return 0
+
+
+def _cli_decide(layout, kind: str, payload: dict) -> None:
+    """CLI 决策留痕（DecisionLog.append 单一入口；调用序 sim→decisions，§④ 纪律）。"""
+    from stock_trading_agent.loop.loop import _now_iso
+    from stock_trading_agent.state.decisions import DecisionLog
+
+    DecisionLog().append(_now_iso(), kind, payload, path=layout.decisions_path)
+
+
 def _cmd_archive_state(args: argparse.Namespace) -> int:
     """六桶状态归档（G1）：默认 dry-run，--apply 落盘（归档非删除，档案 agent/archive/）。
 
@@ -360,6 +441,17 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--kind", default=None, help="可选：先提交再消费（六 kind 或 t1_refresh）")
     run_p.add_argument("--code", default=None, help="标的码（与 --kind 成对）")
     sub.add_parser("probe", help="CC 通道探针（骨架期即 dry-run 报告）")
+    import_p = sub.add_parser(
+        "paper-import",
+        help="allocation.json 导入三批建仓（vibe-stock 批量精选产物；06 Stage D）",
+    )
+    import_p.add_argument("--file", required=True, help="allocation.json 路径")
+    import_p.add_argument("--date", default=None, help="导入日（缺省市场今日）")
+    eod_p = sub.add_parser(
+        "paper-eod",
+        help="paper 日终驱动（ticks 末轮 bar→触价请求/GTC 到期/权益点；--date 补跑）",
+    )
+    eod_p.add_argument("--date", default=None, help="补跑日（缺省市场今日）")
     sub.add_parser(
         "repair-decisions",
         help="一次性修复 decisions.jsonl 断链（保行重链+备份不删行；strict load 配套）",
@@ -396,6 +488,8 @@ def main(argv: list[str] | None = None) -> int:
         "serve": _cmd_serve,
         "run-once": _cmd_run_once,
         "probe": _cmd_probe,
+        "paper-import": _cmd_paper_import,
+        "paper-eod": _cmd_paper_eod,
         "repair-decisions": _cmd_repair_decisions,
         "archive-state": _cmd_archive_state,
         "upgrade-gate": _cmd_upgrade_gate,

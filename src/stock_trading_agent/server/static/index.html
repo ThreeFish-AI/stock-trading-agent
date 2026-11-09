@@ -513,6 +513,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="hero-r"><span class="metachip">台账 append-only · hash 链</span></div></div>
 <div class="nr2"><b>NR-2</b> 模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
 <div id="paper" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div id="paper-alloc" hx-get="/api/panel/paper/alloc-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div id="paper-ca" hx-get="/api/panel/paper/ca-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-advice" data-page="advice">
 <div class="hero"><div><h1>建议卡库</h1><div class="sub" title="monitor-advice/1 · 卡面落盘脱敏（NR-5/R2 豁免面：落盘为百分比与档位词，面板呈现态给原值）">卡面落盘脱敏（百分比与档位词）· 面板呈现态给原值</div></div>

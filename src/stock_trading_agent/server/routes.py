@@ -36,6 +36,7 @@ from stock_trading_agent.paper.tplus1 import available_lots
 from stock_trading_agent.server.panel import (
     render_advice_detail,
     render_advice_library,
+    render_alloc_form,
     render_audit,
     render_audit_archive,
     render_audit_transcript,
@@ -1104,6 +1105,89 @@ def panel_paper_ca_form(request: Request) -> HTMLResponse:
 
     view = _paper_view(request)
     return HTMLResponse(render_ca_form(has_positions=bool(view.get("positions"))))
+
+
+# --- allocation 导入（0.0.31：三批建仓主链路用户入口；06 Stage D 产物零格式发明） ---
+
+
+def _allocation_decide(request: Request, data: dict) -> dict:
+    """allocation.json → 三批建仓（sim.lock 内引擎直调；dup code 整批拒）。
+
+    决策 paper_allocation_imported payload 零价格零数量（NR-5：仅 date 与 code 列表）；
+    文件路径校验：存在 + .json 后缀 + ≤1MB（防误喂大文件；本地产品形态）。
+    """
+    import json as _json
+
+    layout = _layout(request)
+    runtime = _runtime(request)
+    if runtime is None:
+        raise HTTPException(status_code=503, detail="运行时未挂载")
+    path_str = str(data.get("file") or "").strip()
+    if not path_str:
+        raise HTTPException(status_code=422, detail="file 必填（allocation.json 路径）")
+    path = Path(path_str).expanduser()
+    if not path.is_file() or path.suffix != ".json" or path.stat().st_size > 1_048_576:
+        raise HTTPException(status_code=422, detail=f"文件不可用或非 .json（≤1MB）：{path_str}")
+    try:
+        alloc = _json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail=f"allocation 解析失败：{exc}") from exc
+    from stock_trading_agent.loop.monitor_events import market_today
+    from stock_trading_agent.paper.allocation import (
+        AllocationError,
+        import_allocation,
+        new_portfolio_from_allocation,
+        parse_allocation,
+    )
+
+    try:
+        rows = parse_allocation(alloc)
+    except AllocationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    date = str(data.get("date") or "").strip() or market_today()
+    with FileLock(layout.sim_lock):
+        portfolio = paper_ledger.load(layout.sim_portfolio_path)
+        try:
+            portfolio = (
+                new_portfolio_from_allocation(alloc, opened_date=date)
+                if portfolio is None
+                else import_allocation(portfolio, rows, opened_date=date)
+            )
+        except ValueError as exc:  # LedgerError/AllocationError 族
+            raise HTTPException(status_code=409, detail=f"整批拒绝（账本未变）：{exc}") from exc
+        paper_ledger.persist(portfolio, layout.sim_portfolio_path)
+    codes = [r.code for r in rows]
+    _record_decision(runtime, layout, "paper_allocation_imported", {"date": date, "codes": codes})
+    return {"ok": True, "date": date, "codes": codes}
+
+
+@router.post("/paper/allocation")
+def paper_allocation(payload: dict, request: Request) -> dict:
+    return _allocation_decide(request, payload)
+
+
+@router.post("/panel/paper/allocation")
+def panel_paper_allocation(
+    request: Request, file: str = Form(...), date: str = Form("")
+) -> HTMLResponse:
+    """htmx 表单变体：成功窄通知（落 #paper-alloc-result；④持仓表由 sse:paper 驱动重拉）。"""
+
+    import html as _html
+
+    resp = _allocation_decide(request, {"file": file, "date": date})
+    notice = (
+        f"已导入 {len(resp['codes'])} 只三批建仓（{resp['date']}；T1 批其后首个交易日判定，"
+        "持仓表刷新由事件驱动，最迟 180s）"
+    )
+    return HTMLResponse(f'<p class="ok">{_html.escape(notice)}</p>')
+
+
+@router.get("/panel/paper/alloc-form")
+def panel_paper_alloc_form(request: Request) -> HTMLResponse:
+    """④allocation 导入表单（load-only 外置容器，沿 ca-form 先例）。"""
+
+    portfolio = paper_ledger.load(_layout(request).sim_portfolio_path)
+    return HTMLResponse(render_alloc_form(has_ledger=portfolio is not None))
 
 
 @router.post("/panel/paper/confirm")

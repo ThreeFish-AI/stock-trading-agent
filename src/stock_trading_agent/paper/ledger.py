@@ -43,7 +43,10 @@ def apply_fill(
     if position is None:
         raise LedgerError(f"标的 {req.code} 不在账本（无仓位可落）")
 
-    notional = req.lots * position.board_lot * req.ref_price  # A 股 board_lot=100；HK 调用方注入
+    # 成交价口径（方案 §12）：引擎撮合请求按撮合价落账（fill_price：min(open,limit)/止损
+    # max|min(open,stop)±滑点）；事件适配请求无撮合（提示口径）回落参考价。旧行缺省 None 同回落。
+    price = req.fill_price if req.fill_price is not None else req.ref_price
+    notional = req.lots * position.board_lot * price  # A 股 board_lot=100；HK 调用方注入
     fees = calc_fees(position.market, req.side, notional)
 
     if req.side == "buy":
@@ -54,10 +57,10 @@ def apply_fill(
         )
         if tranche is None:
             raise LedgerError(f"标的无待成交批：{req.code} {req.tranche_leg}")
-        new_tranche = fill_tranche(tranche, filled_price=req.ref_price, filled_at=req.ts or _now())
+        new_tranche = fill_tranche(tranche, filled_price=price, filled_at=req.ts or _now())
         new_tranches = [new_tranche if t is tranche else t for t in position.tranches]
         total_lots = position.lots + req.lots
-        new_cost = (position.avg_cost * position.lots + req.ref_price * req.lots) / total_lots
+        new_cost = (position.avg_cost * position.lots + price * req.lots) / total_lots
         cash = portfolio.cash - notional - fees
         if cash < 0:
             raise LedgerError(f"现金不足：{portfolio.cash} < {notional + fees:.2f}")
@@ -87,7 +90,7 @@ def apply_fill(
         code=req.code,
         side=req.side,
         lots=req.lots,
-        price=req.ref_price,
+        price=price,
         fees=fees,
         ts=req.ts or _now(),
         tranche_ref=tranche_ref,

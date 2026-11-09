@@ -183,7 +183,8 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             f'<td title="{_esc(ev.get("rule", ""))}">{_esc(ev.get("rule", ""))}</td>'
             f'<td class="num">{_fmt(price)}</td>'
             f"{dist_td}"
-            f'<td><span class="lv lv0">{_esc(ev.get("level", "T0"))}</span></td>'
+            f'<td><span class="lv {_lv_class(ev.get("level", "T0"))}"'
+            f">{_esc(ev.get('level', 'T0'))}</span></td>"
             f"<td>{riskchip or '—'}</td>"
             f'<td title="{_esc(review)}">{_esc(review or "—")}</td>'
             f'<td title="{_esc(suppress)}">{_esc(suppress or "—")}</td>'
@@ -782,6 +783,11 @@ def _ts_short(ts: str) -> str:
         return str(ts)
 
 
+def _lv_class(level: str) -> str:
+    """事件梯 T 级配色（图 2-1：机械/刷新/需人确认分色；lv1/lv2 样式 index.html 已备）。"""
+    return {"T0": "lv0", "T1": "lv1", "T2": "lv2"}.get(str(level or "T0"), "lv0")
+
+
 def render_event_feed(payload: dict) -> str:
     """①今日事件流：时间轴形态（T 徽章/mech_risk riskchip/风险行高亮/现价与距线）。
 
@@ -819,7 +825,8 @@ def render_event_feed(payload: dict) -> str:
             f'<div class="ev-name"><span class="ev-stock"><span class="code num">'
             f"{_esc(ev.get('code', ''))}</span> {_esc(ev.get('rule', ''))}</span>"
             f'<span class="ev-top">{_esc(price_txt)} {riskchip}'
-            f'<span class="lv lv0">{_esc(ev.get("level", "T0"))}</span>'
+            f'<span class="lv {_lv_class(ev.get("level", "T0"))}"'
+            f">{_esc(ev.get('level', 'T0'))}</span>"
             f"{_esc(review_txt)}</span></div></div></a>"
         )
     return "".join(rows) + f'<span id="ov-ev-count" hx-swap-oob="true">{len(events)} 条</span>'
@@ -1612,6 +1619,41 @@ def render_ca_form(*, has_positions: bool = True) -> str:
             f"{form}</details>"
         )
     return _card("公司行动馈送", body, meta="手动登记送转/分红")
+
+
+def render_alloc_form(*, has_ledger: bool) -> str:
+    """④allocation 导入表单（0.0.31：三批建仓主链路用户入口；06 Stage D 产物零格式发明）。
+
+    load-only 外置容器（沿 ca-form 0.0.24 先例）；文件路径为本机产品形态（与报告列表同源）。
+    提交落点 #paper-alloc-result；成功窄通知 + SSE paper 事件驱动 #paper 重拉。
+    """
+    form = (
+        '<form class="frm" hx-post="/api/panel/paper/allocation" '
+        'hx-target="#paper-alloc-result" hx-swap="innerHTML" hx-disabled-elt="find button" '
+        "hx-confirm='导入 allocation 建仓（新建三批 pending，确认成交前不改现金）？'>"
+        '<div class="frm-row">'
+        '<label for="al-file" title="vibe-stock 批量精选产物 portfolio/allocation.json'
+        '（rows：code/price/stop/entry_ref/target1/hi20/lots/tranches 三批手数）">文件路径</label>'
+        '<input class="inp" id="al-file" name="file" required '
+        'placeholder="/Users/you/.vibe-stock/reports/_scans/…/portfolio/allocation.json"></div>'
+        '<div class="frm-row">'
+        '<label for="al-date" title="导入日（YYYY-MM-DD）；缺省市场今日。T1 开盘批在其后'
+        '首个交易日判定（开盘 ≤ +2% 按开盘价成交、跳空转限价 5 日 GTC）">导入日</label>'
+        '<input class="inp num" id="al-date" name="date" pattern="\\d{4}-\\d{2}-\\d{2}" '
+        'placeholder="缺省市场今日"></div>'
+        '<div class="frm-row"><label></label>'
+        '<button class="btn btn-pri" type="submit">导入建仓</button></div>'
+        '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内 open_position）；dup code 整批拒；'
+        '决策 payload 零价格零数量（NR-5）">账本缺席时以 allocation budget 起始建账 · '
+        "dup code 整批拒 · 决策 payload 零敏感量</p></form>"
+        '<div id="paper-alloc-result"></div>'
+    )
+    hint = "追加建仓（dup code 整批拒）" if has_ledger else "以 allocation budget 起始新建账本"
+    return _card(
+        "allocation 导入",
+        form,
+        meta=f"三批建仓入口 · {hint}",
+    )
 
 
 def _ca_basis(r: dict) -> str:

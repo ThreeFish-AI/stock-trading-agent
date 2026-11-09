@@ -1000,3 +1000,147 @@ def upgrade_gate_baseline_present():
     hidden = {"--max-turns"}
     missing = [f for f in watch_flags() - hidden if f not in snap.flags]
     assert not missing, f"基线缺在用旗标：{missing}"
+
+
+@_case("paper.eod.bars_and_plan")
+def paper_eod_bars_and_plan():
+    """EOD 驱动纯函数：ticks 末轮 bar 推导（OHLC 累计口径）+ 触发判定矩阵。"""
+    import datetime as _dt
+    import tempfile as _tf
+
+    from stock_trading_agent.loop.paper_eod import derive_day_bars, plan_paper_eod
+
+    with _tf.TemporaryDirectory() as td:
+        f = Path(td) / "d.jsonl"
+        rows = [
+            {
+                "code": "600519",
+                "price": 10.0,
+                "open": 9.9,
+                "high": 10.1,
+                "low": 9.8,
+                "prev_close": 9.95,
+                "ts_utc8": "2026-11-10T09:45:00+08:00",
+            },
+            "{broken",
+            {
+                "code": "600519",
+                "price": 10.3,
+                "open": 9.9,
+                "high": 10.4,
+                "low": 9.8,
+                "prev_close": 9.95,
+                "ts_utc8": "2026-11-10T14:57:00+08:00",
+            },
+        ]
+        f.write_text(
+            "\n".join(json.dumps(r) if isinstance(r, dict) else r for r in rows), encoding="utf-8"
+        )
+        bars = derive_day_bars(f, ["600519", "00700"])
+        assert bars["600519"].close == 10.3 and bars["600519"].high == 10.4
+        assert bars["600519"].date == "2026-11-10" and "00700" not in bars
+    tz8 = _dt.timezone(_dt.timedelta(hours=8))  # 市场钟面（Asia/Shanghai）
+    local = _dt.datetime(2026, 11, 10, 16, 6, tzinfo=tz8)
+    assert plan_paper_eod(local, has_portfolio=True, ticks_exists=True, already_ran=False) is None
+    assert (
+        plan_paper_eod(local, has_portfolio=True, ticks_exists=False, already_ran=False)
+        == "no_ticks"
+    )
+    morning = _dt.datetime(2026, 11, 10, 10, 0, tzinfo=tz8)
+    assert (
+        plan_paper_eod(morning, has_portfolio=True, ticks_exists=True, already_ran=False)
+        == "before_window"
+    )
+
+
+@_case("paper.eod.t1_t3_judgement")
+def paper_eod_t1_t3_judgement():
+    """T1 开盘批一次性判定（跳空转限价/开盘成交）+ T3 复合触发（站上/回踩/补足）。"""
+    from stock_trading_agent.paper.batches import sync_position
+    from stock_trading_agent.paper.engine import judge_t1_open, judge_t3
+    from stock_trading_agent.paper.fills import Bar
+    from stock_trading_agent.paper.model import Position, Tranche
+
+    pos = Position(
+        code="601919", market="A", target1=16.87, t3_ma20=16.279, opened_date="2026-11-10"
+    )
+    t1 = Tranche(leg="T1_open", lots=2, ref_price=16.67)
+    t3 = Tranche(leg="T3_trigger", lots=2, ref_price=16.279)
+    sync_position(pos)
+    bar_ok = Bar(date="2026-11-11", open=16.4, high=16.9, low=16.05, close=16.5, prev_close=16.67)
+    v = judge_t1_open(pos, t1, bar_ok)
+    assert v.request is not None and v.request.fill_price == 16.4
+    bar_gap = Bar(date="2026-11-11", open=17.2, high=17.4, low=17.0, close=17.1, prev_close=16.67)
+    v2 = judge_t1_open(pos, t1, bar_gap)
+    assert v2.request is None and v2.convert_limit == round(16.67 * 1.02, 2)
+    assert v2.convert_expires == "2026-11-18"
+    # T3：站上 target1 → 收盘成交；回踩 → ma20 夹入区间；无触发 → 空
+    above = judge_t3(pos, t3, bar_gap, window_end="2026-12-08")
+    assert above.request is not None and above.request.fill_price == 17.1
+    pull = judge_t3(pos, t3, bar_ok, window_end="2026-12-08")
+    assert pull.request is not None and pull.request.fill_price == 16.279
+    quiet = Bar(date="2026-11-11", open=16.6, high=16.7, low=16.55, close=16.62, prev_close=16.67)
+    idle = judge_t3(pos, t3, quiet, window_end="2026-12-08")
+    assert idle.request is None
+    fallback = judge_t3(pos, t3, quiet, window_end="2026-11-11")
+    assert fallback.request is not None and fallback.request.fill_price == 16.62
+
+
+@_case("paper.allocation.import_rows")
+def paper_allocation_import_rows():
+    """allocation 解析与三批建仓（06 Stage D：市场判定/手数守恒/零手批不建）。"""
+    from stock_trading_agent.paper.allocation import (
+        AllocationError,
+        new_portfolio_from_allocation,
+        parse_allocation,
+    )
+
+    alloc = {
+        "budget": 100_000.0,
+        "rows": [
+            {
+                "code": "601919",
+                "price": 16.67,
+                "stop": 15.84,
+                "entry_ref": 16.17,
+                "target1": 16.87,
+                "ma20": 16.279,
+                "lots": 6,
+                "tranches": {"T1_open": 2, "T2_limit_entryref": 2, "T3_trigger": 2},
+            },
+            {
+                "code": "00700",
+                "price": 420.0,
+                "stop": 400.0,
+                "entry_ref": 415.0,
+                "target1": 460.0,
+                "ma20": 430.0,
+                "lots": 1,
+                "tranches": {"T1_open": 1, "T2_limit_entryref": 0, "T3_trigger": 0},
+            },
+        ],
+    }
+    rows = parse_allocation(alloc)
+    assert [r.market for r in rows] == ["A", "HK"]
+    pf = new_portfolio_from_allocation(alloc, opened_date="2026-11-10")
+    assert pf.cash == 100_000.0
+    a = pf.position("601919")
+    assert [t.leg for t in a.tranches] == ["T1_open", "T2_limit", "T3_trigger"]
+    assert a.opened_date == "2026-11-10" and a.t3_ma20 == 16.279
+    hk = pf.position("00700")
+    assert [t.leg for t in hk.tranches] == ["T1_open"]  # 单手股单段建满（06）
+    try:
+        parse_allocation(
+            {
+                "rows": [
+                    dict(
+                        alloc["rows"][0],
+                        lots=6,
+                        tranches={"T1_open": 3, "T2_limit_entryref": 2, "T3_trigger": 2},
+                    )
+                ]
+            }
+        )
+        raise AssertionError("手数不守恒未拒")
+    except AllocationError:
+        pass

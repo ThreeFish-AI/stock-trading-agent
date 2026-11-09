@@ -140,6 +140,7 @@ class LoopRuntime:
         self.chain_error: str | None = None  # strict load 断链时承载降级原因（面板可见）
         self._last_leak_scan = 0.0
         self._last_auto_briefing_scan = 0.0
+        self._last_paper_eod_scan = 0.0
         self._pgrep_runner = None  # 测试注入位（None=真跑 pgrep）
         self._stop = threading.Event()
         self._worker_thread: threading.Thread | None = None
@@ -604,6 +605,16 @@ class LoopRuntime:
         return next((t for t in queue.tasks if t.task_id == task.task_id), task)
 
     # --- briefing 自动触发（0.0.18 早晚分卡同批；L2 闸内、universe 全码、每股每槽每日一次） ---
+    def _maybe_paper_eod(self, now: _dt.datetime | None = None):
+        """paper 日终驱动钩子（零 LLM：无 L2 闸，与 T1 同源；幂等锚见 paper_eod.py）。
+
+        worker 空转 60s 节流检查；窗口（16:05+ 市场钟面）内 ticks 在场即跑一次，
+        决策留痕经 _decide（调用序 sim→decisions，§④ 纪律——run_paper_eod 内保证）。
+        """
+        from stock_trading_agent.loop.paper_eod import run_paper_eod
+
+        run_paper_eod(self.layout, now=now, decide=self._decide)
+
     def _maybe_auto_briefing(self, now: _dt.datetime | None = None) -> list[TaskRecord]:
         """槽窗内为 universe 全码入队 briefing_morning/evening（判据纯函数见 briefing.py）。
 
@@ -714,6 +725,12 @@ class LoopRuntime:
                     self._last_auto_briefing_scan = _time.monotonic()
                     try:
                         self._maybe_auto_briefing()
+                    except Exception:
+                        traceback.print_exc()
+                if _time.monotonic() - self._last_paper_eod_scan > 60:  # paper 日终驱动（0.0.31）
+                    self._last_paper_eod_scan = _time.monotonic()
+                    try:
+                        self._maybe_paper_eod()
                     except Exception:
                         traceback.print_exc()
                 self._stop.wait(self.poll_interval_s)
