@@ -107,13 +107,32 @@ class TestLedgerApply:
         pf = apply_fill(self.portfolio(), self.confirmed_req())
         pos = pf.position("600519")
         assert pos.status == "holding" and pos.lots == 1 and pos.tranches[0].status == "filled"
-        assert pos.avg_cost == pytest.approx(9.6)  # 成交价 = ref_price（触价确认价）
+        assert pos.avg_cost == pytest.approx(9.6)  # 成交价 = 撮合价（夹具 fill 价 9.6）
         assert len(pf.operations) == 1 and pf.operations[0].tranche_ref == "T2_limit"
         notional = 1 * 100 * 9.6
         from stock_trading_agent.paper.fees import calc_fees
 
         expect_cash = 100_000 - notional - calc_fees("A", "buy", notional)
         assert pf.cash == pytest.approx(expect_cash, abs=0.01)
+
+    def test_fill_price_beats_ref_price_on_ledger(self):
+        """0.0.31 成交价口径（方案 §12）：落账用撮合价 fill_price，非提示参考价。
+
+        跳空低开日：T2 限价 9.6 撮合于 min(open=9.2, limit)=9.2——确认后 notional/
+        filled_price/avg_cost 均按 9.2，参考价 9.6 只留在请求不改账。
+        """
+        from dataclasses import replace
+
+        from stock_trading_agent.paper.fees import calc_fees
+
+        req = replace(self.confirmed_req(), fill_price=9.2)
+        pf = apply_fill(self.portfolio(), req)
+        pos = pf.position("600519")
+        assert pos.tranches[0].filled_price == 9.2
+        assert pos.avg_cost == pytest.approx(9.2, abs=0.001)
+        assert pf.operations[-1].price == 9.2
+        fees = calc_fees("A", "buy", 9.2 * 100)
+        assert pf.cash == pytest.approx(100_000 - 920.0 - fees, abs=0.01)
 
     def test_cash_insufficient_rejected(self):
         from stock_trading_agent.paper.model import SimPortfolio as SP
@@ -160,10 +179,14 @@ class TestLedgerApply:
         path.unlink(missing_ok=True)
 
     def _sell_req(self, ref: float, lots: int, *, next_day: bool = True):
-        """卖出请求（默认次日 bar：T+1 口径下当日买入不可卖，13-paper §③）。"""
+        """卖出请求（默认次日 bar：T+1 口径下当日买入不可卖，13-paper §③）。
+
+        fill_price=None：卖出按事件适配形态走参考价口径（从买成交请求 replace 出的
+        请求不得残留买侧撮合价——0.0.31 fill_price 语义）。
+        """
         from dataclasses import replace
 
-        req = replace(self.confirmed_req(), side="sell", ref_price=ref, lots=lots)
+        req = replace(self.confirmed_req(), side="sell", ref_price=ref, lots=lots, fill_price=None)
         if next_day:
             date = "2026-11-08"  # 建仓 bar 2026-11-07 的次日
             req = replace(

@@ -15,7 +15,12 @@ REQUEST_STATES = ("pending", "confirmed", "rejected")
 
 @dataclass(frozen=True)
 class PendingFillRequest:
-    """一条待确认成交请求（触价产出；state=pending 等人工）。"""
+    """一条待确认成交请求（触价产出；state=pending 等人工）。
+
+    fill_price：撮合价（严格穿价 min(open,limit) / 止损 max/min(open,stop)±滑点，方案 §12）；
+    引擎撮合产出的请求必带；t2_pending_fill 事件适配的请求不带（提示口径无撮合，确认时按
+    参考价语义人工核对，07 两把尺）。落账优先 fill_price（ledger.apply_fill，13-paper §⑤）。
+    """
 
     request_id: str
     code: str
@@ -26,6 +31,7 @@ class PendingFillRequest:
     bar: Bar
     ts: str
     state: str = "pending"
+    fill_price: float | None = None
 
 
 class ConfirmError(ValueError):
@@ -33,7 +39,7 @@ class ConfirmError(ValueError):
 
 
 def request_from_fill(fill: Fill, request_id: str, ref_price: float, ts: str) -> PendingFillRequest:
-    """撮合出的候选成交 → 待确认请求（未确认前不进账本）。"""
+    """撮合出的候选成交 → 待确认请求（未确认前不进账本；fill_price=撮合价 §12 口径）。"""
     return PendingFillRequest(
         request_id=request_id,
         code=fill.code,
@@ -43,6 +49,7 @@ def request_from_fill(fill: Fill, request_id: str, ref_price: float, ts: str) ->
         ref_price=ref_price,
         bar=Bar(date=fill.date, open=fill.price, high=fill.price, low=fill.price, close=fill.price),
         ts=ts,
+        fill_price=fill.price,
     )
 
 

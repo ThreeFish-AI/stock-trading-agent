@@ -29,6 +29,9 @@ class Tranche(BaseModel):
     filled_price: float | None = None
     filled_at: str | None = None
     expires_at: str | None = None  # GTC 窗口终点（T1 5 日 / T2 10 日，06 口径）
+    # 本仓扩展（13-paper §②）：批判定戳（T1 开盘批=一次性判定日；T3 触发批=触发/补足日；
+    # None=待判定。日历无关判据——ticks 在场即交易日，EOD 只在交易日跑）
+    judged_date: str | None = None
 
 
 class Position(BaseModel):
@@ -48,6 +51,12 @@ class Position(BaseModel):
     board_lot: int = Field(default=100, ge=1)
     last_price: float | None = None
     last_price_date: str | None = None
+    # 本仓扩展（13-paper §②）：allocation 导入日（YYYY-MM-DD；T1 开盘批「次日交易日判定」
+    # 与 T3 触发窗（20 交易日）的锚——EOD 驱动日 > opened_date 且批未盖戳即判；
+    # 旧文件缺省 None=不判，防误触发）
+    opened_date: str | None = None
+    # T3 触发锚（06 Stage D「回踩 MA20±1%」；站上目标1 用 target1）——allocation 导入注入
+    t3_ma20: float | None = None
 
 
 class Operation(BaseModel):

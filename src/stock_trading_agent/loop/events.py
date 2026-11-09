@@ -1,6 +1,7 @@
 """① 触发源：事件信封 + dedup_key 幂等键 + 17:30–18:10 禁跑窗 + 锁前置检查（方案 §10①）。
 
-三类触发源：panel（面板手动）/ launchd（槽完成事件）/ monitor（M3 盯盘自动接管，默认关）。
+三类触发路径：panel（面板手动）/ launchd（槽台账经 watchfiles 监听，入队 source=monitor）/
+monitor（盯盘事件自动触发：auto-T2/T1/早晚 briefing，0.0.9 起非 M3 预留）。
 """
 
 from __future__ import annotations
@@ -8,8 +9,6 @@ from __future__ import annotations
 import datetime as _dt
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
-
-SOURCES = ("panel", "launchd", "monitor")
 
 # 17:30–18:10 禁跑 report（vibe-stock 收盘评估窗 references/05 I-005；锁纪律全继承，方案 §14）。
 # 窗口为市场本地钟面（launchd 17:35/18:05 槽位均 Asia/Shanghai），判定前须换算。

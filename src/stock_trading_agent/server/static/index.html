@@ -572,8 +572,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="hero"><div><h1>模拟盘</h1><div class="sub">paper 引擎 · 严格穿价撮合 + 静态费用栈 + 逐笔人工确认 · 撮合零 LLM</div></div>
 <div class="hero-r"><span class="metachip">台账 append-only · hash 链</span></div></div>
 <div class="nr2"><b>NR-2</b> 模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
-<div class="screen"><!-- 0.0.31 一屏化：#paper fragment 内部分签（账户持仓|逐笔与曲线|公司行动），CA 表单折叠条常驻 -->
+<div class="screen"><!-- 0.0.31 一屏化：#paper fragment 内部分签（账户持仓|逐笔与曲线|公司行动），CA 表单折叠条常驻；0.0.32 增 allocation 导入折叠条 -->
 <div id="paper" class="flex-fill" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div id="paper-alloc" hx-get="/api/panel/paper/alloc-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div id="paper-ca" hx-get="/api/panel/paper/ca-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 </div></section>
 <section class="page" id="page-advice" data-page="advice">

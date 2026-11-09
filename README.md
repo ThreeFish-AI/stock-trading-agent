@@ -37,6 +37,10 @@ uv run stock-trading-agent selftest   # 仓级 selftest（与 pytest 同源判�
 uv run stock-trading-agent serve      # 本地面板（127.0.0.1:8730：Loop 运行时 + htmx 轮询，dry-run 通道）
 STA_ALLOW_REAL_CC=1 uv run stock-trading-agent probe   # 真实 CC 通道探针（不带 env 即 dry-run 报告）
 uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI 消费一单（与 serve 抢 daemon 锁）
+uv run stock-trading-agent paper-import --file ~/.vibe-stock/reports/_scans/<日期-组>/portfolio/allocation.json  # allocation 导入三批建仓
+uv run stock-trading-agent paper-eod        # paper 日终驱动（--date 补跑；serve 内 16:05+ 市场钟面自动）
+uv run stock-trading-agent archive-state    # 六桶状态归档（默认 dry-run，--apply 落盘；见 12-orchestration §⑯）
+uv run stock-trading-agent repair-decisions # 决策链断链一次性修复（保行重链+备份）
 ```
 
 面板①②③④⑤⑥⑦全页点亮（SSE 实时流 + load 首绘 + 180s 轮询兜底；④模拟盘确认队列+权益曲线+绩效三格、⑤建议卡库+详情四块、⑥后验战绩、盘前晨报/盘后复盘行动项卡；本地 vendor 零 CDN）；键盘可达（tablist + :focus-visible）与全局错误提示条（数据通道异常可见）。T1 自动刷新（零 LLM 消费 monitor 台账 → 收盘后补跑出新 context-pack）随面板进程常驻运行。真实 CC 通道（headless CLI 子进程：超时 SIGINT→SIGKILL 状态机、stream-json 解析、audit 归档）经 `STA_ALLOW_REAL_CC=1` 放行，默认 dry-run。
@@ -45,7 +49,7 @@ uv run stock-trading-agent run-once --kind diagnose_quick --code 600519  # CLI �
 
 ```bash
 mkdir -p ~/.vibe-stock/agent/logs
-sed -e "s|__UV_PATH__|$(command -v uv)|g" -e "s|__REPO_PATH__|$(pwd)|g" -e "s|__HOME__|$HOME|g" \
+sed -e "s|__REPO_PATH__|$(pwd)|g" -e "s|__HOME__|$HOME|g" \
     ops/launchd/com.threefish.stocktrading.agent.plist > ~/Library/LaunchAgents/com.threefish.stocktrading.agent.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktrading.agent.plist
 ```
@@ -61,15 +65,20 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.threefish.stocktradi
 │   ├── research/           # 调研报告与产品技术方案（自 vibe-stock 0.0.28 迁入）
 │   ├── diagrams/main-agent/  # 四张架构图 archify A 档四件套
 │   ├── prototypes/main-agent/  # 四页产品原型（自包含 HTML + 整页 PNG，全合成数据）
-│   ├── specs/              # 实施规约：12-orchestration.md + 13-paper.md（随实施 PR 增节）
-│   ├── ops/launchd/        # 第四槽 LaunchAgent 模板（面板守护）
+│   ├── specs/              # 实施规约：12-orchestration.md + 13-paper.md + 14-design-system.md
+│   ├── ops/                # 运维文档：launchd 安装、升级 runbook、交易日验证、评审记录
 │   └── .agents/            # knowledge-map（文档统一入口）+ issue.md
+├── ops/                    # 运维件（与 src/ 同级）：
+│   ├── launchd/            #   第四槽 LaunchAgent 模板（面板守护）+ d8 采样槽模板
+│   ├── upgrade-gate/       #   CLI 升级门禁基线（pinned.json + 快照族）
+│   ├── state_probe.py      #   状态根只读巡检　┆ upgrade_changelog.py 网络层（仅 ops/ 有网络）
+│   └── d6_sdk_compare.py / d8_probe.py  # SDK 对照与 D8 采样脚本
 ├── src/stock_trading_agent/
-│   ├── cc_client/          # CCRequest/CCClient 契约、CLI 旗标构建、dry-run 通道
+│   ├── cc_client/          # CCRequest/CCClient 契约、CLI 旗标构建、dry-run 与真实 headless 通道（STA_ALLOW_REAL_CC=1 门）
 │   ├── loop/               # 意图路由（YAML 零 LLM）、NR-3 断言器、Loop 六段、T1 刷新链、
-│   │                       # monitor 监听（watchfiles）、LoopRuntime 消费者（daemon/queue 双锁）
+│   │                       # monitor 监听（watchfiles）、paper 日终驱动、LoopRuntime 消费者（daemon/queue 双锁）
 │   ├── state/              # ~/.vibe-stock/agent/ 状态布局、原子写、hash 链 decision log
-│   ├── paper/              # 模拟盘引擎：批状态机、严格穿价撮合、费用栈、逐笔确认
+│   ├── paper/              # 模拟盘引擎：批状态机、严格穿价撮合、费用栈、逐笔确认、allocation 导入
 │   ├── budget/             # 预算闸（默认关）
 │   └── server/             # FastAPI 本地面板：只读态 + 提交半边 + monitor 投影 + htmx fragment
 ├── tests/                  # unit（纯函数）+ integration（tmp 状态目录端到端）

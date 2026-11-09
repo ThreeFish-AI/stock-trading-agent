@@ -11,7 +11,7 @@
 ## ② 数据模型与扩展键登记
 
 07 P3 schema 的 pydantic 镜像（model.py）为加载/落盘唯一形态；扩展键三件登记义务（docstring 列举 + 本节登记 + 默认值保旧文件可载入，version 不动、版本闸拒未知版本）：
-Tranche.limit_price / expires_at、Operation.fees / trade_date（T+1 推导锚，旧行回落 ts 钟面日）、Position.board_lot / last_price / last_price_date（权益标记）、SimPortfolio.equity_history / corporate_actions。
+Tranche.limit_price / expires_at / judged_date（批判定戳：T1 开盘批一次性判定日、T3 触发批触发/补足日）、Operation.fees / trade_date（T+1 推导锚，旧行回落 ts 钟面日）、Position.board_lot / last_price / last_price_date（权益标记）/ opened_date（allocation 导入日，T1「次日交易日」与 T3 触发窗的锚）/ t3_ma20（T3 回踩锚）、SimPortfolio.equity_history / corporate_actions；确认流 dataclass 另有 PendingFillRequest.fill_price（撮合价，§⑧）。
 
 ## ③ 撮合与 A 股市场规则
 
@@ -42,6 +42,18 @@ Tranche.limit_price / expires_at、Operation.fees / trade_date（T+1 推导锚�
 
 ## ⑦ 口径纪律与门禁
 
-- ESTIMATED 标注族：fees / slippage / rules（幅度常量与排队份额建模）/ corporate_actions（税档与现金找零）——自家成交样本校准后固化，判据只许收严。
+- ESTIMATED 标注族：fees / slippage / rules（幅度常量与排队份额建模）/ corporate_actions（税档与现金找零）/ **bar 源与 GTC 窗换算（§⑧，0.0.32）**——自家成交样本校准后固化，判据只许收严。
 - 费用数值锚测试（test_paper_fees_slippage）不放宽；T+1 破旧测试改写已登记（同日买卖 → 次日 bar + 新增当日卖拒用例）。
-- selftest 义务：T+1/板价/一字板/税档/整手/权益基线/队列往返 与 pytest 同源（判据只收严）。
+- selftest 义务：T+1/板价/一字板/税档/整手/权益基线/队列往返/**EOD bar 推导与 T1/T3 判定/allocation 导入** 与 pytest 同源（判据只收严）。
+
+## ⑧ 日终驱动与 allocation 导入裁定（0.0.32 落地；issue #37 补齐驱动面缺口）
+
+- **bar 源口径（ESTIMATED）**：`monitor/ticks/<date>.jsonl` 每 code **末轮快照**为当日 bar——ticks 行自带 open/high/low/prev_close（行情源**全日累计**值，非轮询窗极值），price=末轮现价（收盘近似）；微差 = A 股末轮 14:57 vs 15:00 收盘竞价（HK 15:57 vs 16:00），登 ESTIMATED 待自家样本校准。缺席 code（停牌/未入盯盘宇宙）宁缺毋猜，`skipped_codes` 留痕于 paper_eod_done 决策。
+- **驱动形态**：`loop/paper_eod.py` `run_paper_eod`（sim.lock 内 load→bars→evaluate_day+T1/T3 判定→请求入队/GTC 执行/权益点→persist；调用序 sim→decisions §④ 纪律）双入口——serve worker 60s 节流自动（`_maybe_paper_eod`，零 LLM 无 L2 闸、与 T1 同源）+ CLI `paper-eod [--date]`（手动/补跑）。窗口=市场钟面 16:05–23:59（双市收盘后缓冲）；幂等锚=决策台账 `paper_eod_done`/`paper_eod_skipped` 当日一条（容错扫描坏行；窗前静默不留痕、窗内无 ticks 留痕即当日锚）。
+- **T1 开盘批一次性判定**（`engine.judge_t1_open`，evaluate_day 不驱动 T1）：导入后首个驱动日（`opened_date` 锚 + `judged_date` 未盖戳；「次日交易日」日历无关判据——ticks 在场即交易日）；开盘 ≤ 信号日收盘×1.02 → 开盘价成交产请求（fill_price=open）；跳空 >+2% → 转限价 ×1.02、GTC +7 日历日≈5 交易日（ESTIMATED）；闸拒防御位同转限价保守处置。判定即盖戳 `judged_date`。
+- **T3 触发批复合判定**（`engine.judge_t3`，evaluate_day 不驱动 T3；06「站上目标1 或回踩 MA20±1%，20 日内未触发按收盘补足」）：①close > target1 → 收盘价成交；②low ≤ t3_ma20×1.01 ∧ close ≥ t3_ma20×0.99 → 成交价 = ma20 夹入当日 [low, high]（band 触及近似，ESTIMATED——日 K 内触达次序不可知）；③窗口终点（opened+28 日历日≈20 交易日，ESTIMATED）未触发 → 按收盘补足。触发/补足即盖戳；未触发不盖、逐日续判。t3_ma20/target1 缺席（旧仓位）恒不触发（宁缺毋猜）。
+- **T2 限价批 GTC**：allocation 导入即设 `expires_at`=导入日+14 日历日≈10 交易日（ESTIMATED）；到期由 evaluate_day 收集、驱动层 `expire_tranche` 执行 + `paper_tranche_expired` 决策留痕。
+- **allocation 导入**（`paper/allocation.py`，06 Stage D 产物零格式发明）：CLI `paper-import --file <allocation.json>` 与面板④「allocation 导入」表单（`POST /api/paper/allocation`（+htmx 变体）、load-only `alloc-form`，沿 ca-form 0.0.24 先例）；逐行建三批（T1 ref=信号日收盘、T2 ref=limit=entry_ref、T3 ref=ma20 回踩锚；市场判定 6 位 A/5 位 HK 宁拒不猜；三价单调与手数守恒校验；单手股单段建满）；账本缺席以 allocation budget 起始新建、已有账本追加；dup code **整批拒**（先全量预检防半批导入）；确认前不动现金。决策 `paper_allocation_imported` payload 恰 `{date, codes}`（零价格零数量，NR-5）。
+- **撮合价透传落账**（方案 §12 成交价口径收口）：`PendingFillRequest.fill_price`（引擎撮合请求必带=min(open,limit)/止损 max|min(open,stop)±滑点；t2_pending_fill 事件适配请求不带——提示口径无撮合，确认按参考价语义人工核对）；`ledger.apply_fill` 落账优先 fill_price（notional/filled_price/avg_cost/Operation.price 四面），旧行缺省 None 回落 ref_price。
+- **决策 kind 族新增**：`paper_eod_done`（计数与 skipped_codes，零价格零数量）/ `paper_eod_skipped`（reason_code）/ `paper_tranche_expired` {date, code, leg} / `paper_t1_converted` {date, n} / `paper_allocation_imported` {date, codes}；既有 `paper_pending_fill` 增 date 键。
+- **呈现态**：④持仓表/确认队列自然消费新台账（SSE paper 事件驱动重拉）；确认队列呈现撮合价与参考价两口径（呈现态豁免面 §⑥）。
