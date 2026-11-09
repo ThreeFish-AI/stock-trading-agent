@@ -246,12 +246,14 @@ def reports(request: Request) -> dict:
             files = sorted(p.name for p in d.glob("*.md"))
             if not files:
                 continue
+            # latest 排除 index.md（字典序恒压日期名——0.0.24 修「最新报告恒 index.md」）
+            dated = [p for p in files if p != "index.md"] or ["index.md"]
             out.append(
                 {
                     "code": code,
                     "market": market,
                     "dir": d.name,
-                    "latest": files[-1],
+                    "latest": dated[-1],
                     "count": len(files),
                     "files": files[-10:],
                 }
@@ -407,15 +409,16 @@ def panel_phase(request: Request) -> HTMLResponse:
 
 @router.get("/panel/topbar")
 def panel_topbar(request: Request) -> HTMLResponse:
-    """①页 hero 右：刷新时刻 + 盘态。"""
+    """①页 hero 右：刷新时刻 + 事件/待办计数带（盘态唯一呈现源=顶栏，0.0.24 去重）。"""
     import datetime as dt
 
-    from stock_trading_agent.server.panel import render_phase_chip
-    from stock_trading_agent.server.panel_data import market_phase
-
     now = dt.datetime.now(tz=dt.UTC).astimezone(dt.timezone(dt.timedelta(hours=8)))
-    chip = render_phase_chip(market_phase())
-    return HTMLResponse(f'<span class="metachip">刷新 {now:%H:%M:%S} · 180s 轮询</span> {chip}')
+    events = _monitor_events_payload(request, date=None, tail=50).get("events") or []
+    todo_items = todos(request).get("todos") or []
+    return HTMLResponse(
+        f'<span class="metachip">刷新 {now:%H:%M:%S} · 180s 轮询</span>'
+        f'<span class="metachip">事件 {len(events)} · 待办 {len(todo_items)}</span>'
+    )
 
 
 @router.get("/panel/signals")
@@ -558,11 +561,30 @@ def panel_dgmeta(request: Request) -> HTMLResponse:
     )
 
 
+def _chain_state(request: Request) -> bool | None:
+    """链校验态（panel_audit 与 aumeta 共源；DecisionChainError 降级 False）。"""
+
+    from stock_trading_agent.state.decisions import DecisionLog
+
+    try:
+        log = DecisionLog.load(_layout(request).decisions_path)
+        return bool(log.verify_chain())
+    except DecisionChainError:
+        return False
+
+
 @router.get("/panel/aumeta")
 def panel_aumeta(request: Request) -> HTMLResponse:
+    """⑦页 hero 右：hash 链 head + 链校验态 chip（0.0.24 与台账卡首摘要联动）。"""
     lines = decisions(request, tail=1)
     head = (lines[-1].get("hash", "")[:12] + "…") if lines else "空链"
-    return HTMLResponse(f'<span class="metachip">hash 链 head {head}</span>')
+    chain_ok = _chain_state(request)
+    chain_chip = (
+        '<span class="metachip">链校验 通过</span>'
+        if chain_ok
+        else '<span class="riskchip">链校验 失败</span>'
+    )
+    return HTMLResponse(f'<span class="metachip">hash 链 head {head}</span>{chain_chip}')
 
 
 @router.get("/panel/dgform")
@@ -1090,8 +1112,12 @@ def panel_paper_corporate_action(
     ratio_den: str = Form(""),
     per_share_cash: str = Form(""),
 ) -> HTMLResponse:
-    """htmx 表单变体：空串可选字段归一 None 后走同一闸，成功回④页 fragment。"""
-    from stock_trading_agent.server.panel import render_paper_fragment
+    """htmx 表单变体：空串可选字段归一 None 后走同一闸。
+
+    0.0.24 成功回窄通知卡（落 #paper-ca-result）——④三表刷新由 sse:paper/sse:multi
+    驱动 #paper 重拉（写 sim-portfolio.json 必发事件；SSE 断连 180s 轮询兜底）。
+    """
+    import html as _html
 
     data = {
         "kind": kind,
@@ -1103,12 +1129,20 @@ def panel_paper_corporate_action(
         "per_share_cash": float(per_share_cash) if per_share_cash else None,
     }
     resp = _corporate_action_decide(request, data)
-    return HTMLResponse(
-        render_paper_fragment(
-            _paper_view(request),
-            notice=(f"公司行动已入账：{resp['action_kind']} {resp['code']} @ {resp['ex_date']}"),
-        )
+    notice = (
+        f"公司行动已入账：{resp['action_kind']} {resp['code']} @ {resp['ex_date']}"
+        "（表格刷新由事件驱动，最迟 180s）"
     )
+    return HTMLResponse(f'<p class="ok">{_html.escape(notice)}</p>')
+
+
+@router.get("/panel/paper/ca-form")
+def panel_paper_ca_form(request: Request) -> HTMLResponse:
+    """④公司行动表单（load-only 外置容器：轮询重渲不再擦输入态，0.0.24）。"""
+    from stock_trading_agent.server.panel import render_ca_form
+
+    view = _paper_view(request)
+    return HTMLResponse(render_ca_form(has_positions=bool(view.get("positions"))))
 
 
 @router.post("/panel/paper/confirm")
@@ -1326,7 +1360,10 @@ def submit(payload: SubmitRequest, request: Request) -> dict:
 
 
 @router.post("/panel/submit")
-def panel_submit(request: Request, kind: str = Form(...), code: str = Form(...)) -> HTMLResponse:
+def panel_submit(
+    request: Request, kind: str = Form(...), code: str = Form(...), ctx: str = Form("dg")
+) -> HTMLResponse:
+    """ctx=mo（③页复核发起）：任务卡不持 #dg-session hook，改给「在②页观测会话」跳转。"""
     try:
         payload = SubmitRequest(kind=kind, code=code)  # 同一白名单闸（kind/code 校验不因表单放宽）
     except ValidationError as exc:
@@ -1335,8 +1372,10 @@ def panel_submit(request: Request, kind: str = Form(...), code: str = Form(...))
             status_code=422,
         )
     task, status, detail = _do_submit(request, payload.kind, payload.code)
+    session_target = "#dg-session" if ctx != "mo" else None
     return HTMLResponse(
-        render_submit_result(task, status=status, detail=detail), status_code=status
+        render_submit_result(task, status=status, detail=detail, session_target=session_target),
+        status_code=status,
     )
 
 

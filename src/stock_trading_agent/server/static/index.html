@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
+<meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":true,"error":true}]}'>
 <title>Stock Trading Agent</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <script src="/vendor/htmx.min.js"></script>
@@ -16,6 +17,8 @@
 --px-red:#FF6B6B; --px-red-hi:#FF8A80; --px-green:#3DCE96; --px-green-hi:#5EE0AC;
 --px-blue:#6C9EFF; --px-blue-hi:#9DBAFF; --px-amber:#F0B35C; --px-grey:#9AA6BC;
 --px-white:#FFFFFF; --px-black:#000000;
+--px-btn-1:#7EABFF; --px-btn-2:#5F92F2; --px-step-2:#4E7FE8;
+--px-nr2-1:#FFB4B4; --px-nr2-2:#FFD0D0; --px-evrisk:#D9A0A0;
 /* 字号 9 档 */
 --fs-10:10px; --fs-11:11px; --fs-12:12px; --fs-13:13px; --fs-14:14px;
 --fs-16:16px; --fs-17:17px; --fs-19:19px; --fs-26:26px;
@@ -57,9 +60,9 @@
 --sans:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif;
 /* ═══ 3/3 Component（组件级 token；变体经作用域覆写入口）═══ */
 --inp-bg:var(--bg3); --inp-bd:var(--line2);
---btn-grad:linear-gradient(180deg,#7EABFF,#5F92F2); --btn-fg:var(--bg0);
---step-cur-grad:linear-gradient(180deg,var(--acc),#4E7FE8);
---nr2-fg:#FFB4B4; --nr2-fg-em:#FFD0D0; --ev-risk-fg:#D9A0A0;
+--btn-grad:linear-gradient(180deg,var(--px-btn-1),var(--px-btn-2)); --btn-fg:var(--bg0);
+--step-cur-grad:linear-gradient(180deg,var(--acc),var(--px-step-2));
+--nr2-fg:var(--px-nr2-1); --nr2-fg-em:var(--px-nr2-2); --ev-risk-fg:var(--px-evrisk);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -169,7 +172,6 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 /* ── 待办 ── */
 .todo{display:flex;align-items:flex-start;gap:9px;padding:9px 14px;border-bottom:1px solid color-mix(in srgb,var(--px-white) 5%,transparent)}
 .todo:last-child{border-bottom:none}
-.cbx{width:15px;height:15px;border:1.5px solid color-mix(in srgb,var(--px-white) 28%,transparent);border-radius:var(--r-xs);flex:none;margin-top:2px;background:color-mix(in srgb,var(--px-white) 2%,transparent)}
 .td-tx{flex:1;font-size:var(--fs-12);color:var(--t2);line-height:1.5}
 .td-tx b{color:var(--t1);font:600 var(--fs-12)None var(--mono)}
 /* ── 晨报横条 ── */
@@ -186,7 +188,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .inp,.sel{transition:border-color var(--dur-fast) var(--ease-std),box-shadow var(--dur-fast) var(--ease-std)}
 .sel{position:relative;width:max-content;min-width:150px;height:34px;background:var(--inp-bg);border:1px solid var(--inp-bd);border-radius:var(--r-md);
   display:flex;align-items:center;white-space:nowrap;padding:0 28px 0 11px;font-size:var(--fs-13);color:var(--t1)}
-.btn{height:34px;padding:0 18px;border-radius:var(--r-md);border:none;cursor:default;font-size:var(--fs-13);font-weight:600;white-space:nowrap}
+.btn{height:34px;padding:0 18px;border-radius:var(--r-md);border:none;font-size:var(--fs-13);font-weight:600;white-space:nowrap}
 .btn-pri{background:var(--btn-grad);color:var(--btn-fg);box-shadow:var(--sh-2)}
 .btn-pri{transition:filter var(--dur-fast) var(--ease-std),box-shadow var(--dur-fast) var(--ease-std)}
 .btn-pri:hover{filter:brightness(1.07)}
@@ -281,7 +283,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 
 /* ── 实装追加（原型外）── */
 .page{display:none}
-.page.on{display:block}
+.page.on{display:flex;flex-direction:column;gap:13px}
 .phase-post{color:var(--t2);border:1px solid var(--line2);background:var(--bg2)}
 .phase-closed{color:var(--t3);border:1px solid var(--line);background:var(--bg1)}
 .phase-lunch{color:var(--t2);border:1px solid var(--holdln);background:var(--bg2)}
@@ -314,7 +316,7 @@ main h3{font-size:var(--fs-13);font-weight:600;color:var(--t1);margin:14px 0 6px
 /* ── 0.0.16 交互与可达性 ── */
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 button:disabled{opacity:.5;cursor:not-allowed}
-.inp:focus{box-shadow:var(--sh-3);border-color:var(--accln)}
+.inp:focus,.sel:focus{box-shadow:var(--sh-3);border-color:var(--accln)}
 .frm{display:flex;flex-direction:column;gap:12px}
 .frm-row{display:flex;align-items:center;gap:10px;min-width:0}
 .frm-row label{flex:0 0 calc(100%/12);min-width:86px;font-size:var(--fs-12);color:var(--t3);
@@ -340,14 +342,15 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .md pre{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;
   font:500 var(--fs-12)None var(--mono);color:var(--t2);white-space:pre-wrap;margin:8px 0}
 .md .tbl td{font-size:var(--fs-12)}
-/* htmx 重载指示（①页试点：卡片请求期 .spin 显形） */
-.htmx-indicator{opacity:0;transition:opacity var(--dur-fast) var(--ease-std);flex:none}
+/* htmx 重载指示（①页试点 → 0.0.24 推广②③⑦；卡片请求期 .spin 显形） */
+.htmx-indicator{opacity:0;transition:opacity var(--dur-slow) var(--ease-std);flex:none}
 .card:has(.card-b.htmx-request) .htmx-indicator{opacity:1}
 /* 响应式（桌面优先；1180 双列、880 单列） */
 @media (max-width:1180px){
   .grid3{grid-template-columns:1fr 1fr}
   .grid3 .col:last-child{grid-column:1/-1}
   .grid-2{grid-template-columns:1fr}
+  #page-diagnosis .grid-2{grid-template-columns:1fr}
 }
 @media (max-width:880px){
   .grid3{grid-template-columns:1fr}
@@ -355,7 +358,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
   main{padding:14px 14px 12px}
   .top{padding:0 12px}
   .foot{flex-wrap:wrap;line-height:1.8}
-  .foot code{word-break:break-all}
 }
 
 
@@ -380,6 +382,37 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .nv-chips{display:flex;gap:var(--sp-4);margin:var(--sp-3) 0 var(--sp-4)}
 .w-sess-ts{width:150px}.w-uuid{width:120px}.w-task{width:160px}.w-tok{width:90px}.w-usd{width:90px}
 
+/* ── 0.0.24 整体设计升级 ── */
+/* 空态三分：loadmsg=index.html 初始壳专属；.empty=服务端数据空态（主句+tip 引导） */
+.empty{color:var(--t3);font-size:var(--fs-12);line-height:1.7;padding:8px 2px}
+.empty .empty-tip{display:block;color:var(--t4);font-size:var(--fs-11);margin-top:var(--sp-2)}
+.empty a{font-size:var(--fs-11)}
+/* briefing/通知聚合折叠（原生 details，零 JS） */
+.brief-fold{margin-top:var(--sp-3)}
+.brief-sum{font-size:var(--fs-12);color:var(--t3);cursor:pointer;list-style:none;
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:var(--sp-2) var(--sp-4);
+  display:inline-block;transition:color var(--dur-fast) var(--ease-std)}
+.brief-sum::-webkit-details-marker{display:none}
+.brief-fold[open] .brief-sum{color:var(--t2)}
+/* ④确认/驳回操作组（拉开误触距离） */
+.opgrp{display:flex;gap:var(--sp-5);justify-content:flex-end}
+/* ⑦归档日期带 + 转录槽（类化收编 inline） */
+.chip-row{display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-4)}
+.transcript-slot{margin-top:var(--sp-5)}
+.mini.on{border-color:var(--accln);color:var(--acc2)}
+/* ①事件流/待办行可导航（hash 路由跳转，零 JS 新增） */
+.ev-link{display:block;color:inherit;border-radius:var(--r-md)}
+.todo-link{color:inherit}
+.todo-link:hover{color:var(--t1)}
+/* mech_risk 两档视觉（字符串钉面不变，类名分级） */
+.riskchip.sev-hi{color:var(--up2);background:color-mix(in srgb,var(--px-red) 16%,transparent);
+  border-color:color-mix(in srgb,var(--px-red) 48%,transparent)}
+.riskchip.sev-md{color:var(--warn);background:var(--warnbg);border-color:var(--warnln)}
+/* ②页表单列收窄（.grid-2 本体不动；表单实宽 ~400px） */
+#page-diagnosis .grid-2{grid-template-columns:400px 1fr}
+/* 页脚 API 长串防溢出（基础规则，不待 880px） */
+.foot code{word-break:break-all}
+
 /* 动效尊重：reduced-motion 下关脉冲与过渡 */
 @media (prefers-reduced-motion:reduce){
   .pd-live,.sdot-ok,.spin{animation:none}
@@ -400,6 +433,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <button class="tab" role="tab" data-page="audit" onclick="location.hash='#/audit'">⑦ 审计与预算</button>
   </nav>
   <div class="top-r" id="topbar-r" hx-get="/api/panel/phase" hx-trigger="load, every 180s, sse:status" hx-swap="innerHTML"></div>
+  <span id="busy" class="metachip" hidden><span class="spin"></span> 数据加载中</span>
   <span id="global-err" class="riskchip" role="status" aria-live="polite" hidden></span>
 </header>
 <main>
@@ -414,67 +448,69 @@ button:disabled{opacity:.5;cursor:not-allowed}
       <div class="card-b" id="ov-todos" hx-get="/api/panel/todos" hx-trigger="load, every 180s, sse:decisions, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col">
-    <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm">adjudicate 产出 · 盘中以收盘复核为准 R9</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）">adjudicate 产出 · 盘中以收盘复核为准</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-    <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm">披露/解禁/公告 · evidence 聚合</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm" title="披露/解禁/公告 · 诊股 evidence 聚合">披露/解禁/公告 · 证据聚合</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-    <div class="card"><div class="card-h"><span class="ct">晨报 / 复盘行动项</span><span class="cm">briefing 投影</span><span class="htmx-indicator spin"></span></div>
-      <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="load, every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col">
     <div class="card"><div class="card-h"><span class="ct">模拟盘净值</span><span class="cm">含费用与滑点</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-nav" hx-get="/api/panel/navcard" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-    <div class="card"><div class="card-h"><span class="ct">系统状态</span><span class="cm">launchd 三槽 · 并存收编不替代</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">系统状态</span><span class="cm" title="launchd 三槽 · 并存收编不替代">launchd 三槽调度</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-sys" hx-get="/api/panel/syscard" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
-</div></section>
+</div>
+<div class="card"><div class="card-h"><span class="ct">晨报 / 复盘行动项</span><span class="cm">briefing 投影 · 正文折叠</span><span class="htmx-indicator spin"></span></div>
+  <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="load, every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div></section>
 <section class="page" id="page-diagnosis" data-page="diagnosis">
-<div class="hero"><div><h1>诊股工作台</h1><div class="sub">五段流水线经本机 CC 大脑 · LLM 只产意见 · 聚合一律确定性裁决（NR-1/NR-3）</div></div>
+<div class="hero"><div><h1>诊股工作台</h1><div class="sub" title="LLM 只产意见 · 聚合一律确定性裁决（NR-1 重裁决 · NR-3 断言器前置）">五段流水线经本机 CC 大脑 · LLM 只产意见 · 聚合一律确定性裁决</div></div>
 <div class="hero-r" id="dg-hero-r" hx-get="/api/panel/dgmeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="grid-2">
-  <div class="card"><div class="card-h"><span class="ct">发起诊股</span><span class="cm">六 kind 白名单</span></div>
+  <div class="card"><div class="card-h"><span class="ct">发起诊股</span><span class="cm" title="六 kind 白名单（第七 kind monitor_review 经③页事件表触发）">六 kind 白名单</span></div>
     <div class="card-b" id="dg-form" hx-get="/api/panel/dgform" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-  <div class="card"><div class="card-h"><span class="ct">会话任务</span><span class="cm" id="dg-task-meta"></span></div>
-    <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="load, every 5s, sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-    <div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">会话观测</span><span class="cm">五段进度 · 双轨意见板 · 裁决卡</span></div>
-      <div class="card-b" id="dg-session"><div class="loadmsg">提交任务后于此观测五段推进（真实 CC 会话）。</div></div></div>
+  <div class="col">
+  <div class="card"><div class="card-h"><span class="ct">会话任务</span><span class="cm" id="dg-task-meta"></span><span class="htmx-indicator spin"></span></div>
+    <div class="card-b" id="dg-task" hx-get="/api/panel/tasks" hx-trigger="load, every 5s [panelActive('diagnosis')], sse:queue, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+  <div class="card"><div class="card-h"><span class="ct">会话观测</span><span class="cm">五段进度 · 双轨意见板 · 裁决卡</span></div>
+    <div class="card-b" id="dg-session"><div class="pipe pipe-dense"><div class="step pend"><div class="sc">1</div><div class="sl">取证据</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">2</div><div class="sl">证据包</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">3</div><div class="sl">出意见</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">4</div><div class="sl">裁决</div><div class="ss num">待启动</div></div><div class="step pend"><div class="sc">5</div><div class="sl">报告</div><div class="ss num">待启动</div></div></div><div class="loadmsg">提交任务后于此观测五段推进（真实 CC 会话）。</div></div></div>
+  </div>
 </div>
-<div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="cm">vibe-stock reports 目录 · 04 规约结构</span></div>
+<div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="cm" title="vibe-stock reports 目录 · 04 规约结构">报告目录 · 结构化归档</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="load, every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div id="dg-report-body"></div></section>
 <section class="page" id="page-monitor" data-page="monitor">
-<div class="hero"><div><h1>盯盘事件与 T2 复核</h1><div class="sub">watch.py 机械判据族 · 零 LLM 轮询 · 监控永不写 signals.json（R8）</div></div>
+<div class="hero"><div><h1>盯盘事件与 T2 复核</h1><div class="sub" title="watch.py 机械判据族 · 永不写 signals.json（R8）">机械判据盯盘 · 零 LLM 轮询 · 监控只读不写信号台账</div></div>
 <div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
-<div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm">T0 机械事实 · 短语措辞限定「复核」（R7）</span></div>
+<div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm" title="T0 机械事实 · 短语措辞限定「复核」（R7）">T0 机械事实 · 短语措辞限定「复核」</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-<div class="card" style="margin-top:13px"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm">osascript 通道 · 只读</span></div>
+<div id="advice-detail"><div class="loadmsg">点击事件表「详情 / 盯盘复核」后于此呈现（NR-1 重裁决卡）。</div></div>
+<div class="card"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-<div id="advice-detail"></div></section>
+</section>
 <section class="page" id="page-paper" data-page="paper">
 <div class="hero"><div><h1>模拟盘</h1><div class="sub">paper 引擎 · 严格穿价撮合 + 静态费用栈 + 逐笔人工确认 · 撮合零 LLM</div></div>
 <div class="hero-r"><span class="metachip">台账 append-only · hash 链</span></div></div>
 <div class="nr2"><b>NR-2</b> 模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
-<div id="paper" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
+<div id="paper" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div id="paper-ca" hx-get="/api/panel/paper/ca-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-advice" data-page="advice">
-<div class="hero"><div><h1>建议卡库</h1><div class="sub">monitor-advice/1 · 卡面落盘脱敏（百分比与档位词）· 面板呈现态给原值（NR-5/R2 豁免面）</div></div>
-<div class="hero-r"><span class="metachip">候选动作 · 04 五档分类学措辞</span></div></div>
+<div class="hero"><div><h1>建议卡库</h1><div class="sub" title="monitor-advice/1 · 卡面落盘脱敏（NR-5/R2 豁免面：落盘为百分比与档位词，面板呈现态给原值）">卡面落盘脱敏（百分比与档位词）· 面板呈现态给原值</div></div>
+<div class="hero-r"><span class="metachip" title="候选动作 · vibe-stock/04 五档分类学措辞">候选动作 · 五档分类学措辞</span></div></div>
 <div id="advice" hx-get="/api/panel/advice" hx-trigger="load, every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div id="advice-detail-2"></div></section>
 <section class="page" id="page-stats" data-page="stats">
-<div class="hero"><div><h1>后验战绩</h1><div class="sub">全样本登记含亏损 · 不挑样对比 · 样本 &lt;30 只观察不记分（MIN_SAMPLES=30）</div></div>
-<div class="hero-r"><span class="metachip">agent: 前缀独立画像</span></div></div>
+<div class="hero"><div><h1>后验战绩</h1><div class="sub" title="MIN_SAMPLES=30">全样本登记含亏损 · 不挑样对比 · 样本 &lt;30 只观察不记分</div></div>
+<div class="hero-r"><span class="metachip" title="ledger 以 agent: 前缀区分提交流，独立画像互不合并">按提交流分档案</span></div></div>
 <div id="stats" hx-get="/api/panel/stats" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-audit" data-page="audit">
-<div class="hero"><div><h1>审计与预算</h1><div class="sub">decisions hash 链防篡改 · 预算双口径记账（token + 等效美元，F-34）· L2 总闸</div></div>
+<div class="hero"><div><h1>审计与预算</h1><div class="sub" title="预算双口径记账（token + 等效美元，F-34）">decisions hash 链防篡改 · 预算双口径记账 · L2 总闸</div></div>
 <div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div id="audit" hx-get="/api/panel/audit" hx-trigger="load, every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
-<div style="height:13px"></div>
-<div class="card"><div class="card-h"><span class="ct">归档索引</span><span class="cm">agent/audit/ · 三件套互查</span></div>
+<div class="card"><div class="card-h"><span class="ct">归档索引</span><span class="cm" title="agent/audit/ · 三件套互查">三件套互查</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="au-archive" hx-get="/api/panel/audit-archive" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-<div style="height:13px"></div>
-<div class="card"><div class="card-h"><span class="ct">会话登记</span><span class="cm">sessions.json · 三件套互查</span></div>
+<div id="au-transcript" class="transcript-slot"></div>
+<div class="card"><div class="card-h"><span class="ct">会话登记</span><span class="cm" title="sessions.json · 三件套互查">三件套互查</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="au-sessions" hx-get="/api/panel/sessions" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-<div style="height:13px"></div>
 <div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 </main>
 <footer class="foot">Stock Trading Agent · 本地面板（127.0.0.1 · SSE 实时流 + 180s 轮询兜底）· API：<code>/api/health|queue|sessions|decisions|paper|budget|monitor/events|monitor/status|reports|advice|signals|todos|stats|l2|stream</code><br>
@@ -495,9 +531,22 @@ button:disabled{opacity:.5;cursor:not-allowed}
   }
   window.addEventListener('hashchange',activate);
   activate();
-  // 全局错误条：请求/网络错误显示，任一 swap 成功后隐藏（三态完备之错误态）
+  // 隐藏页轮询门控（条件只作用于 every 定时器；SSE 事件照推）
+  window.panelActive=function(p){
+    var on=document.querySelector('.page.on');
+    return !!on&&on.dataset.page===p;
+  };
+  // 全局忙灯：任意 htmx 请求期显形（置于 #topbar-r 之外防被 innerHTML 刷新吞掉）
+  var busy=document.getElementById('busy'),n=0;
+  function syncBusy(){if(busy)busy.hidden=n<=0}
+  document.body.addEventListener('htmx:beforeRequest',function(){n++;syncBusy()});
+  document.body.addEventListener('htmx:afterRequest',function(){n=Math.max(0,n-1);syncBusy()});
+  // 全局错误条：请求/网络错误显示，任一 swap 成功后隐藏（三态完备之错误态）。
+  // 已换入局部错误卡的 HTML 响应不再叠全局 chip（responseError 在 swap 之后发）。
   var err=document.getElementById('global-err');
   function showErr(e){
+    var ct=String((e.detail&&e.detail.xhr&&e.detail.xhr.getResponseHeader('content-type'))||'');
+    if(ct.indexOf('text/html')>=0)return;
     var code=(e.detail&&e.detail.xhr&&e.detail.xhr.status)||'网络';
     if(err){err.textContent='数据通道异常（HTTP '+code+'）· 显示可能过期';err.hidden=false;}
   }

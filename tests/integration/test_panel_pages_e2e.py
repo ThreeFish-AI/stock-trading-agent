@@ -203,8 +203,8 @@ class TestAdviceRendered:
         client, layout = _make_client(tmp_path)
         layout.agent_dir.mkdir(parents=True, exist_ok=True)
         log = DecisionLog()
-        log.append(
-            "2026-11-08T02:50:29+00:00",
+        log.append(  # ts 动态取市场钟面日（0.0.24 修跨午夜时敏红）
+            f"{market_today()}T02:50:29+00:00",
             "advice_refused",
             {
                 "code": "600519",
@@ -359,7 +359,7 @@ class TestPRDPolish:
         assert '<meta name="color-scheme" content="dark">' in html
         assert "@media (max-width:1180px)" in html and "@media (max-width:880px)" in html
         assert 'class="grid-2"' in html  # ②页 inline grid 迁类
-        assert html.count('class="htmx-indicator spin"') == 7  # ①页试点
+        assert html.count('class="htmx-indicator spin"') == 13  # ①页 7 + 0.0.24 推广②③⑦六卡
         assert "animation:rot" in html and "@keyframes rot{" in html  # .spin 修活
         # 死码清除负断言
         for dead in [".notif{", ".ghostbtn", ".dawn{", "tr.sel", ".rpt-r{"]:
@@ -399,7 +399,11 @@ class TestHtmxWiring:
         )
         paper_pending.save(queue, layout.sim_pending_fills_path)
         frag = client.get("/api/panel/paper").text
-        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 3  # 0.0.20 +馈送表单
+        # 0.0.24：馈送表单外置 ca-form（target #paper-ca-result）→ 计数 3→2；
+        # 确认/驳回各带 hx-confirm（破坏性防护对齐 L2）。
+        assert frag.count('hx-target="#paper" hx-swap="innerHTML"') == 2
+        assert frag.count("hx-confirm=") == 2
+        assert 'class="opgrp"' in frag
 
     def test_briefing_ack_target(self, tmp_path: Path):
         from stock_trading_agent.loop.monitor_events import market_today
@@ -525,3 +529,99 @@ class TestP2Endpoints:
         assert body["names"]["600519"] == "贵州茅台"
         frag = client.get("/api/panel/signals").text
         assert "贵州茅台" in frag or "无在册信号" in frag
+
+
+class TestErrorSurface:
+    """0.0.24 错误呈现统一：responseHandling swap + 异常处理器 HTML 错误卡（状态码保留）。
+
+    头协议：面板 htmx 请求带 HX-Request: true；JSON 孪生端点与 curl 面零变化。
+    """
+
+    def test_get_404_lands_error_card_with_retry(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.reports_dir.mkdir(parents=True, exist_ok=True)
+        resp = client.get(
+            "/api/panel/report/600519.cn/missing.md",
+            headers={**ORIGIN_HEADERS, "HX-Request": "true"},
+        )
+        assert resp.status_code == 404  # 状态码保留（e2e 可断言语义）
+        assert resp.headers["content-type"].startswith("text/html")
+        assert "操作未生效（HTTP 404）" in resp.text
+        assert "重试" in resp.text  # GET 附重试
+
+    def test_post_404_error_card_without_retry(self, tmp_path: Path):
+        client, _ = _make_client(tmp_path)
+        resp = client.post(
+            "/api/panel/paper/confirm",
+            data={"request_id": "nope"},
+            headers={**ORIGIN_HEADERS, "HX-Request": "true"},
+        )
+        assert resp.status_code == 404
+        assert "操作未生效（HTTP 404）" in resp.text
+        assert "重试" not in resp.text  # POST 不给重试（重按即重试）
+
+    def test_json_twin_unchanged_without_hx_header(self, tmp_path: Path):
+        client, _ = _make_client(tmp_path)
+        resp = client.post("/api/paper/confirm", json={"request_id": "nope"})
+        assert resp.status_code == 404
+        assert resp.headers["content-type"].startswith("application/json")
+        resp2 = client.get("/api/panel/report/600519.cn/missing.md")
+        assert resp2.status_code == 404
+        assert resp2.headers["content-type"].startswith("application/json")
+
+    def test_advice_detail_404_card(self, tmp_path: Path):
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, _ = _make_client(tmp_path)
+        resp = client.get(
+            f"/api/panel/advice-detail/{market_today()}/NOPE",
+            headers={**ORIGIN_HEADERS, "HX-Request": "true"},
+        )
+        assert resp.status_code == 404 and "操作未生效" in resp.text
+
+    def test_topbar_no_duplicate_phase_chip(self, tmp_path: Path):
+        """①hero 与顶栏盘态去重：topbar 改计数带，phase 唯一呈现源=顶栏。"""
+        client, _ = _make_client(tmp_path)
+        frag = client.get("/api/panel/topbar").text
+        assert 'class="phase phase-' not in frag  # 防回归重复
+        assert "事件" in frag and "待办" in frag
+
+    def test_aumeta_chain_chip(self, tmp_path: Path):
+        client, layout = _make_client(tmp_path)
+        layout.agent_dir.mkdir(parents=True, exist_ok=True)
+        layout.decisions_path.parent.mkdir(parents=True, exist_ok=True)
+        layout.decisions_path.write_text("", encoding="utf-8")  # 空链 → verify True
+        frag = client.get("/api/panel/aumeta").text
+        assert "链校验 通过" in frag and "hash 链 head" in frag
+
+    def test_notifications_aggregation_e2e(self, tmp_path: Path):
+        from stock_trading_agent.loop.monitor_events import market_today
+
+        client, layout = _make_client(tmp_path)
+        _seed_events(layout)
+        ev_file = layout.monitor_events_file(market_today())
+        events = [
+            json.loads(line) for line in ev_file.read_text(encoding="utf-8").splitlines() if line
+        ]
+        dup = dict(events[0])
+        dup["ts"] = "09:45:00"
+        with open(ev_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(dup, ensure_ascii=False) + "\n")
+        frag = client.get("/api/panel/notifications").text
+        assert "×2" in frag  # 同源聚合
+        assert "锁屏不保证送达" in frag  # 尾注钉面不动
+
+    def test_submit_ctx_mo_decouples_session_hook(self, tmp_path: Path):
+        """③发起复核：任务卡不持 #dg-session hook，改给②页跳转。"""
+        client, _ = _make_client(tmp_path)
+        resp = client.post(
+            "/api/panel/submit",
+            data={"kind": "monitor_review", "code": "600519", "ctx": "mo"},
+        )
+        assert resp.status_code == 201
+        assert 'hx-target="#dg-session"' not in resp.text
+        assert "在②页观测会话" in resp.text
+        # 缺省 ctx（②表单）行为不变：hook 在场（换 code 避同日幂等 409）
+        resp2 = client.post("/api/panel/submit", data={"kind": "monitor_review", "code": "000001"})
+        assert resp2.status_code == 201
+        assert 'hx-trigger="every 5s"' in resp2.text

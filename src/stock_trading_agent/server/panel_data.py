@@ -394,6 +394,22 @@ def signals_snapshot(
                 "to_stop_pct": to_stop,
             }
         )
+
+    # 0.0.24 展示层聚合排序：breach → near → 常序 → 无价 → invalid 置尾
+    # （组内保登记序——Python 稳定排序；纯呈现层，/api/signals JSON 无消费者钉序）。
+    def _rank(row: dict) -> int:
+        t = row.get("to_stop_pct")
+        if row.get("invalid"):
+            return 4
+        if t is None:
+            return 3
+        if t <= 0:
+            return 0  # breach
+        if t <= 3:
+            return 1  # near
+        return 2
+
+    rows.sort(key=_rank)
     return {"rows": rows, "read_ok": True}
 
 

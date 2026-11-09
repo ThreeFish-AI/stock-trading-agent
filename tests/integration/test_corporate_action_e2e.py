@@ -150,9 +150,13 @@ class TestFeed:
     def test_panel_form_variant_and_registry_table(self, tmp_path: Path):
         app, _, _layout = _make(tmp_path)
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            # 0.0.24 表单外置 load-only 容器（轮询重渲不再擦输入态）：
+            # 表单打 /api/panel/paper/ca-form；④ fragment 只留只读登记表。
+            ca = client.get("/api/panel/paper/ca-form").text
+            assert "/api/panel/paper/corporate-action" in ca and "馈送入账" in ca
+            assert 'id="paper-ca-result"' in ca and "hx-confirm=" in ca
             frag = client.get("/api/panel/paper").text
-            assert "/api/panel/paper/corporate-action" in frag and "馈送入账" in frag
-            assert "公司行动登记" in frag
+            assert "公司行动登记" in frag and "ca-kind" not in frag
             resp = client.post(
                 "/api/panel/paper/corporate-action",
                 data={

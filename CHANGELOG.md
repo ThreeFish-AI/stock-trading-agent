@@ -4,6 +4,20 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.27] - 2026-11-09
+
+### Changed
+
+- **面板 UI/UX 整体设计升级（借 ui-ux-pro-max；实机七页逐页审计 + 三镜头并行设计；规约 [14-design-system.md](docs/specs/14-design-system.md) 新增 §⑧–⑩）**。四主线：
+  ①**交互正确性**：htmx `responseHandling` 覆写（4xx/5xx 也 swap）+ `app.py` 异常处理器把 `/api/panel/*`+HX-Request 错误统一渲 HTML 错误卡（`render_error_card`，状态码保留、GET 附重试、JSON 孪生端点零变化）——此前全部 POST 失败原因被 htmx 默认丢弃永不可见；④公司行动表单外置 load-only 容器（`#paper-ca`，轮询重渲不再擦输入态；`#paper` target 计数 3→2 基线同步）；⑦`#au-transcript` 容器外置（归档卡重拉不再清空阅读中转录）；七处详情注入 `hx-swap="innerHTML show:top"` 滚动定位（探针证实此前点击后 scrollY=0）；④确认成交/驳回/馈送补 `hx-confirm`+`.opgrp` 分距（防护对齐 L2；briefing ack 例行不确认）；③复核提交带 `ctx=mo` 解耦 `#dg-session` 双写（任务卡改给「在②页观测会话」跳转）；②任务表轮询挂 `panelActive` 条件（隐藏页不空转）。
+  ②**信息架构与空间**：①briefing 正文 `<details>` 折叠 + 卡移出三栏全宽（1200 字符×N 纯文本不再把信号表推离首屏）；①信号表 breach→near 置顶排序（panel_data 展示层聚合）+ colgroup/scope 补齐 + 置信两位小数 + 距止损无价条件省列；③事件表前置异常摘要 chips + `#advice-detail` 复核区前置 + 通知同源聚合（×N chip + 首/末时刻 + details 逐条；「·现在」删除）+ mech_risk 分 sev-hi/sev-md；⑥KPI 摘要行置顶（成功率/路由命中/T+1 命中）+ kind chip 化 + 预算日桶近 14 日封顶 + 六段 grid-2 双列；⑦链校验/token/USD 摘要 chips 升台账卡首 + 链尾 head tag + aumeta 链态 chip；②表单列收窄 400px + 会话观测五段骨架 + 报告列表排除 index.md（「最新报告」获真实日期）；④空账本四格摘要卡 + NR-2 双横幅分层（nr2-mini 移权益曲线前）+ 无持仓表单折叠 + <2 点空轴骨架；①hero/顶栏盘态去重（topbar 改计数带）；①待办假复选框→sdot+行级 href、事件流条目可跳③。
+  ③**规范收敛**：空态三分（`.loadmsg` 仅壳层/`.empty`+.empty-tip 服务端空态/`.muted` 说明小字；panel.py 约 25 处迁移+负断言收口）；时间两档规范（当日 HH:MM/跨日 `MM-DD HH:MM`+title 全值，`_ts_short` 新增）；数字排版（None=—/真零=0/比率两位/条件列）；表格五处补齐（①信号/②报告/⑤σ√h/⑦sessions scope/_md_lite 首行 thead+colgroup 动态列数豁免）；内部编号收纳（R7/R8/R9/NR-3/NR-5/F-34/F-38/§15/04 等出正文入 title；NR-1/NR-2 钉死文案与机器值列头不动）。
+  ④**双 bug 与可达性**：`render_navcard` 单数据点结构断裂修复（此前吞 `nv-v`/`nv-chips` 开标签）；`_axis_equity_svg` 双 `style` 属性合并（font-family 恒失效修复）；`.sel:focus` 环补齐；`.btn` cursor 冲突清除；`.page.on` flex gap 统一（顺带修②页 grid gap+margin 双倍行距）；`.cbx` 死码删除；`_perf_grid`/⑥KPI role=list、③通知 role=status 摘要行；顶栏全局忙灯 `#busy`；指示器推广②③⑦（7→13 基线同步）；Component 层 6 枚裸 hex 落 Primitive（54 枚）；`--dur-slow` 接活。
+- 时敏测试修复：`test_refused_reasons_fallback` 与 `test_l2_toggle_and_briefing_ack_keep_chain_valid` 钉死 2026-11-08 钟面跨午夜即红，改动态 `market_today()`（判据只收严）。
+
+### Added
+
+- `GET /api/panel/paper/ca-form`（④表单外置容器，load-only）；`render_error_card`/`render_ca_form`/`_ts_short`/`_notification_group_html` 纯函数；`TestErrorSurface` e2e 8 例与 unit `TestDesignUpgrade024` 15 例、token 门禁增 `TestDesignUpgradeNorms` 8 例（30 例全组）。并 main 0.0.25/0.0.26 后 609 passed 全绿（mount 挂点/已复核列/升级门禁共存）。
 ## [0.0.26] - 2026-11-08
 
 ### Added

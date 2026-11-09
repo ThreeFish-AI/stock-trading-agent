@@ -229,3 +229,240 @@ class TestBriefingChips:
         html = render_briefing_fragment(payload)
         assert "复核：止损线 9.5 距现价 3.4%" in html
         assert 'class="kchip"' in html
+
+
+class TestDesignUpgrade024:
+    """0.0.24 整体设计升级：双 bug 修复 / 信号表整治 / 通知聚合 / 错误卡 / 折叠族。"""
+
+    def test_navcard_single_point_structure(self):
+        """单数据点不再吞 nv-v/nv-chips 开标签（结构断裂修复）。"""
+        from stock_trading_agent.server.panel import render_navcard
+
+        html = render_navcard({"equity_history": [{"date": "2026-11-07", "nav": 1.0}]})
+        assert '<div class="nv-v num">1.0000</div>' in html
+        assert '<div class="nv-chips">' in html
+        assert "成立以来" in html and "今日" not in html
+        # div 开闭配平
+        assert html.count("<div") == html.count("</div>")
+
+    def test_axis_equity_svg_single_style_attr(self):
+        """<text> 双 style 属性合并（font-family 恢复生效）+ <2 点空轴骨架。"""
+        from stock_trading_agent.server.panel import _axis_equity_svg
+
+        svg = _axis_equity_svg(
+            [
+                {"date": "2026-11-06", "nav": 1.0},
+                {"date": "2026-11-07", "nav": 1.01},
+            ]
+        )
+        assert 'text-anchor="end" style="font-family' not in svg  # 双 style 负断言
+        assert "font-family:var(--mono)" in svg
+        skeleton = _axis_equity_svg([{"date": "2026-11-06", "nav": 1.0}])
+        assert "待积累" in skeleton and 'style="stroke:var(--line)"' in skeleton
+
+    def test_signals_table_norms_and_confidence_format(self):
+        from stock_trading_agent.server.panel import render_signals_table
+
+        html = render_signals_table(
+            {
+                "rows": [
+                    {
+                        "code": "600519",
+                        "signal": "hold",
+                        "confidence": 0.5,
+                        "to_stop_pct": 2.1,
+                        "profile": "default",
+                        "date": "2026-11-05",
+                    }
+                ],
+                "names": {},
+                "read_ok": True,
+            }
+        )
+        assert "<colgroup>" in html and '<th scope="col">代码</th>' in html
+        assert ">0.50</td>" in html  # 置信两位小数
+        assert '<th scope="col">距止损</th>' in html
+
+    def test_signals_table_stop_column_conditional(self):
+        """全表无现价源时距止损列整列省去。"""
+        from stock_trading_agent.server.panel import render_signals_table
+
+        html = render_signals_table(
+            {
+                "rows": [
+                    {"code": "600519", "signal": "hold", "confidence": 0.5, "profile": "default"}
+                ],
+                "names": {},
+                "read_ok": True,
+            }
+        )
+        assert '<th scope="col">距止损</th>' not in html  # 列省去（注记仍提示无价口径）
+
+    def test_signals_snapshot_breach_first(self):
+        """0.0.24 展示层排序：breach → near → 常序 → 无价（组内保登记序）。"""
+        from stock_trading_agent.server.panel_data import signals_snapshot
+
+        entries = [
+            {
+                "code": "600519",
+                "signal": "hold",
+                "date": "2026-11-03",
+                "key_levels": {"stop": 10.0},
+            },  # 现价 10.2 → near(+2%)
+            {
+                "code": "000001",
+                "signal": "hold",
+                "date": "2026-11-04",
+                "key_levels": {"stop": 10.0},
+            },  # 现价 9.9 → breach(-1%)
+            {
+                "code": "00700",
+                "signal": "hold",
+                "date": "2026-11-05",
+                "key_levels": {"stop": 10.0},
+            },  # 现价 12.0 → 常序
+            {
+                "code": "300750",
+                "signal": "hold",
+                "date": "2026-11-06",
+                "key_levels": {"stop": 10.0},
+            },  # 无价
+        ]
+        snap = signals_snapshot(
+            entries, {"600519": 10.2, "000001": 9.9, "00700": 12.0, "300750": None}
+        )
+        codes = [r["code"] for r in snap["rows"]]
+        assert codes == ["000001", "600519", "00700", "300750"]  # breach 置顶
+
+    def test_ts_short_cross_day(self):
+        """跨日台账 MM-DD HH:MM；断言与运行机时区无关（CI=UTC/本机=+08 均可跑）。"""
+        import datetime as dt
+
+        from stock_trading_agent.server.panel import _ts_short
+
+        raw = "2026-11-08T02:50:29+00:00"
+        expected = dt.datetime.fromisoformat(raw).astimezone().strftime("%m-%d %H:%M")
+        assert _ts_short(raw) == expected  # +00:00 串按运行机时区换算（非纯切片）
+        assert _ts_short(raw).startswith("11-08 ")
+        assert _ts_short("not-a-ts") == "not-a-ts"  # 解析失败回退
+
+    def test_error_card_escape_and_retry(self):
+        from stock_trading_agent.server.panel import render_error_card
+
+        card = render_error_card(404, "报告不存在<script>", retry_path="/api/panel/report/x")
+        assert "操作未生效（HTTP 404）" in card
+        assert "&lt;script&gt;" in card
+        assert "重试" in card and 'hx-get="/api/panel/report/x"' in card
+        post_card = render_error_card(422, "无在持仓位")
+        assert "重试" not in post_card  # POST 不给重试
+
+    def test_notifications_grouped(self):
+        from stock_trading_agent.server.panel import render_notifications
+
+        items = [
+            {
+                "ts": "2026-11-08T09:31:00+08:00",
+                "code": "601899",
+                "title": "盯盘通知",
+                "body": "紫金矿业 已低于止损线 28.01 (-0.39%)",
+                "source": "events",
+            },
+            {
+                "ts": "2026-11-08T10:02:00+08:00",
+                "code": "601899",
+                "title": "盯盘通知",
+                "body": "紫金矿业 已低于止损线 28.01 (-0.29%)",
+                "source": "events",
+            },
+        ]
+        html = render_notifications({"items": items})
+        assert "×2" in html  # 聚合 chip
+        assert "09:31" in html and "10:02" in html  # 首/末时刻
+        assert "现在" not in html  # 「·现在」删除
+        assert "全部 2 条" in html  # details 展开
+        assert 'role="status"' in html and 'role="region"' in html
+
+    def test_briefing_details_fold_ack_outside_summary(self):
+        from stock_trading_agent.server.panel import render_briefing_fragment
+
+        html = render_briefing_fragment(
+            {
+                "date": "2026-11-08",
+                "cards": [{"code": "600519", "ack": False, "md": "正文" * 100}],
+            }
+        )
+        assert '<details class="brief-fold">' in html
+        assert '<summary class="brief-sum">' in html
+        assert "<pre" in html
+        # ack 按钮在 summary 外（details toggle 不吞按钮点击）
+        assert html.index("确认复核") < html.index("<summary")
+
+    def test_todos_sdot_and_href(self):
+        from stock_trading_agent.server.panel import render_todos
+
+        html = render_todos(
+            {"todos": [{"source": "pending_fill", "code": "600519", "text": "x", "chip": "待确认"}]}
+        )
+        assert 'class="cbx"' not in html and "sdot-wait" in html
+        assert 'href="#/paper"' in html
+
+    def test_audit_summary_chips_and_head_tag(self):
+        from stock_trading_agent.server.panel import render_audit
+
+        lines = [
+            {
+                "seq": 1,
+                "ts": "2026-11-08T02:00:00+00:00",
+                "kind": "boot",
+                "payload": {},
+                "hash": "a" * 64,
+            },
+            {
+                "seq": 2,
+                "ts": "2026-11-08T03:00:00+00:00",
+                "kind": "l2_toggled",
+                "payload": {},
+                "hash": "b" * 64,
+            },
+        ]
+        ok_html = render_audit(
+            lines, {"tasks": 0, "tokens": {"total": 0}, "cost_usd_equiv": 0}, chain_ok=True
+        )
+        assert "链校验通过" in ok_html and '<span class="tag">head</span>' in ok_html
+        assert ok_html.index("chips") < ok_html.index("<table")  # 摘要在表前
+        none_html = render_audit([], {"tasks": 0}, chain_ok=None)
+        assert "链校验" not in none_html  # None 不渲染摘要（TestAuditChainRender 既有钉）
+
+    def test_ca_form_structure(self):
+        from stock_trading_agent.server.panel import render_ca_form
+
+        html = render_ca_form(has_positions=True)
+        assert 'hx-target="#paper-ca-result"' in html and "馈送入账" in html
+        assert "hx-confirm=" in html and 'id="paper-ca-result"' in html
+        folded = render_ca_form(has_positions=False)
+        assert "<details" in folded and "需在持仓" in folded
+
+    def test_reports_list_norms(self):
+        from stock_trading_agent.server.panel import render_reports_list
+
+        html = render_reports_list(
+            {
+                "reports": [
+                    {
+                        "code": "600519",
+                        "market": "cn",
+                        "dir": "600519.cn",
+                        "latest": "2026-11-06.md",
+                        "count": 4,
+                    }
+                ]
+            }
+        )
+        assert "<colgroup>" in html and '<th scope="col">标的</th>' in html
+        assert "4 份在档" in html and 'hx-swap="innerHTML show:top"' in html
+
+    def test_perf_grid_roles(self):
+        from stock_trading_agent.server.panel import _perf_grid
+
+        html = _perf_grid({"sharpe": None, "max_drawdown": None, "win_rate": None})
+        assert 'role="list"' in html and html.count('role="listitem"') == 3

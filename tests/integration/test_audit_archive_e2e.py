@@ -74,7 +74,8 @@ class TestAuditRead:
         atomic_write_json(layout.sessions_path, state.to_dict())
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
             frag = client.get("/api/panel/audit-archive").text
-            assert "2026-11-08" in frag and "查看" in frag and 'id="au-transcript"' in frag
+            assert "2026-11-08" in frag and "查看" in frag
+            assert 'id="au-transcript"' not in frag  # 0.0.24 容器外置（重拉不擦转录）
             detail = client.get(
                 "/api/panel/audit-archive/2026-11-08/aabbccdd-0000-0000-0000-000000000001.jsonl"
             ).text
@@ -84,4 +85,4 @@ class TestAuditRead:
             sess = client.get("/api/panel/sessions").text
             assert 'hx-get="/api/panel/audit-archive/2026-11-08/' in sess  # 互查链接
         html = Path("src/stock_trading_agent/server/static/index.html").read_text(encoding="utf-8")
-        assert 'id="au-archive"' in html
+        assert 'id="au-archive"' in html and 'id="au-transcript"' in html  # 容器外置到壳层
