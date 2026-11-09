@@ -6,7 +6,7 @@
 
 | 层 | 职责 | 规模 | 改动时机 |
 | :--- | :--- | :--- | :--- |
-| Primitive（`--px-*` 等） | 原始值：全库**唯一** hex/px 字面落点 | 54 枚（23 色 + 9 字号 + 5 圆角 + 7 间距 + 3 阴影 + 4 glow + 3 动效；0.0.24 增 `--px-btn-1/2/--px-step-2/--px-nr2-1/2/--px-evrisk` 6 枚收编 Component 裸 hex） | 极少——色板基因级变更 |
+| Primitive（`--px-*` 等） | 原始值：全库**唯一** hex/px 字面落点 | 55 枚（24 色 + 9 字号 + 5 圆角 + 7 间距 + 3 阴影 + 4 glow + 3 动效；0.0.24 增 `--px-btn-1/2/--px-step-2/--px-nr2-1/2/--px-evrisk` 6 枚收编 Component 裸 hex；0.0.31 勘误：建档期计数笔误 54→55、23→24 色） | 极少——色板基因级变更 |
 | Semantic（30 个既有名） | 语义别名：`--bg0..3/--line(2)/--t1..4/--up|--dn|--acc|--warn|--hold 各 fg/bg/ln(2)/--mono/--sans` | 30 枚 | 主题切换位（light 主题不入版图） |
 | Component（`--inp-*/--btn-*/--step-cur-grad/--nr2-fg*/--ev-risk-fg`） | 组件级 token：变体经作用域覆写入口（如 `.x{--inp-bg:…}`） | 8 枚 | 组件定制 |
 
@@ -89,7 +89,7 @@
 - **模块间隙等距**：见 §② 0.0.28 gap 迁移句（模块间 `--sp-6`、卡内 `--sp-4` 两档节奏，机器门 gap 仅 `var()`/`0`）。
 - **对齐学说（无条件全局规则：三类对齐各归其位）**：标题/正文/表格文本列左对齐（默认）；数值列右对齐（`td.num`/`th.num` 配对标注，panel.py 十表已标）；居中仅三类——空态（`.empty` 居中 + 18px 呼吸）、流水线步骤（`.pipe`）、徽章圆点。坑位：日期/时间列按数值列右对齐（等宽数字同位对齐），代码列保持左对齐（与名称同格时防推挤错位）。
 - **卡片化统一（0.0.28）**：④⑥ 页裸 `h3` 段收编 `.card` 模块——④：账户与持仓 / 逐笔确认队列|权益曲线+模拟绩效（grid-rail）/ 公司行动登记；⑥：任务画像·预算双口径 | 管线质量·T+1 复核（grid-2 双卡等宽）；`h3` 仅存卡内节标题。坑位：`.stats-4` 修饰类供四格 KPI 一行四列（≤880 塌缩 2×2），三格绩效仍用 `.stats`。
-- **长表滚动容器（0.0.29）**：行数无上界或常态 ≥20 行的表（③事件/⑦decisions 台账/⑦sessions）一律 `<div class="tbl-wrap">` 外裹——`max-height:460px;overflow:auto;overscroll-behavior:contain` + `thead th` sticky 吸顶（底色 `var(--bg1)` 防透视）；数据层 `tail` 截断不动（API 契约稳定），`.tbl-note` 计数条留在容器外恒可见。坑位：包裹层不得成为 hx-target（swap 目标仍指 card-b 级容器）；③页实机页高 5370→1466px 即此范式收益。
+- **长表滚动容器（0.0.29）**：行数无上界或常态 ≥20 行的表（③事件/⑦decisions 台账/⑦sessions）一律 `<div class="tbl-wrap">` 外裹——`max-height:460px;overflow:auto;overscroll-behavior:contain` + `thead th` sticky 吸顶（底色 `var(--bg1)` 防透视）；数据层 `tail` 截断不动（API 契约稳定），`.tbl-note` 计数条留在容器外恒可见。坑位：包裹层不得成为 hx-target（swap 目标仍指 card-b 级容器）；③页实机页高 5370→1219px 即此范式收益（0.0.31 勘误：原句 1466 为中间态数字，PR #35 终态 1219）。
 - **网格子元素数=轨道数（0.0.29，无条件全局规则：display:grid 容器的直接子元素数必须等于显式轨道数）**：`.sys-row` 4 子元素（sdot/sys-l/sys-sched/sys-st）配 `14px minmax(0,1fr) 56px 56px` 四轨（0.0.28 三轨致第 4 元素掉隐式行）；`sys-desc` 恒带 `title` 全值兜底截断。坑位：改子元素数时同步改轨道数并跑 `TestLayoutNorms029`。
 - **操作列触点间距（0.0.29）**：表内多按钮操作列用 `.tbl-act`（flex + `gap:var(--sp-4)`=8px 触点下限 + flex-wrap）；首个消费者 ③事件表「详情/盯盘复核」。坑位：单钮列无需包裹。
 - **空态同构（0.0.29）**：可注入容器（③`#advice-detail`）的初始空态与注入态同构（`.card` 包裹同款 chrome），选中前后布局零跳变；空文案仍走 `.empty` 三分规范。
