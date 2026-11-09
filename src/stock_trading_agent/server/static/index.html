@@ -79,7 +79,7 @@ table{border-collapse:collapse;width:100%}
 .top{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:var(--sp-7);height:52px;padding:0 22px;
   background:color-mix(in srgb,var(--px-bg-0) 92%,transparent);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:var(--sp-4);font-size:var(--fs-14);font-weight:600;letter-spacing:.2px;white-space:nowrap;color:var(--t1)}
-.tabs{display:flex;gap:var(--sp-1);flex:1;min-width:0}
+.tabs{display:flex;gap:var(--sp-4);flex:1;min-width:0}
 .tab{padding:6px 11px;border-radius:var(--r-sm);font-size:var(--fs-13);color:var(--t3);white-space:nowrap;display:flex;align-items:center;gap:var(--sp-3)}
 .tab{transition:color var(--dur-fast) var(--ease-std),background-color var(--dur-fast) var(--ease-std),box-shadow var(--dur-fast) var(--ease-std)}
 .tab:not(.on):hover{color:var(--t2);background:var(--bg2)}
@@ -104,6 +104,8 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .grid-rail{display:grid;grid-template-columns:1fr 500px;gap:var(--sp-6);align-items:stretch}
 #page-monitor .grid-main{grid-template-columns:1fr 380px}
 .col{display:flex;flex-direction:column;gap:var(--sp-6);min-width:0}
+/* 0.0.29 两栏等高收口：grid-main矮列末卡拉伸至底（①右栏/③通知栏；1180/880 单栏无剩余空间自然无变化） */
+.grid-main .col>.card:last-child{flex:1 1 auto}
 /* ── 卡片 ── */
 .card-h{display:flex;align-items:center;gap:var(--sp-4);padding:10px 14px;border-bottom:1px solid var(--line)}
 .card-h .ct{font-size:var(--fs-13);font-weight:600;letter-spacing:.2px;color:var(--t1)}
@@ -155,17 +157,31 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .dist-breach{color:var(--up2);font-weight:600}
 .dist-near{color:var(--warn)}
 .tbl-note{padding:8px 14px;font-size:var(--fs-11);color:var(--t4);border-top:1px solid var(--line)}
+/* ── 0.0.29 长表滚动容器（③事件/⑦台账/⑦sessions；thead 吸顶防信息倾倒）── */
+.tbl-wrap{max-height:460px;overflow:auto;overscroll-behavior:contain}
+#mo-notif{max-height:520px;overflow:auto;overscroll-behavior:contain}
+.tbl-wrap .tbl thead th{position:sticky;top:0;z-index:1;background:var(--bg1);border-bottom:1px solid var(--line2)}
+.tbl-wrap .tbl thead th.num{background:var(--bg1)}
+/* 操作列触点间距（≥8px 规约） */
+.tbl-act{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}
+/* ④页 grid-rail 矮列单卡拉伸填满 + 卡体垂直居中（0.0.29 失衡收口） */
+#page-paper .grid-rail .col>.card{display:flex;flex-direction:column;flex-grow:1}
+#page-paper .grid-rail .col>.card .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
+/* ⑦页转录槽限高（防 <pre> 无界拉高边栏） */
+#au-transcript .md-pre{max-height:60vh;overflow:auto}
+/* ②页会话观测空态引导行随流水线居中（壳层 loadmsg 语义不变） */
+#dg-session .loadmsg{text-align:center}
 /* ── 净值卡 ── */
 .nv-main{display:flex;align-items:baseline;gap:var(--sp-4);flex-wrap:nowrap}
 .nv-v{font:700 var(--fs-26)/1 var(--mono);color:var(--t1);letter-spacing:-.5px}
 .nv-sub{font-size:var(--fs-11);color:var(--t4);margin-top:6px}
 /* ── 系统状态 ── */
-.sys-row{display:grid;grid-template-columns:1fr 42px 70px;align-items:center;gap:var(--sp-4);padding:7.5px 14px;border-bottom:1px solid color-mix(in srgb,var(--px-white) 5%,transparent)}
+.sys-row{display:grid;grid-template-columns:14px minmax(0,1fr) 56px 56px;align-items:center;gap:var(--sp-4);padding:7.5px 14px;border-bottom:1px solid color-mix(in srgb,var(--px-white) 5%,transparent)}
 .sys-row:last-child{border-bottom:none}
 .sys-l{display:flex;flex-direction:column;min-width:0}
 .sys-name{font:600 var(--fs-12) var(--mono);color:var(--t1)}
 .sys-desc{font-size:var(--fs-11);color:var(--t4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-.sys-sched{font:500 var(--fs-11) var(--mono);color:var(--t3);text-align:right}
+.sys-sched{font:500 var(--fs-11) var(--mono);color:var(--t3);text-align:right;overflow:hidden;text-overflow:ellipsis}
 .sys-st{display:flex;align-items:center;gap:var(--sp-3);font-size:var(--fs-12);justify-content:flex-end}
 .st-ok{color:var(--dn2)}
 .st-wait{color:var(--t3)}
@@ -296,7 +312,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .nr2{display:flex;align-items:center;gap:var(--sp-5);background:color-mix(in srgb,var(--px-red) 9%,transparent);border:1px solid var(--upln);
   color:var(--nr2-fg);border-radius:var(--r-lg);padding:10px 14px;font-size:var(--fs-13);font-weight:500}
 .nr2 b{color:var(--nr2-fg-em)}
-.foot{border-top:1px solid var(--line);margin-top:14px;padding:12px 2px;font-size:var(--fs-12);color:var(--t4);line-height:1.9}
+.foot{border-top:1px solid var(--line);margin-top:14px;padding:12px 22px;font-size:var(--fs-12);color:var(--t4);line-height:1.9}
 .adv-blk{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;min-width:0}
 .adv-k{font-size:var(--fs-11);color:var(--t4);margin-bottom:6px;letter-spacing:.4px}
 .tbl td,.tbl th{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -316,7 +332,7 @@ main h3{font-size:var(--fs-13);font-weight:600;color:var(--t1);margin:14px 0 6px
 /* ── 0.0.15 列宽 SSOT（同属性列跨表同宽）── */
 .w-ts{width:118px}.w-code{width:88px}.w-num{width:84px}.w-kind{width:132px}
 .w-st{width:96px}.w-op{width:150px}.w-sup{width:110px}.w-batch{width:150px}
-.w-seq{width:52px}.w-hash{width:110px}
+.w-seq{width:52px}.w-hash{width:176px}.w-stock{width:150px}.w-act{width:76px}
 
 /* ── 0.0.16 交互与可达性 ── */
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
@@ -487,7 +503,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm" title="T0 机械事实 · 短语措辞限定「复核」（R7）">T0 机械事实 · 短语措辞限定「复核」</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div class="grid-main"><!-- 复核主区 + 通知边栏两栏等高；点击详情/复核后左栏呈现 NR-1 重裁决卡 -->
-  <div class="col"><div id="advice-detail"><p class="empty">尚未选择复核事件。<span class="empty-tip">点击上方事件表「详情 / 盯盘复核」后于此呈现 NR-1 重裁决卡。</span></p></div></div>
+  <div class="col"><div id="advice-detail"><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><p class="empty">尚未选择复核事件。<span class="empty-tip">点击上方事件表「详情 / 盯盘复核」后于此呈现 NR-1 重裁决卡。</span></p></div></div></div></div>
   <div class="col"><div class="card"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div></div>
 </div>
