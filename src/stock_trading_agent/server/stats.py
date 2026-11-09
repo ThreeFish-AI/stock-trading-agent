@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import datetime as dt
 import itertools
-from zoneinfo import ZoneInfo
 
-_MARKET_TZ = ZoneInfo("Asia/Shanghai")
+from stock_trading_agent.loop.events import MARKET_TZ
+
 MIN_SAMPLES = 30  # 与 vibe-stock postmortem MIN_SAMPLES 同值（07 P3 后验纪律）
 
 
@@ -122,7 +122,7 @@ def budget_curve(session_records: list[dict]) -> list[dict]:
     for record in session_records:
         ts = str(record.get("ts", ""))
         try:
-            day = dt.datetime.fromisoformat(ts).astimezone(_MARKET_TZ).strftime("%Y-%m-%d")
+            day = dt.datetime.fromisoformat(ts).astimezone(MARKET_TZ).strftime("%Y-%m-%d")
         except ValueError:
             continue
         bucket = buckets.setdefault(

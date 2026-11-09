@@ -14,6 +14,7 @@ import json
 import re
 from pathlib import Path
 
+from stock_trading_agent.loop.events import MARKET_TZ
 from stock_trading_agent.state.paths import StateLayout
 from stock_trading_agent.state.queue import QueueState, TaskRecord
 from stock_trading_agent.state.store import atomic_write_text
@@ -249,9 +250,7 @@ def count_t2_done(queue: QueueState, *, today: str) -> int:
     UTC 日期与 market_today 存在既有时区日界差，此处以 enqueued_at 换算规避。
     """
     import datetime as dt
-    from zoneinfo import ZoneInfo
 
-    tz = ZoneInfo("Asia/Shanghai")
     count = 0
     for task in queue.tasks:
         if task.kind != MONITOR_REVIEW_KIND or task.status != "done":
@@ -262,7 +261,7 @@ def count_t2_done(queue: QueueState, *, today: str) -> int:
             ts = dt.datetime.fromisoformat(task.enqueued_at)
         except ValueError:
             continue
-        if ts.astimezone(tz).strftime("%Y-%m-%d") == today:
+        if ts.astimezone(MARKET_TZ).strftime("%Y-%m-%d") == today:
             count += 1
     return count
 
