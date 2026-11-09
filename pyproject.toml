@@ -1,6 +1,6 @@
 [project]
 name = "stock-trading-agent"
-version = "0.0.31"
+version = "0.0.32"
 description = "Stock Trading Agent——基于 vibe-stock 底座与本机 Claude Code 的单用户主 Agent（诊股·盯盘·操作策略·模拟盘；模拟盘永不接真实下单）"
 readme = "README.md"
 license = "MIT"

@@ -42,11 +42,11 @@ Tranche.limit_price / expires_at / judged_date（批判定戳：T1 开盘批一�
 
 ## ⑦ 口径纪律与门禁
 
-- ESTIMATED 标注族：fees / slippage / rules（幅度常量与排队份额建模）/ corporate_actions（税档与现金找零）/ **bar 源与 GTC 窗换算（§⑧，0.0.31）**——自家成交样本校准后固化，判据只许收严。
+- ESTIMATED 标注族：fees / slippage / rules（幅度常量与排队份额建模）/ corporate_actions（税档与现金找零）/ **bar 源与 GTC 窗换算（§⑧，0.0.32）**——自家成交样本校准后固化，判据只许收严。
 - 费用数值锚测试（test_paper_fees_slippage）不放宽；T+1 破旧测试改写已登记（同日买卖 → 次日 bar + 新增当日卖拒用例）。
 - selftest 义务：T+1/板价/一字板/税档/整手/权益基线/队列往返/**EOD bar 推导与 T1/T3 判定/allocation 导入** 与 pytest 同源（判据只收严）。
 
-## ⑧ 日终驱动与 allocation 导入裁定（0.0.31 落地；issue #37 补齐驱动面缺口）
+## ⑧ 日终驱动与 allocation 导入裁定（0.0.32 落地；issue #37 补齐驱动面缺口）
 
 - **bar 源口径（ESTIMATED）**：`monitor/ticks/<date>.jsonl` 每 code **末轮快照**为当日 bar——ticks 行自带 open/high/low/prev_close（行情源**全日累计**值，非轮询窗极值），price=末轮现价（收盘近似）；微差 = A 股末轮 14:57 vs 15:00 收盘竞价（HK 15:57 vs 16:00），登 ESTIMATED 待自家样本校准。缺席 code（停牌/未入盯盘宇宙）宁缺毋猜，`skipped_codes` 留痕于 paper_eod_done 决策。
 - **驱动形态**：`loop/paper_eod.py` `run_paper_eod`（sim.lock 内 load→bars→evaluate_day+T1/T3 判定→请求入队/GTC 执行/权益点→persist；调用序 sim→decisions §④ 纪律）双入口——serve worker 60s 节流自动（`_maybe_paper_eod`，零 LLM 无 L2 闸、与 T1 同源）+ CLI `paper-eod [--date]`（手动/补跑）。窗口=市场钟面 16:05–23:59（双市收盘后缓冲）；幂等锚=决策台账 `paper_eod_done`/`paper_eod_skipped` 当日一条（容错扫描坏行；窗前静默不留痕、窗内无 ticks 留痕即当日锚）。

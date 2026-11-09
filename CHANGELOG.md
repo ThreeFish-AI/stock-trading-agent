@@ -23,7 +23,7 @@
 - **文档对齐 15 项（issue #37 fix_doc 缺口）**：12-orchestration §③① 触发源 taxonomy（launchd 监听入队 source=monitor、monitor 非 M3 预留）与 defer 语义（持有中即 defer，0.0.4 收敛自相矛盾消除）与禁跑窗枚举补双 briefing kind；§⑦ 占位符清单退役 `__UV_PATH__`、锁冲突表述改「进程内降级只读须 kickstart 回归」（原「自动回归」与实现不符）；§⑫ 现价源「三源」→四源计数勘误（0.0.25 起即四源）+「在跑会话卡」呈现口径裁定（方案 §2 叙述超出原型 SSOT，按迁注先例以裁定句对齐不改正文）；README 仓库结构树重排（ops/ 提升根级、补 docs/ops/ 与 14-design-system、cc_client 行对齐）+ launchd sed 命令删死占位符 + 安装运行节补 archive-state/repair-decisions/paper-import/paper-eod；AGENTS 目录速查补 14-design-system、docs/ops/ 行与 d8 模板半句；knowledge-map D6 行改「已真跑」；14-design-system Primitive 54→55 枚（24 色，建档期计数笔误）与 §⑪ 页高 1466→1219px（PR #35 终态）；specs/README 节枚举补 §⑯；launchd.md「Crashed 重拉」改 KeepAlive=true 表述与锁冲突句；issue.md 重复 ID I-003 第二条重编号 I-004（补锚点）。
 - §⑮ 新行：`--no-session-persistence` 关转录旋钮（方案 §15 敏感 run 句半边；待裁定，触发=敏感 run 场景实锤）——消灭「既未落地也未登记」态。
 
-> 验证：测试 617→646 passed（+29：EOD 纯函数/判定三臂/allocation 解析导入/e2e 全链幂等/端点三件/worker 钩子委托）；selftest 49→52（paper.eod.bars_and_plan / paper.eod.t1_t3_judgement / paper.allocation.import_rows）；ruff 全绿；隔离实例实机冒烟（paper-import→④表单→paper-eod 全链）随 PR 前置验证完成。
+> 验证：测试 621→650 passed（+29：EOD 纯函数/判定三臂/allocation 解析导入/e2e 全链幂等/端点三件/worker 钩子委托）；selftest 49→52（paper.eod.bars_and_plan / paper.eod.t1_t3_judgement / paper.allocation.import_rows）；ruff 全绿；隔离实例实机冒烟（paper-import→④表单→paper-eod 全链）随 PR 前置验证完成。
 
 ## [0.0.31] - 2026-11-09
 

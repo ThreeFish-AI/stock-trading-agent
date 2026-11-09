@@ -1,6 +1,6 @@
 # launchd 第四槽 · 面板进程守护（安装与运维）
 
-第四个 LaunchAgent 守护面板进程：`KeepAlive=true` 常驻自愈（任何退出后按 `ThrottleInterval=30` 节流重启；彻底停机走 `bootout`）。坑位（本机实测）：`KeepAlive={Crashed}` 的 after-crash 信号量在 macOS 上挂起不触发——kill -9 后 90s 无重启；常驻形态下 daemon 锁冲突时 serve **进程内降级只读**（`loop.active=false` 可见、提交仍可入队），锁释放后须 `launchctl kickstart -k` 重启回归——硬 exit 3 只属 CLI run-once/archive-state（0.0.31 勘误：原句「自动回归」与实现不符）。与 vibe-stock 三槽（monitor 09:15 / outlook 17:35 / postmortem 18:05）**并存收编不替代**——三份 `com.threefish.vibestock.*` plist 零接触，本槽只守护 `stock-trading-agent serve`，不引第二套调度器（I-36/I-11）。逐键取值论证见 [12-orchestration.md §②](../specs/12-orchestration.md)。
+第四个 LaunchAgent 守护面板进程：`KeepAlive=true` 常驻自愈（任何退出后按 `ThrottleInterval=30` 节流重启；彻底停机走 `bootout`）。坑位（本机实测）：`KeepAlive={Crashed}` 的 after-crash 信号量在 macOS 上挂起不触发——kill -9 后 90s 无重启；常驻形态下 daemon 锁冲突时 serve **进程内降级只读**（`loop.active=false` 可见、提交仍可入队），锁释放后须 `launchctl kickstart -k` 重启回归——硬 exit 3 只属 CLI run-once/archive-state（0.0.32 勘误：原句「自动回归」与实现不符）。与 vibe-stock 三槽（monitor 09:15 / outlook 17:35 / postmortem 18:05）**并存收编不替代**——三份 `com.threefish.vibestock.*` plist 零接触，本槽只守护 `stock-trading-agent serve`，不引第二套调度器（I-36/I-11）。逐键取值论证见 [12-orchestration.md §②](../specs/12-orchestration.md)。
 
 ## 安装
 
