@@ -102,7 +102,11 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .metachip{font:500 var(--fs-11) var(--mono);color:var(--t2);border:1px solid var(--line);border-radius:var(--r-sm);padding:4px 9px;white-space:nowrap}
 .grid-main{display:grid;grid-template-columns:1fr 340px;gap:var(--sp-6);align-items:stretch}
 .grid-rail{display:grid;grid-template-columns:1fr 500px;gap:var(--sp-6);align-items:stretch}
-#page-monitor .grid-main{grid-template-columns:1fr 380px}
+/* ③页两栏加宽覆写须裹 min-width 门（0.0.32）：id 特异性 (1,1,0) 恒压过 ≤1180 塌缩块
+   的 (0,1,0)，裸置会令 880/1180 断点双栏不塌（§⑪ 两栏上限规约被打破） */
+@media (min-width:1181px){
+  #page-monitor .grid-main{grid-template-columns:1fr 380px}
+}
 .col{display:flex;flex-direction:column;gap:var(--sp-6);min-width:0}
 /* 0.0.29 两栏等高收口：grid-main矮列末卡拉伸至底（①右栏/③通知栏；1180/880 单栏无剩余空间自然无变化） */
 .grid-main .col>.card:last-child{flex:1 1 auto}
@@ -165,9 +169,11 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .tbl-wrap .tbl thead th.num{background:var(--bg1)}
 /* 操作列触点间距（≥8px 规约） */
 .tbl-act{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}
-/* ④页 grid-rail 矮列单卡拉伸填满 + 卡体垂直居中（0.0.29 失衡收口） */
+/* ④页 grid-rail 矮列单卡拉伸填满 + 卡体垂直居中（0.0.29 失衡收口；0.0.32 居中收窄到空态
+   ——有数据（如 2 行确认队列）时整卡居中致 71% 空带，改顶对齐） */
 #page-paper .grid-rail .col>.card{display:flex;flex-direction:column;flex-grow:1}
-#page-paper .grid-rail .col>.card .card-b{flex:1;display:flex;flex-direction:column;justify-content:center}
+#page-paper .grid-rail .col>.card .card-b{flex:1;display:flex;flex-direction:column}
+#page-paper .grid-rail .col>.card .card-b:has(>.empty){justify-content:center}
 /* ⑦页转录槽限高（防 <pre> 无界拉高边栏） */
 #au-transcript .md-pre{max-height:260px;overflow:auto}
 /* ②页会话观测空态引导行随流水线居中（壳层 loadmsg 语义不变） */
@@ -375,7 +381,8 @@ main h3{font-size:var(--fs-13);font-weight:600;color:var(--t1);margin:14px 0 6px
 .eq-svg{display:block;margin:0 auto}
 /* ── 0.0.15 列宽 SSOT（同属性列跨表同宽）── */
 .w-ts{width:118px}.w-code{width:88px}.w-num{width:84px}.w-kind{width:132px}
-.w-st{width:96px}.w-op{width:150px}.w-sup{width:110px}.w-batch{width:150px}
+.w-st{width:96px}.w-op{width:150px}.w-sup{width:128px}.w-batch{width:164px}.w-file{width:240px}
+.w-lv{width:56px}.w-n2{width:68px}.w-amt{width:104px}
 .w-seq{width:52px}.w-hash{width:176px}.w-stock{width:150px}.w-act{width:76px}
 
 /* ── 0.0.16 交互与可达性 ── */
@@ -447,7 +454,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .verd-final{font-size:var(--fs-16);color:var(--t1)}
 .verd-sub{font-size:var(--fs-12);color:var(--t3);margin-top:var(--sp-2)}
 .nv-chips{display:flex;gap:var(--sp-4);margin:var(--sp-3) 0 var(--sp-4)}
-.w-sess-ts{width:150px}.w-uuid{width:120px}.w-task{width:160px}.w-tok{width:90px}.w-usd{width:90px}
+.w-sess-ts{width:118px}.w-uuid{width:136px}.w-task{width:200px}.w-tok{width:90px}.w-usd{width:90px}
 
 /* ── 0.0.24 整体设计升级 ── */
 /* 空态三分：loadmsg=index.html 初始壳专属；.empty=服务端数据空态（主句+tip 引导） */
@@ -466,7 +473,21 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* ⑦归档日期带 + 转录槽（类化收编 inline） */
 .chip-row{display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-4)}
 .transcript-slot{margin-top:var(--sp-5)}
+/* 0.0.32：转录槽空态不占位——归档索引卡成为 .col 末子元素，§⑪ 末卡拉伸规则自然命中；
+   「查看」注入后槽非空恢复占位，归档卡不再拉伸（两栏等高意图闭环） */
+.transcript-slot:empty{display:none}
 .mini.on{border-color:var(--accln);color:var(--acc2)}
+/* 0.0.32：卡头主标题溢出保护（转录卡长名等场景防越出卡框） */
+.card-h .ct{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 0.0.32：表内文本链接触点扩高（负边距补偿不推高行；.mini 按钮自带触点不动） */
+.tbl td a:not(.mini){display:inline-block;padding:3px 0;margin:-3px 0}
+/* 0.0.32：服务端空态在拉伸卡内垂直居中（①日历/④确认队列等；沿 ④ rail 卡先例） */
+.card-b:has(>.empty){display:flex;flex-direction:column;justify-content:center}
+/* 0.0.32：②页左栏表单卡在两栏等高拉伸下垂直居中（591px 底部空白转对称呼吸） */
+#dg-form:has(>form){display:flex;flex-direction:column;justify-content:center}
+/* 0.0.32：③页复核区容器随列拉伸（§⑪ 末卡拉伸意图经包装层传导；注入前后零跳变） */
+#page-monitor .grid-main .col>#advice-detail{display:flex;flex-direction:column}
+#page-monitor .grid-main .col>#advice-detail>.card:last-child{flex:1 1 auto}
 /* ①事件流/待办行可导航（hash 路由跳转，零 JS 新增） */
 .ev-link{display:block;color:inherit;border-radius:var(--r-md)}
 .todo-link{color:inherit}
@@ -475,8 +496,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .riskchip.sev-hi{color:var(--up2);background:color-mix(in srgb,var(--px-red) 16%,transparent);
   border-color:color-mix(in srgb,var(--px-red) 48%,transparent)}
 .riskchip.sev-md{color:var(--warn);background:var(--warnbg);border-color:var(--warnln)}
-/* ②页表单列收窄（.grid-2 本体不动；表单实宽 ~400px） */
-#page-diagnosis .grid-2{grid-template-columns:400px 1fr}
+/* ②页表单列收窄（.grid-2 本体不动；表单实宽 ~400px）——须裹 min-width 门（0.0.32：
+   本规则源序晚于 ≤1180 塌缩块且同特异性，裸置会级联压过断点单栏塌缩） */
+@media (min-width:1181px){
+  #page-diagnosis .grid-2{grid-template-columns:400px 1fr}
+}
 /* 页脚 API 长串防溢出（基础规则，不待 880px） */
 .foot code{word-break:break-all}
 
@@ -563,7 +587,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div class="grid-main flex-fill"><!-- 复核主区 + 通知边栏两栏等高；点击详情/复核后左栏呈现 NR-1 重裁决卡 -->
   <div class="col"><div id="advice-detail"><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><p class="empty">尚未选择复核事件。<span class="empty-tip">点击上方事件表「详情 / 盯盘复核」后于此呈现 NR-1 重裁决卡。</span></p></div></div></div></div>
-  <div class="col"><div class="card grow"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
+  <div class="col"><div class="card grow"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" id="mo-notif-meta" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div></div>
 </div>
 </div>
@@ -580,13 +604,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="hero"><div><h1>建议卡库</h1><div class="sub" title="monitor-advice/1 · 卡面落盘脱敏（NR-5/R2 豁免面：落盘为百分比与档位词，面板呈现态给原值）">卡面落盘脱敏（百分比与档位词）· 面板呈现态给原值</div></div>
 <div class="hero-r"><span class="metachip" title="候选动作 · vibe-stock/04 五档分类学措辞">候选动作 · 五档分类学措辞</span></div></div>
 <div id="advice" hx-get="/api/panel/advice" hx-trigger="load, every 180s, sse:advice, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
-<div id="advice-detail-2"></div></section>
+<div id="advice-detail-2"><div class="card"><div class="card-h"><span class="ct">T2 建议卡详情</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><p class="empty">尚未选择建议卡。<span class="empty-tip">点击上方代码列查看 T2 建议卡详情。</span></p></div></div></div></section>
 <section class="page" id="page-stats" data-page="stats">
 <div class="hero"><div><h1>后验战绩</h1><div class="sub" title="MIN_SAMPLES=30">全样本登记含亏损 · 不挑样对比 · 样本 &lt;30 只观察不记分</div></div>
 <div class="hero-r"><span class="metachip" title="ledger 以 agent: 前缀区分提交流，独立画像互不合并">按提交流分档案</span></div></div>
 <div id="stats" hx-get="/api/panel/stats" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></section>
 <section class="page" id="page-audit" data-page="audit">
-<div class="hero"><div><h1>审计与预算</h1><div class="sub" title="预算双口径记账（token + 等效美元，F-34）">decisions hash 链防篡改 · 预算双口径记账 · L2 总闸</div></div>
+<div class="hero"><div><h1>审计与预算</h1><div class="sub" title="预算双口径记账（token + 等效 USD，F-34）">decisions hash 链防篡改 · 预算双口径记账 · L2 总闸</div></div>
 <div class="hero-r" id="au-hero-r" hx-get="/api/panel/aumeta" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="grid-main screen"><!-- 主栏=台账与会话（宽表）· 边栏=总闸/归档/转录；0.0.31 视口锁：grow 卡内滚动恒一屏 -->
   <div class="col">
@@ -617,6 +641,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
     });
     document.querySelectorAll('.page').forEach(function(s){s.classList.toggle('on',s.dataset.page===h)});
     window.scrollTo(0,0);
+    // 0.0.32：880 档 tabs 横滚时把 active 页签滚进可视区（此前 ⑥⑦ 在条末不可见）
+    var onTab=document.querySelector('.tab.on');
+    if(onTab&&onTab.scrollIntoView){try{onTab.scrollIntoView({inline:'center',block:'nearest'});}catch(e){}}
   }
   window.addEventListener('hashchange',activate);
   activate();

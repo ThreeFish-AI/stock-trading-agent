@@ -8,6 +8,7 @@
 | I-002 | T1 轻量日 K 链机制升级候选（vibe-stock CLI 暴露），现采全量 fetch+prepare 过渡口径 | ⏸ 暂不处理 | — | [详情](#I-002) |
 | I-003 | 跨午夜时敏测试钉死 2026-11-08 钟面（advice refused 扫描与 briefing ack 当日卡闸），隔日必红 | ✅ 已完成 | 2026-11-09 | [详情](#I-003) |
 | I-003 | decisions.jsonl 增量游标 bug 生产破链：daemon 重启重灌全史、hash 链校验静默失效 | ✅ 已完成 | 2026-11-08 | [详情](#I-003) |
+| I-004 | 界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复 | ✅ 已完成 | 2026-11-10 | [详情](#I-004) |
 
 <a id="I-001"></a>
 
@@ -50,3 +51,14 @@
 - **注意事项**：已核实外仓 [agent_postmortem.py](https://github.com/ThreeFish-AI/vibe-stock/blob/main/scripts/agent_postmortem.py) 为键控 last-wins 消费、重复行 payload 逐字相同，W2 去重不改变外仓视图（无需跨仓对账，留痕即可）。
 - **生产现状（2026-11-08 复核）**：盘上链已被先行修复（59 行全唯一 seq、verify_chain 通过、留有 chain_repair_started/done 决策行）——但生产 0.0.13 根因仍在，daemon 重启后任一会话任务完成即复发重灌；0.0.15 W1 唯一入口根治。
 - **升级手册（合并 0.0.15 后执行一次）**：①`uv tool upgrade`（或按原安装源重装，取 main 最新）；②`launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent` 重启 daemon；③（仅当链再破时）daemon 空闲期跑 `stock-trading-agent repair-decisions --apply` 再 kickstart 一次。链健康时 ② 即完成切换。
+\n
+<a id="I-004"></a>
+
+## I-004：界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复
+
+- **问题描述**：用户反馈七页面板依旧丑（拥挤/未对齐/遮挡/不居中）；审计 workflow（18 只读代理：8 审计 → 8 对抗核验 → 完备性批评家）确认 44 条 + 编排者实测补录 2 条功能缺陷。
+- **表因根因（两条非显性坑）**：①PyYAML（YAML 1.1）把 front-matter 未加引号的 `code: 002513` 按**八进制**解析为 1355——0 开头 A 股代码（000/002/300 段）建议卡详情链接 404、复核状态错配，`parse_advice_card` 既有 int→str 转换只防了十进制；②作用于两栏基座的高特异性 CSS 覆写未裹 `min-width` 门——id 特异性 (1,1,0) 恒压过 ≤1180 塌缩媒体块 (0,1,0)（#page-monitor 中招），且源序晚于塌缩块的同特异性规则级联必胜（#page-diagnosis 中招），≤1180 恒双栏。
+- **处理方式**：octal 双保险（写侧加引号 + 读侧 stem 权威对账）；级联坑以 `@media (min-width:1181px)` 包裹修复并钉入 14-design-system §⑬「断点覆写须裹 min-width 门」；44 项逐模块修复详见 CHANGELOG 0.0.32（头体 num 配对/列宽档族扩档/双钟面/空态等高/触点/排版口径八主线）。
+- **后续防范**：YAML 数值型身份字段一律引号落盘，读侧以文件名/键位对账兜底；断点行为必须实测（matchMedia + computed grid-template-columns 双探针），勿信「媒体块写了就生效」；审计证据链用 headless 专属浏览器（共享 Playwright 实例的 viewport 会被并发会话反复改写，测量全废）。
+- **同类问题影响**：audit 归档/ledger 等 yaml/数值身份字段面暂无同型消费点（grep 复核）；CSS 侧其余 id 特异性覆写仅剩 #page-diagnosis/#page-monitor 两处（已修），新增覆写走 §⑬ 门。
+- **注意事项**：本条与 0.0.31 一屏化（PR #38）并发撞车——处置沿既定法：WIP 提交 → 从 origin/main 重建分支 → cherry-pick 语义重放（2 文件 3 处冲突手工按「限高壳 + 新列宽」合并）。
