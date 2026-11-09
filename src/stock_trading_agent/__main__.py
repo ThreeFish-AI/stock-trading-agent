@@ -283,15 +283,17 @@ def _cmd_selftest(_args: argparse.Namespace) -> int:
     from stock_trading_agent.selftest import run_selftests
 
     results = run_selftests()
-    failed = [r for r in results if not r[1]]
+    failed = [r for r in results if r[1] is False]
+    skipped = [r for r in results if r[1] is None]
     for name, ok, err in results:
-        print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  — {err}" if err else ""))
-    print(
-        f"\n{len(results) - len(failed)}/{len(results)} 全绿"
-        if not failed
-        else f"\n{len(failed)} 项失败"
-    )
-    return 1 if failed else 0
+        mark = "PASS" if ok else ("SKIP" if ok is None else "FAIL")
+        print(f"{mark}  {name}" + (f"  — {err}" if err else ""))
+    if failed:
+        print(f"\n{len(failed)} 项失败")
+        return 1
+    note = f"（{len(skipped)} SKIP：安装态无仓内 ops/ 件，仓库检出态全量跑）" if skipped else ""
+    print(f"\n{len(results) - len(skipped)}/{len(results)} 全绿{note}")
+    return 0
 
 
 def _cmd_upgrade_gate(args: argparse.Namespace) -> int:

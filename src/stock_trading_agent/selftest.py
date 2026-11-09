@@ -38,6 +38,18 @@ def _repo_root():
     return Path(__file__).resolve().parents[2]
 
 
+class SelftestSkip(Exception):
+    """安装态守卫：case 依赖仓内 ops/ 件而当前环境为 uv tool 安装态（无仓）——SKIP 非 FAIL。"""
+
+
+def _require_ops() -> Path:
+    """ops/ 件守卫：仓态返回 ops 目录；安装态 raise SelftestSkip（repo 态零变化，判据只收严）。"""
+    ops_dir = _repo_root() / "ops"
+    if not ops_dir.is_dir():
+        raise SelftestSkip("安装态无仓内 ops/（uv tool 环境）——本 case 需仓库检出态运行")
+    return ops_dir
+
+
 _CASES: list[tuple[str, object]] = []
 
 
@@ -53,11 +65,13 @@ def _case(name: str):
 
 def run_selftests() -> list[tuple[str, bool, str]]:
     """按注册序执行全部 case；异常即 FAIL（判据与 pytest 同源，AGENTS.md 测试门禁）。"""
-    results: list[tuple[str, bool, str]] = []
+    results: list[tuple[str, bool | None, str]] = []
     for name, fn in _CASES:
         try:
             fn()
             results.append((name, True, ""))
+        except SelftestSkip as exc:
+            results.append((name, None, str(exc)))
         except Exception as exc:
             results.append((name, False, str(exc)))
     return results
@@ -390,6 +404,7 @@ def billing_from_probe():
 @_case("ops.launchd.plist")
 def launchd_plist_pinned():
 
+    _require_ops()
     plist_path = _repo_root() / "ops" / "launchd" / "com.threefish.stocktrading.agent.plist"
     with plist_path.open("rb") as fh:
         data = plistlib.load(fh)
@@ -543,7 +558,7 @@ def stats_and_briefing_scan():
 @_case("ops.d8_probe.parsers")
 def d8_probe_parsers():
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
+    sys.path.insert(0, str(_require_ops()))
     import d8_probe
 
     line = "~".join(
@@ -880,7 +895,7 @@ def watcher_conditional_save():
 @_case("ops.state_probe.report")
 def state_probe_report():
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
+    sys.path.insert(0, str(_require_ops()))
     import state_probe
 
     metrics = {
@@ -989,7 +1004,7 @@ def upgrade_gate_diff():
 @_case("ops.upgrade-gate.baseline")
 def upgrade_gate_baseline_present():
 
-    gate_dir = Path(__file__).resolve().parents[2] / "ops" / "upgrade-gate"
+    gate_dir = _require_ops() / "upgrade-gate"
     pinned = json.loads((gate_dir / "pinned.json").read_text(encoding="utf-8"))
     ver = pinned["cli_version"]
     assert (gate_dir / f"claude-{ver}.snapshot.json").exists(), f"基线快照缺席：{ver}"

@@ -9,6 +9,7 @@
 | I-003 | 跨午夜时敏测试钉死 2026-11-08 钟面（advice refused 扫描与 briefing ack 当日卡闸），隔日必红 | ✅ 已完成 | 2026-11-09 | [详情](#I-003) |
 | I-004 | decisions.jsonl 增量游标 bug 生产破链：daemon 重启重灌全史、hash 链校验静默失效 | ✅ 已完成 | 2026-11-08 | [详情](#I-004) |
 | I-005 | 特性覆盖审计（#37）：paper 驱动面缺口补齐（EOD 驱动/allocation 导入/撮合价透传）+ 15 项文档对齐 + postmortem 槽补装 | ✅ 已完成 | 2026-11-10 | [详情](#I-005) |
+| I-006 | selftest 安装态 4 例误红（ops/ 类 case 缺仓 FAIL）→ SelftestSkip 守卫 | ✅ 已完成 | 2026-11-10 | [详情](#I-006) |
 
 <a id="I-001"></a>
 
@@ -64,3 +65,13 @@
 - **后续防范**：「纯函数层交付 ≠ 链路交付」——含调度/入口的完整链路须同一 issue 挂载到底（本条即 issue #37 逐项对账的意义）；索引类文档（目录速查/结构树/节枚举）随建档 PR 同步增改，防计数与枚举漂移。
 - **同类问题影响**：vibe-stock 侧 agent_postmortem.py 的 plist 串联 README 未物化（其 docstring 承诺「见 batch/postmortem/ README」），属跨仓缺口——待其仓补模板后本机安装件可换回官方形态。
 - **注意事项**：bar 源（ticks 末轮 vs 收盘竞价）、GTC/T3 窗日历日换算均为 ESTIMATED（13-paper §⑦/§⑧），自家成交样本校准后固化，判据只收严。
+
+<a id="I-006"></a>
+
+## I-006：selftest 安装态 4 例误红——ops/ 类 case 在 uv tool 环境缺仓即 FAIL
+
+- **问题描述**：生产升级 0.0.32 后实机跑 `~/.local/bin/stock-trading-agent selftest` 报 4 项失败（ops.launchd.plist / ops.d8_probe.parsers / ops.state_probe.report / ops.upgrade-gate.baseline），均为仓内 `ops/` 件路径解析到 uv tool venv（`Path(__file__).parents[2]` 在安装态指向 `lib/python3.14/`，无 ops/）。
+- **表因根因**：selftest 的 ops 类 case 以仓库检出态为隐含前提（`_repo_root()` 假设 src 布局仓根），安装态无此结构；0.0.26 起 baseline case 入册即带此盲点，既往自检均在仓内 `uv run` 跑故未暴露。
+- **处理方式（0.0.33）**：`SelftestSkip` 语义——`_require_ops()` 守卫四例，安装态 SKIP（`ok=None`、exit 0、打印器带计数注记「仓库检出态全量跑」）；仓库态（CI 与本地 `uv run`）零变化（判据只收严不适用——降级只影响安装态呈现，不放宽任何仓态判据）。
+- **后续防范**：依赖仓内文件（ops/、docs/）的 selftest/测试 case 必须带环境守卫并区分 SKIP/FAIL；安装态自检纳入生产升级 runbook 步骤（upgrade-runbook 已含 selftest 自检步，此后安装态跑法为可正常收敛态）。
+- **同类问题影响**：无——其余 48 例为纯函数（包内自足），安装态与仓态同判。

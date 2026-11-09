@@ -4,6 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.33] - 2026-11-10
+
+### Fixed
+
+- **selftest 安装态 4 例误红**（0.0.32 生产升级实测发现）：`ops.launchd.plist/ops.d8_probe.parsers/ops.state_probe.report/ops.upgrade-gate.baseline` 四例依赖仓内 `ops/` 件，uv tool 安装态（`~/.local/bin/stock-trading-agent selftest`）自 0.0.26 起即 FAIL——引入 `SelftestSkip` 语义：`_require_ops()` 守卫下安装态 SKIP（非 FAIL、exit 0），仓库检出态零变化全量跑（判据只收严不适用：仓态行为逐字不变）；CLI 打印器增 SKIP 行与计数注记。issue.md I-006。
+
 ## [0.0.32] - 2026-11-10
 
 ### Added
