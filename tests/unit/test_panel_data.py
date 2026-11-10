@@ -278,10 +278,13 @@ class TestAggregateCalendar:
         return {"meta": {"code": code}, "blocks": blocks}
 
     def test_three_types_sorted(self):
+        # 日期相对 today 构造（时区无关断言）：原硬编码 2026-11-10 公告日跨午夜即被
+        # 「过去日过滤」吃掉致断言失败（I-003 跨午夜时敏同族）
+        d = lambda n: (dt.datetime.now(tz=None) + dt.timedelta(days=n)).strftime("%Y-%m-%d")  # noqa: E731
         payload = self._payload(
-            forecast={"next_disclosure": {"appoint_date": "2026-12-01"}},
-            unlock={"upcoming": [{"date": "2026-11-20", "ratio_pct": 5.2, "type": "定向增发"}]},
-            notices={"items": [{"date": "2026-11-10", "type": "公告", "title": "董事会决议"}]},
+            forecast={"next_disclosure": {"appoint_date": d(20)}},
+            unlock={"upcoming": [{"date": d(9), "ratio_pct": 5.2, "type": "定向增发"}]},
+            notices={"items": [{"date": d(2), "type": "公告", "title": "董事会决议"}]},
         )
         rows = aggregate_calendar([payload])
         assert [r["type"] for r in rows] == ["公告", "解禁", "披露"]

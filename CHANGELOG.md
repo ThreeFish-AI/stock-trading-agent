@@ -4,6 +4,24 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.36] - 2026-11-10
+
+### Fixed
+
+- **视口锁 calc(100vh-K) 定高双病灶根治——弹性充满机制（issue #36 第六轮；3 只读审计代理 workflow + 实机三档视口探针）**。定高锁的两个失败模式同源于「锁高与真实可用高恒不相等」：锁高小于内容需求时 grow 卡（flex 基数 0）被定高卡挤没（实测 ①今日事件流 37px/今日待办 9px/②会话观测 2px 完全不可见）；锁高大于可用高时页脚上方恒留 30–98px 死带（用户截图实证）。机制替换：`main(flex:1)→.page.on(flex:1)→.screen(flex:1 1 auto)` 恒恰满视口余高，页级 K 常量（①318/②273/③⑦236/④288/⑥243 五枚魔数）全退役；配 grow 卡 96px 可读下限（`.card.grow,.grow>.card`，矮视口宁可页面滚动不可压没模块）、`.screen`/`#stats` 直子 `gap:var(--sp-6)` 补齐（0.0.31–0.0.35 缺失致 ①③④⑥ 直子卡贴边 0px，违背全站卡距节奏）、④ `#paper` fragment 根补 `display:flex` 承接链（innerHTML 注入的 fragment 根拿不到壳层高度分配）与窄屏解锁形态更新（`height:auto`→`flex:none`）。实机复测：1280×800/1440×900 七页 scrollHeight 溢出全零、页脚全部贴底、①主栏事件流/信号卡 193/193 均分（253/253 @900）、②会话观测 2px→286px 复活；1180 窄档单栏自然流与零横向溢出维持。
+- **①今日总览结构对齐原型**：主栏收敛为「今日事件流 + 在册信号卡」双 grow 均分；事件日历与晨报/复盘行动项两卡迁出主栏、落位**底部横向信息带**（`.grid-2`，对齐原型底部条设计，feed-cap 帽 220→160 让位主区）；边栏序对齐原型右栏（净值→系统状态→待办，待办收尾吃余量）；系统状态卡紧凑化（sys-row 单行化 + 行距收紧 + 会话/队列尾注行并入 CC 行 title，净高 300→173px）；边栏加 `overflow:auto` 泄压阀（thin 滚动条，经典滚动条平台常显作裁切提示；矮视口内滚代替压没）。
+- **②会话观测 2px 塌陷**：`render_tasks_table` 裸表 20 行可拉至 ~800px，把同列会话观测 grow 卡挤至 2px——入 `tbl-wrap sm` 限高（200px）；另补 `.subpanel>.grid-2{flex:1 1 auto}`（②工作台签 grid-2 不吃 subpanel 余量，高视口页内下方留白 ~119px）。
+- **③通知/⑤详情/②报告正文三处定帽与弹性充满冲突**：`#mo-notif` 240px 帽（帽下卡内死区）、`#advice-detail-2>.card>.card-b` 420px 帽（详情吃不满余高）、`#dg-report-body .card-b` calc(100vh-420px) 帽（vh 基准失效）——三帽退役，统一由 grow/flex 链（卡体 flex+overflow）承载滚动与边界。
+- **`.grid-main .col>.card:last-child` 末卡拉伸与 grow 卡打架**：末卡自身是 grow 卡（基数 0）时该规则把 flex-basis 打回 auto，同列双 grow 非对称分配（①信号卡 290 vs 事件流 96 实测）——加 `:not(.grow)` 收口。
+- **test_panel_data 日历聚合测试跨午夜时敏（I-003 同族）**：fixture 硬编码 2026-11-10 公告日跨日即被「过去日过滤」吃掉致断言失败——三日期改相对 today 构造（+2/+9/+20 保排序断言语义，时区无关）。
+
+### Changed
+
+- **页脚单行居中化（对齐原型）**：弃两行左对齐 + 全量 API endpoint `<code>` 清单，改居中单行（`Stock Trading Agent · 模拟盘永不接真实下单 · 输出仅供研究参考，不构成投资建议 · 模拟绩效为假设性推演 · AI 生成 · 用户复核前置`）；免责钉面词（不构成投资建议/永不接真实下单）双保留；死规则 `.foot code{word-break}` 与 880 块 `flex-wrap` 一并清理。
+- **七页文案瘦身（3 审计代理 75 条提案采约 30 条；机制名与测试钉面词零触碰，机制口径一律下沉同元素 title——纯描述性 meta 直接删除，如②报告档案 cm（报告物理位置指引「vibe-stock reports 目录」并入卡内 tbl-note title））**：七页 hero 副题收敛单主链（②LLM 只产意见 · 聚合确定性裁决／③机械判据盯盘 · 零 LLM／④严格穿价撮合 · 逐笔人工确认 · 零 LLM 等）；④NR-2 横幅正文删「不下单、不改单、不撤单」尾句（红线全值挂横幅 title 承载；该三动词的落盘载体为⑤页建议卡免责尾注，advice.py 钉面不动）；①信号卡/日历/晨报 cm、③事件表 cm、⑤ metachip 等卡头 meta 收敛；③事件表/③通知/①信号/⑦会话/②观测五处 tbl-note 减段；②表单 tip、⑥双卡 meta 与尾注、⑦台账卡题（「decisions 台账（尾部 20 条）」→「decisions 台账」+meta 承载）、L2 总闸注（全值 title 承接）、briefing/日历/事件流空态 tip 九处去冗；routes 侧 topbar 首枚 chip（刷新时刻与轮询机制句分离）、公司行动/allocation 成功通知删刷新机制尾句（预期管理句 title 承接）；②裁决卡终判字号 16→19px（对齐原型强视觉方向）。
+- **`test_design_tokens.py` 一屏化钉面同步（判据只收严）**：`TestOneScreen031` 机制钉由 calc 定高串换 flex 充满串；新增 `.page.on` 传导链钉与 grow 96px 下限钉；K 值三钉改**逐页精确负钉**（防回流，勿宽泛负钉误伤合法 vh 用法）；窄屏解锁钉随形态更新。
+- **规约同步**：[14-design-system.md](docs/specs/14-design-system.md) §⑫ 视口锁三件套句改写为弹性充满机制（K 值表退役、一屏判据探针口径更新）；issue.md 增 I-010。
+
 ## [0.0.35] - 2026-11-10
 
 ### Fixed

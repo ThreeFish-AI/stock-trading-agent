@@ -140,6 +140,9 @@ class TestTableNorms:
             }
         )
         assert '<span id="dg-task-meta" hx-swap-oob="true" class="cm">1 项</span>' in html
+        # 0.0.36：任务表入 tbl-wrap sm 限高——裸表 20 行可拉至 ~800px，把同列「会话观测」
+        # grow 卡挤至 2px 不可见（Issue #36 ②页实测绘面）
+        assert '<div class="tbl-wrap sm"><table class="tbl">' in html
         empty = render_tasks_table({"tasks": []})
         assert '<span id="dg-task-meta" hx-swap-oob="true" class="cm">0 项</span>' in empty
 
