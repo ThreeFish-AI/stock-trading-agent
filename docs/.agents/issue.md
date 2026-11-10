@@ -12,6 +12,7 @@
 | I-006 | selftest 安装态 4 例误红（ops/ 类 case 缺仓 FAIL）→ SelftestSkip 守卫 | ✅ 已完成 | 2026-11-10 | [详情](#I-006) |
 | I-007 | 界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复 | ✅ 已完成 | 2026-11-10 | [详情](#I-007) |
 | I-008 | ①⑦ 页 grid-main.screen 级联：两栏纵向堆叠、⑦ 台账 0px 不可见（0.0.31 引入）→ .grid-main.screen{display:grid} 一行收口 | ✅ 已完成 | 2026-11-10 | [详情](#I-008) |
+| I-009 | PR #39 review 遗留清理：overview 双发射收口/坏 front-matter 免疫/research 术语档案收尾 | ✅ 已完成 | 2026-11-10 | [详情](#I-009) |
 
 <a id="I-001"></a>
 
@@ -99,3 +100,15 @@
 - **后续防范**：同一元素叠加两个基座类时 grep 两类是否都设 display，必须显式组合选择器声明归属；布局类验收必含 computed display + grid-template-columns 双探针，勿只看媒体块文本。
 - **同类问题影响**：全仓 grep 组合基座仅此一处（③④页为包裹形态无冲突）；⑤ `#dg-form` 等注入槽无基座叠加。
 - **注意事项**：0.0.31–0.0.33 生产面板 ①⑦ 一直处于堆叠态（用户感知为「页面依旧丑」的部分来源）；修复后 ①⑦ K 值（318/236）与两栏布局经三档实测无回归。
+
+<a id="I-009"></a>
+
+## I-009：PR #39 review 遗留清理——overview 双发射/坏 front-matter 免疫/research 术语
+
+- **问题描述**：PR #39 八轮 review 留痕四项范围外存量：①页 overview 同响应双发射 ov-ev-count（外层+feed 片内各一，次序耦合）；`parse_advice_card` 对坏 front-matter 抛 YAMLError 致列表 500；`docs/research/` 四处「等效美元」与 0.0.34 双称统一漂移；（ov-ev-count 双发射与 docstring 计数随本条一并收口）。
+- **表因根因**：overview 轮询目标即 `/api/panel/overview`，`render_event_feed` 亦仅被其消费——外层发射自始冗余；safe_load 无异常守卫；research 档案在 0.0.34 术语统一时未纳入清扫面。
+- **处理方式（0.0.35）**：删外层发射留片内单源（docstring 同步口径）；safe_load 包 try/except 视同无元数据（单测钉死）；research 四处术语同步。
+- **后续防范**：新增 oob 发射点前先查同 id 既有发射面（htmx oob 无去重语义）；外部输入（落盘 md）反解一律带异常守卫降级。
+- **同类问题影响**：`parse_advice_card` 两生产调用点（列表/单卡）同享守卫收益；无其他同型。
+- **注意事项**：本条属 review 遗留收尾，无行为收紧面；CI 于禁跑窗（17:30–18:10 市场钟面）外跑。
+
