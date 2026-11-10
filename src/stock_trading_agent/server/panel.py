@@ -609,7 +609,7 @@ def render_stats_fragment(payload: dict) -> str:
         )
         left.append(
             '<div class="tbl-wrap sm">'
-            + _table("w-ts|w-tok|w-tok|w-usd", "日:num|会话:num|token:num|等效 USD:num", crows)
+            + _table("w-ts|w-num|w-tok|w-usd", "日:num|会话:num|token:num|等效 USD:num", crows)
             + "</div>"
             + cap_note
         )
@@ -937,9 +937,11 @@ def render_notifications(payload: dict) -> str:
                 groups.append([row])
         cards = "".join(_notification_group_html(group) for group in groups)
         status_line = ""
-        # 0.0.34：计数条升卡头 meta（oob 更新）——原置 520px 滚动容器底部首屏不可见
+        # 0.0.34：计数条升卡头 meta（oob 更新）——原置 520px 滚动容器底部首屏不可见；
+        # class="cm" 必带：oob 为 outerHTML 替换，响应元素属性即终态（丢失即破卡头样式）
         meta_oob = (
-            f'<span id="mo-notif-meta" hx-swap-oob="true" role="status" aria-live="polite" '
+            f'<span class="cm" id="mo-notif-meta" hx-swap-oob="true" '
+            f'role="status" aria-live="polite" '
             f'title="osascript 通道 · 只读">重放 {len(groups)} 组 · 共 {len(rows)} 条</span>'
         )
     return (
@@ -1341,7 +1343,7 @@ def render_report_body(code_market: str, filename: str, md: str) -> str:
 
 
 def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
-    """③⑤建议卡详情：四块布局（候选动作/差异/份额原值 .bignum/σ√h 表）+ 现价块 + 复核底条。
+    """③⑤建议卡详情：四块布局（候选动作/差异/份额原值 .bignum/现价并入的走势参考块）+ 复核底条。
 
     mount=mo→③页 #advice-detail / ad→⑤页 #advice-detail-2（按钮 target 按挂点映射）。
     """
@@ -1498,7 +1500,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
             # 可卖头缩短为「可卖T+1」；外裹 tbl-wrap 令定宽恒被尊重（断点不再比例挤压）
             '<div class="tbl-wrap">'
             + _table(
-                "w-stock|w-code|w-batch|w-n2|w-n2|w-num|w-num|w-num|w-amt",
+                "w-stock|w-st|w-batch|w-n2|w-n2|w-num|w-num|w-num|w-amt",
                 "股票|状态|建仓批|手数:num|可卖T+1:num|成本价:num|现价:num|盈亏%:num|市值:num",
                 "".join(rows),
             )
@@ -1936,7 +1938,7 @@ def render_audit_transcript(body: dict) -> str:
     return _card(
         f"转录 · {_esc(fname_short)}",
         f'<pre class="md-pre">{text}</pre>',
-        meta=f"stream-json {shown}|{fname}",
+        meta=f"stream-json {shown}|{_esc(fname)}",
     )
 
 

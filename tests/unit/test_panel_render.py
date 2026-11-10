@@ -164,7 +164,6 @@ class TestTableNorms:
 
     def test_ts_hhmm_market_clock_tz_independent(self):
         """0.0.34 CI 回归：aware 串统一转市场钟面（非系统本地——UTC runner 实证错钟面）。"""
-        from stock_trading_agent.loop.events import MARKET_TZ
         from stock_trading_agent.server.panel import _ts_hhmm
 
         # 双钟面场景：+00:00 台账串不得显示 UTC 钟面（13:26），须显示市场钟面 21:26
@@ -173,7 +172,6 @@ class TestTableNorms:
         assert _ts_hhmm("2026-11-09T21:26:00+08:00") == "21:26"
         assert _ts_hhmm("2026-11-09T09:31:17") == "09:31"
         assert _ts_hhmm("09:31") == "09:31"
-        assert "+08:00" in str(MARKET_TZ) or True  # MARKET_TZ 在场即可（值由 loop.events SSOT 管）
 
 
 class TestMdLite:

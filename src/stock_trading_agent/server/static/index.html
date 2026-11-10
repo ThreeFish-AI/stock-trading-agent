@@ -473,17 +473,23 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* ⑦归档日期带 + 转录槽（类化收编 inline） */
 .chip-row{display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-4)}
 .transcript-slot{margin-top:var(--sp-5)}
-/* 0.0.34：转录槽空态不占位——归档索引卡成为 .col 末子元素，§⑪ 末卡拉伸规则自然命中；
-   「查看」注入后槽非空恢复占位，归档卡不再拉伸（两栏等高意图闭环） */
+/* 0.0.34：转录槽空态不占位（空栏不预留空白）；「查看」注入后 .grow 槽占位吃满余高。
+   坑位：#au-transcript 恒为 .col 末子元素（display:none 不改变 :last-child 的文档树匹配），
+   §⑪ 末卡拉伸规则对归档卡不可达——两栏等高意图由槽自身 .grow 承载，勿依赖末卡拉伸 */
 .transcript-slot:empty{display:none}
 .mini.on{border-color:var(--accln);color:var(--acc2)}
 /* 0.0.34：卡头主标题溢出保护（转录卡长名等场景防越出卡框） */
 .card-h .ct{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 0.0.34：表内文本链接触点扩高（负边距补偿不推高行；.mini 按钮自带触点不动） */
 .tbl td a:not(.mini){display:inline-block;padding:3px 0;margin:-3px 0}
-/* 0.0.34：服务端空态在拉伸卡内垂直居中（①日历/④确认队列等；沿 ④ rail 卡先例） */
+/* 0.0.34：服务端空态在拉伸卡内垂直居中（④确认队列等；沿 ④ rail 卡先例）。适用条件：卡
+   具备拉伸链（卡 flex 列 + card-b flex:1）才有可分配空间——①日历为折叠容器内 content 高
+   卡（feed-cap 限高），不适用，勿对 content 高卡期待居中 */
 .card-b:has(>.empty){display:flex;flex-direction:column;justify-content:center}
-/* 0.0.34：②页左栏表单卡在两栏等高拉伸下垂直居中（591px 底部空白转对称呼吸） */
+/* 0.0.34：②页左栏表单卡在两栏等高拉伸下垂直居中（591px 底部空白转对称呼吸）——先补拉
+   伸骨架（沿 ⑥ stats 先例：卡 flex 列 + card-b flex:1），:has 居中才有空间可分配 */
+#page-diagnosis .grid-2>.card{display:flex;flex-direction:column}
+#page-diagnosis .grid-2>.card>.card-b{flex:1 1 auto}
 #dg-form:has(>form){display:flex;flex-direction:column;justify-content:center}
 /* 0.0.34：③页复核区容器随列拉伸（§⑪ 末卡拉伸意图经包装层传导；注入前后零跳变） */
 #page-monitor .grid-main .col>#advice-detail{display:flex;flex-direction:column}

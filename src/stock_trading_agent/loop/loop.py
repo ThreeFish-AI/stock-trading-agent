@@ -398,7 +398,7 @@ class AgentLoop:
         return None
 
     def _record_budget(self, result) -> None:
-        """双口径记账（F-34：token+等效美元+日/月分桶；原子写，§11 写者=主 Agent）。"""
+        """双口径记账（F-34：token+等效 USD+日/月分桶；原子写，§11 写者=主 Agent）。"""
         from stock_trading_agent.loop.monitor_events import market_today
 
         ledger = read_json(self.layout.budget_path) or {}
