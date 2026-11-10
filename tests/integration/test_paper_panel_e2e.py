@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 from fastapi.testclient import TestClient
 
@@ -171,3 +172,73 @@ class TestConfirmChain:
             assert sorted(results.values()) == [200, 409]  # 恰一笔落账、另一笔可卖不足被拒
             pf_after = paper_ledger.load(layout.sim_portfolio_path)
             assert pf_after.position("600519").lots == 0
+
+
+class TestAllocationImport:
+    """0.0.31 allocation 导入端点：JSON 孪生 + htmx 表单变体 + alloc-form load-only。"""
+
+    ALLOC: ClassVar[dict] = {
+        "budget": 100_000.0,
+        "rows": [
+            {
+                "code": "601919",
+                "price": 16.67,
+                "stop": 15.84,
+                "entry_ref": 16.17,
+                "target1": 16.87,
+                "ma20": 16.279,
+                "lots": 6,
+                "tranches": {"T1_open": 2, "T2_limit_entryref": 2, "T3_trigger": 2},
+            }
+        ],
+    }
+
+    def test_import_creates_three_tranches_and_decision(self, tmp_path: Path):
+        app, layout = make_app(tmp_path)
+        alloc_file = tmp_path / "allocation.json"
+        alloc_file.write_text(json.dumps(self.ALLOC), encoding="utf-8")
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            resp = client.post(
+                "/api/paper/allocation", json={"file": str(alloc_file), "date": "2026-11-10"}
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["codes"] == ["601919"] and body["date"] == "2026-11-10"
+            pf = paper_ledger.load(layout.sim_portfolio_path)
+            pos = pf.position("601919")
+            assert [t.leg for t in pos.tranches] == ["T1_open", "T2_limit", "T3_trigger"]
+            assert pos.opened_date == "2026-11-10" and pos.t3_ma20 == 16.279
+            assert pf.cash == 100_000.0  # 确认前不动现金
+            decisions = client.get("/api/decisions").json()
+            assert any(d["kind"] == "paper_allocation_imported" for d in decisions)
+
+    def test_dup_code_rejected_wholesale(self, tmp_path: Path):
+        app, layout = make_app(tmp_path)
+        alloc_file = tmp_path / "allocation.json"
+        alloc_file.write_text(json.dumps(self.ALLOC), encoding="utf-8")
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            assert (
+                client.post("/api/paper/allocation", json={"file": str(alloc_file)}).status_code
+                == 200
+            )
+            resp = client.post("/api/paper/allocation", json={"file": str(alloc_file)})
+            assert resp.status_code == 409
+            pf = paper_ledger.load(layout.sim_portfolio_path)
+            assert len(pf.positions) == 1  # 账本未变
+
+    def test_bad_file_422_and_htmx_variant_and_form(self, tmp_path: Path):
+        app, _layout = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            assert client.post("/api/paper/allocation", json={"file": ""}).status_code == 422
+            missing = client.post("/api/paper/allocation", json={"file": "/nonexistent.json"})
+            assert missing.status_code == 422
+            # htmx 表单变体（multipart form）：成功窄通知落 #paper-alloc-result
+            alloc_file = tmp_path / "a.json"
+            alloc_file.write_text(json.dumps(self.ALLOC), encoding="utf-8")
+            resp = client.post(
+                "/api/panel/paper/allocation", data={"file": str(alloc_file), "date": "2026-11-10"}
+            )
+            assert resp.status_code == 200 and "已导入" in resp.text and "三批建仓" in resp.text
+            # load-only 表单端点
+            form = client.get("/api/panel/paper/alloc-form")
+            assert form.status_code == 200 and "allocation" in form.text

@@ -163,7 +163,7 @@ class TestTableNorms:
         assert '<span id="ov-ev-count" hx-swap-oob="true">1 条</span>' in html
 
     def test_ts_hhmm_market_clock_tz_independent(self):
-        """0.0.32 CI 回归：aware 串统一转市场钟面（非系统本地——UTC runner 实证错钟面）。"""
+        """0.0.34 CI 回归：aware 串统一转市场钟面（非系统本地——UTC runner 实证错钟面）。"""
         from stock_trading_agent.loop.events import MARKET_TZ
         from stock_trading_agent.server.panel import _ts_hhmm
 

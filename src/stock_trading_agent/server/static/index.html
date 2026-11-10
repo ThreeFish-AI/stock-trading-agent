@@ -102,7 +102,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .metachip{font:500 var(--fs-11) var(--mono);color:var(--t2);border:1px solid var(--line);border-radius:var(--r-sm);padding:4px 9px;white-space:nowrap}
 .grid-main{display:grid;grid-template-columns:1fr 340px;gap:var(--sp-6);align-items:stretch}
 .grid-rail{display:grid;grid-template-columns:1fr 500px;gap:var(--sp-6);align-items:stretch}
-/* ③页两栏加宽覆写须裹 min-width 门（0.0.32）：id 特异性 (1,1,0) 恒压过 ≤1180 塌缩块
+/* ③页两栏加宽覆写须裹 min-width 门（0.0.34）：id 特异性 (1,1,0) 恒压过 ≤1180 塌缩块
    的 (0,1,0)，裸置会令 880/1180 断点双栏不塌（§⑪ 两栏上限规约被打破） */
 @media (min-width:1181px){
   #page-monitor .grid-main{grid-template-columns:1fr 380px}
@@ -169,7 +169,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .tbl-wrap .tbl thead th.num{background:var(--bg1)}
 /* 操作列触点间距（≥8px 规约） */
 .tbl-act{display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap}
-/* ④页 grid-rail 矮列单卡拉伸填满 + 卡体垂直居中（0.0.29 失衡收口；0.0.32 居中收窄到空态
+/* ④页 grid-rail 矮列单卡拉伸填满 + 卡体垂直居中（0.0.29 失衡收口；0.0.34 居中收窄到空态
    ——有数据（如 2 行确认队列）时整卡居中致 71% 空带，改顶对齐） */
 #page-paper .grid-rail .col>.card{display:flex;flex-direction:column;flex-grow:1}
 #page-paper .grid-rail .col>.card .card-b{flex:1;display:flex;flex-direction:column}
@@ -473,19 +473,19 @@ button:disabled{opacity:.5;cursor:not-allowed}
 /* ⑦归档日期带 + 转录槽（类化收编 inline） */
 .chip-row{display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-4)}
 .transcript-slot{margin-top:var(--sp-5)}
-/* 0.0.32：转录槽空态不占位——归档索引卡成为 .col 末子元素，§⑪ 末卡拉伸规则自然命中；
+/* 0.0.34：转录槽空态不占位——归档索引卡成为 .col 末子元素，§⑪ 末卡拉伸规则自然命中；
    「查看」注入后槽非空恢复占位，归档卡不再拉伸（两栏等高意图闭环） */
 .transcript-slot:empty{display:none}
 .mini.on{border-color:var(--accln);color:var(--acc2)}
-/* 0.0.32：卡头主标题溢出保护（转录卡长名等场景防越出卡框） */
+/* 0.0.34：卡头主标题溢出保护（转录卡长名等场景防越出卡框） */
 .card-h .ct{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* 0.0.32：表内文本链接触点扩高（负边距补偿不推高行；.mini 按钮自带触点不动） */
+/* 0.0.34：表内文本链接触点扩高（负边距补偿不推高行；.mini 按钮自带触点不动） */
 .tbl td a:not(.mini){display:inline-block;padding:3px 0;margin:-3px 0}
-/* 0.0.32：服务端空态在拉伸卡内垂直居中（①日历/④确认队列等；沿 ④ rail 卡先例） */
+/* 0.0.34：服务端空态在拉伸卡内垂直居中（①日历/④确认队列等；沿 ④ rail 卡先例） */
 .card-b:has(>.empty){display:flex;flex-direction:column;justify-content:center}
-/* 0.0.32：②页左栏表单卡在两栏等高拉伸下垂直居中（591px 底部空白转对称呼吸） */
+/* 0.0.34：②页左栏表单卡在两栏等高拉伸下垂直居中（591px 底部空白转对称呼吸） */
 #dg-form:has(>form){display:flex;flex-direction:column;justify-content:center}
-/* 0.0.32：③页复核区容器随列拉伸（§⑪ 末卡拉伸意图经包装层传导；注入前后零跳变） */
+/* 0.0.34：③页复核区容器随列拉伸（§⑪ 末卡拉伸意图经包装层传导；注入前后零跳变） */
 #page-monitor .grid-main .col>#advice-detail{display:flex;flex-direction:column}
 #page-monitor .grid-main .col>#advice-detail>.card:last-child{flex:1 1 auto}
 /* ①事件流/待办行可导航（hash 路由跳转，零 JS 新增） */
@@ -496,7 +496,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .riskchip.sev-hi{color:var(--up2);background:color-mix(in srgb,var(--px-red) 16%,transparent);
   border-color:color-mix(in srgb,var(--px-red) 48%,transparent)}
 .riskchip.sev-md{color:var(--warn);background:var(--warnbg);border-color:var(--warnln)}
-/* ②页表单列收窄（.grid-2 本体不动；表单实宽 ~400px）——须裹 min-width 门（0.0.32：
+/* ②页表单列收窄（.grid-2 本体不动；表单实宽 ~400px）——须裹 min-width 门（0.0.34：
    本规则源序晚于 ≤1180 塌缩块且同特异性，裸置会级联压过断点单栏塌缩） */
 @media (min-width:1181px){
   #page-diagnosis .grid-2{grid-template-columns:400px 1fr}
@@ -596,8 +596,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="hero"><div><h1>模拟盘</h1><div class="sub">paper 引擎 · 严格穿价撮合 + 静态费用栈 + 逐笔人工确认 · 撮合零 LLM</div></div>
 <div class="hero-r"><span class="metachip">台账 append-only · hash 链</span></div></div>
 <div class="nr2"><b>NR-2</b> 模拟盘永不接真实下单接口，与实盘物理隔离——本系统不下单、不改单、不撤单。</div>
-<div class="screen"><!-- 0.0.31 一屏化：#paper fragment 内部分签（账户持仓|逐笔与曲线|公司行动），CA 表单折叠条常驻 -->
+<div class="screen"><!-- 0.0.31 一屏化：#paper fragment 内部分签（账户持仓|逐笔与曲线|公司行动），CA 表单折叠条常驻；0.0.32 增 allocation 导入折叠条 -->
 <div id="paper" class="flex-fill" hx-get="/api/panel/paper" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
+<div id="paper-alloc" hx-get="/api/panel/paper/alloc-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 <div id="paper-ca" hx-get="/api/panel/paper/ca-form" hx-trigger="load" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
 </div></section>
 <section class="page" id="page-advice" data-page="advice">
@@ -641,7 +642,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
     });
     document.querySelectorAll('.page').forEach(function(s){s.classList.toggle('on',s.dataset.page===h)});
     window.scrollTo(0,0);
-    // 0.0.32：880 档 tabs 横滚时把 active 页签滚进可视区（此前 ⑥⑦ 在条末不可见）
+    // 0.0.34：880 档 tabs 横滚时把 active 页签滚进可视区（此前 ⑥⑦ 在条末不可见）
     var onTab=document.querySelector('.tab.on');
     if(onTab&&onTab.scrollIntoView){try{onTab.scrollIntoView({inline:'center',block:'nearest'});}catch(e){}}
   }

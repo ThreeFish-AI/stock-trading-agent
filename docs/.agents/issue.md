@@ -7,8 +7,10 @@
 | I-001 | 建仓迁移：主 Agent 文档族自 vibe-stock 0.0.28 迁入，原型 A 股代码假码化 | ✅ 已完成 | 2026-11-07 | [详情](#I-001) |
 | I-002 | T1 轻量日 K 链机制升级候选（vibe-stock CLI 暴露），现采全量 fetch+prepare 过渡口径 | ⏸ 暂不处理 | — | [详情](#I-002) |
 | I-003 | 跨午夜时敏测试钉死 2026-11-08 钟面（advice refused 扫描与 briefing ack 当日卡闸），隔日必红 | ✅ 已完成 | 2026-11-09 | [详情](#I-003) |
-| I-003 | decisions.jsonl 增量游标 bug 生产破链：daemon 重启重灌全史、hash 链校验静默失效 | ✅ 已完成 | 2026-11-08 | [详情](#I-003) |
-| I-004 | 界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复 | ✅ 已完成 | 2026-11-10 | [详情](#I-004) |
+| I-004 | decisions.jsonl 增量游标 bug 生产破链：daemon 重启重灌全史、hash 链校验静默失效 | ✅ 已完成 | 2026-11-08 | [详情](#I-004) |
+| I-005 | 特性覆盖审计（#37）：paper 驱动面缺口补齐（EOD 驱动/allocation 导入/撮合价透传）+ 15 项文档对齐 + postmortem 槽补装 | ✅ 已完成 | 2026-11-10 | [详情](#I-005) |
+| I-006 | selftest 安装态 4 例误红（ops/ 类 case 缺仓 FAIL）→ SelftestSkip 守卫 | ✅ 已完成 | 2026-11-10 | [详情](#I-006) |
+| I-007 | 界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复 | ✅ 已完成 | 2026-11-10 | [详情](#I-007) |
 
 <a id="I-001"></a>
 
@@ -41,7 +43,9 @@
 - **后续防范**：新用例凡断言「当日」语义端点，种子日期一律 `market_today()` 动态取值，禁写字面日期；评审时对 `2026-` 字面日期 grep 一眼。
 - **同类问题影响**：同模式扫描过其余 e2e（`_seed_events` 等已走 `market_today()`），无同类残留。
 - **注意事项**：属测试时敏缺陷修复（判据只收严），随 0.0.24 UI/UX 升级 PR 合入。
-## I-003：decisions.jsonl 增量游标 bug 生产破链：daemon 重启重灌全史、hash 链校验静默失效
+<a id="I-004"></a>
+
+## I-004：decisions.jsonl 增量游标 bug 生产破链：daemon 重启重灌全史、hash 链校验静默失效（原条目误用重复 ID I-003，0.0.32 勘误重编号）
 
 - **问题描述**：生产 `~/.vibe-stock/agent/decisions.jsonl`（2026-11-08 实测）57 行中仅 11 个唯一 seq、46 行重复（max seq 29），`verify_chain()=False`——hash 链防篡改语义失效且静默：载入侧忽略校验返回值，面板 aumeta 照常显示链 head。由存储选型盘点（[storage-db-decision.md](../research/storage-db-decision.md)）四路取证 workflow 实测发现。
 - **表因根因**：双写路径共享可变游标——`_persisted_lines` 仅 `AgentLoop.__init__` 置 0（`loop.py:95`）；`acquire_daemon` 换入盘上链不重置游标（`worker.py:169`）；`worker._decide` 直写盘不推游标（`worker.py:204-206`）；`_persist_all` 从旧游标起把全部历史行重追加（`loop.py:422`）。旁路直写点共 4 处（worker.py:204-206、routes.py:584-589、routes.py:688-690、routes.py:806-811）。放大器：`DecisionLog.load` 忽略 `verify_chain()` 返回值（`decisions.py:74` 注释称「载入即校验」实为 no-op）；e2e 测试每次全新空链（`test_loop_dryrun_e2e.py:26`）未覆盖跨重启场景。
@@ -51,14 +55,34 @@
 - **注意事项**：已核实外仓 [agent_postmortem.py](https://github.com/ThreeFish-AI/vibe-stock/blob/main/scripts/agent_postmortem.py) 为键控 last-wins 消费、重复行 payload 逐字相同，W2 去重不改变外仓视图（无需跨仓对账，留痕即可）。
 - **生产现状（2026-11-08 复核）**：盘上链已被先行修复（59 行全唯一 seq、verify_chain 通过、留有 chain_repair_started/done 决策行）——但生产 0.0.13 根因仍在，daemon 重启后任一会话任务完成即复发重灌；0.0.15 W1 唯一入口根治。
 - **升级手册（合并 0.0.15 后执行一次）**：①`uv tool upgrade`（或按原安装源重装，取 main 最新）；②`launchctl kickstart -k gui/$(id -u)/com.threefish.stocktrading.agent` 重启 daemon；③（仅当链再破时）daemon 空闲期跑 `stock-trading-agent repair-decisions --apply` 再 kickstart 一次。链健康时 ② 即完成切换。
-\n
-<a id="I-004"></a>
 
-## I-004：界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复
+<a id="I-005"></a>
+
+## I-005：特性覆盖审计（issue #37）——paper 驱动面系统性缺口补齐 + 15 项文档对齐
+
+- **问题描述**：对照《产品方案+技术方案》（main-agent-proposal.md）逐项特性实机验证（47 代理审计 workflow：16 特性簇 × 实机核对 + 缺口双镜头对抗核验 + 完备性批评），确认 19 条缺口。功能级唯一系统性缺口=paper 引擎驱动面：撮合/费用/批状态机纯函数层全齐（87 passed）但生产零接线——allocation 导入入口缺失（三批建仓对用户不可达）、日终 evaluate_day 无驱动（T2/T3 触价、止盈止损、GTC 到期全不跑）、mark_equity 无接线（权益曲线/绩效恒空）、撮合价 fill.price 未透传落账（违反 §12 成交价口径）；另 T3 触发批被引擎按通用限价回落匹配（06 复合口径「站上目标1/回踩 MA20±1%/20 日补足」未实现）。
+- **表因根因**：0.0.6 paper v1 与 0.0.20 M2 全量均以纯函数+面板确认流交付，驱动面（数据源组装+调度+入口）属最后一块拼图，无对应 issue 挂载故悬空；文档侧为索引类滞后（README 结构图把 ops/ 误画 docs/ 下、AGENTS 速查缺 14-design-system、specs/README 缺 §⑯、12-orchestration §③①/§⑦/§⑫ 各一句陈旧、14-design-system Primitive 计数与页高数字失真、knowledge-map D6 行陈旧、issue.md I-003 重复编号）。
+- **处理方式（0.0.32）**：①**paper 驱动面接线**——`loop/paper_eod.py`（ticks 末轮 bar 源 ESTIMATED + 16:05 窗口 + 决策幂等锚 + sim.lock 纪律）双入口（worker 60s 自动 + CLI paper-eod）；`paper/allocation.py` 导入（06 产物零格式发明、dup 整批拒）+ CLI paper-import + ④页表单；`engine.judge_t1_open`（跳空 ×1.02 转限价 5 日 GTC）与 `engine.judge_t3`（复合三臂判定）落地、evaluate_day 通用匹配收窄为仅 T2；`PendingFillRequest.fill_price` 撮合价透传 `ledger.apply_fill` 四面落账；T2 批 10 日 GTC 导入即设。②**装机**——postmortem 18:05 槽本机补装（vibe-stock 有模板未 bootstrap，M2「agent: 记分」生产未运转；本地安装件串联 agent_postmortem.py，vibe-stock 侧串联模板未物化为跨仓缺口登记于此）。③**文档对齐 15 项**（含 §③① 触发源 taxonomy/defer 语义、§⑦ 占位符与锁冲突表述、§⑫ 三源→四源勘误与两条呈现口径裁定、README 树重排+sed 修正+archive-state 运行说明、14-design Primitive 55 枚/页高 1219px、specs/README §⑯、knowledge-map D6 行、launchd.md 两处、issue.md I-003→I-004）。④**登记**——§⑮ 新行 --no-session-persistence（待裁定，触发=敏感 run 实锤）；①页事件流 T 级分色 lv 映射落地；trading-day-verify 补 T1 真跑待办项。
+- **后续防范**：「纯函数层交付 ≠ 链路交付」——含调度/入口的完整链路须同一 issue 挂载到底（本条即 issue #37 逐项对账的意义）；索引类文档（目录速查/结构树/节枚举）随建档 PR 同步增改，防计数与枚举漂移。
+- **同类问题影响**：vibe-stock 侧 agent_postmortem.py 的 plist 串联 README 未物化（其 docstring 承诺「见 batch/postmortem/ README」），属跨仓缺口——待其仓补模板后本机安装件可换回官方形态。
+- **注意事项**：bar 源（ticks 末轮 vs 收盘竞价）、GTC/T3 窗日历日换算均为 ESTIMATED（13-paper §⑦/§⑧），自家成交样本校准后固化，判据只收严。
+
+<a id="I-006"></a>
+
+## I-006：selftest 安装态 4 例误红——ops/ 类 case 在 uv tool 环境缺仓即 FAIL
+
+- **问题描述**：生产升级 0.0.32 后实机跑 `~/.local/bin/stock-trading-agent selftest` 报 4 项失败（ops.launchd.plist / ops.d8_probe.parsers / ops.state_probe.report / ops.upgrade-gate.baseline），均为仓内 `ops/` 件路径解析到 uv tool venv（`Path(__file__).parents[2]` 在安装态指向 `lib/python3.14/`，无 ops/）。
+- **表因根因**：selftest 的 ops 类 case 以仓库检出态为隐含前提（`_repo_root()` 假设 src 布局仓根），安装态无此结构；0.0.26 起 baseline case 入册即带此盲点，既往自检均在仓内 `uv run` 跑故未暴露。
+- **处理方式（0.0.33）**：`SelftestSkip` 语义——`_require_ops()` 守卫四例，安装态 SKIP（`ok=None`、exit 0、打印器带计数注记「仓库检出态全量跑」）；仓库态（CI 与本地 `uv run`）零变化（判据只收严不适用——降级只影响安装态呈现，不放宽任何仓态判据）。
+- **后续防范**：依赖仓内文件（ops/、docs/）的 selftest/测试 case 必须带环境守卫并区分 SKIP/FAIL；安装态自检纳入生产升级 runbook 步骤（upgrade-runbook 已含 selftest 自检步，此后安装态跑法为可正常收敛态）。
+- **同类问题影响**：无——其余 48 例为纯函数（包内自足），安装态与仓态同判。
+<a id="I-007"></a>
+
+## I-007：界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复
 
 - **问题描述**：用户反馈七页面板依旧丑（拥挤/未对齐/遮挡/不居中）；审计 workflow（18 只读代理：8 审计 → 8 对抗核验 → 完备性批评家）确认 44 条 + 编排者实测补录 2 条功能缺陷。
 - **表因根因（两条非显性坑）**：①PyYAML（YAML 1.1）把 front-matter 未加引号的 `code: 002513` 按**八进制**解析为 1355——0 开头 A 股代码（000/002/300 段）建议卡详情链接 404、复核状态错配，`parse_advice_card` 既有 int→str 转换只防了十进制；②作用于两栏基座的高特异性 CSS 覆写未裹 `min-width` 门——id 特异性 (1,1,0) 恒压过 ≤1180 塌缩媒体块 (0,1,0)（#page-monitor 中招），且源序晚于塌缩块的同特异性规则级联必胜（#page-diagnosis 中招），≤1180 恒双栏。
-- **处理方式**：octal 双保险（写侧加引号 + 读侧 stem 权威对账）；级联坑以 `@media (min-width:1181px)` 包裹修复并钉入 14-design-system §⑬「断点覆写须裹 min-width 门」；44 项逐模块修复详见 CHANGELOG 0.0.32（头体 num 配对/列宽档族扩档/双钟面/空态等高/触点/排版口径八主线）。
+- **处理方式**：octal 双保险（写侧加引号 + 读侧 stem 权威对账）；级联坑以 `@media (min-width:1181px)` 包裹修复并钉入 14-design-system §⑬「断点覆写须裹 min-width 门」；44 项逐模块修复详见 CHANGELOG 0.0.34（头体 num 配对/列宽档族扩档/双钟面/空态等高/触点/排版口径八主线）。
 - **后续防范**：YAML 数值型身份字段一律引号落盘，读侧以文件名/键位对账兜底；断点行为必须实测（matchMedia + computed grid-template-columns 双探针），勿信「媒体块写了就生效」；审计证据链用 headless 专属浏览器（共享 Playwright 实例的 viewport 会被并发会话反复改写，测量全废）。
 - **同类问题影响**：audit 归档/ledger 等 yaml/数值身份字段面暂无同型消费点（grep 复核）；CSS 侧其余 id 特异性覆写仅剩 #page-diagnosis/#page-monitor 两处（已修），新增覆写走 §⑬ 门。
 - **注意事项**：本条与 0.0.31 一屏化（PR #38）并发撞车——处置沿既定法：WIP 提交 → 从 origin/main 重建分支 → cherry-pick 语义重放（2 文件 3 处冲突手工按「限高壳 + 新列宽」合并）。

@@ -4,12 +4,12 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
-## [0.0.32] - 2026-11-10
+## [0.0.34] - 2026-11-10
 
 ### Fixed
 
 - **⑤ 建议卡 front-matter code 八进制误析（功能缺陷，0 开头 A 股代码全中招）**：PyYAML（YAML 1.1）把未加引号的 `code: 002513` 按八进制解析为 1355（`00700`→448），致建议卡列表链接 404、已复核状态错配——写侧 `render_advice_card` 加引号 + 读侧 `parse_advice_card(text, stem=...)` 以文件名 stem 权威对账双保险（遗留未引号卡免疫），2 例单测钉死（roundtrip + legacy 八进制）。
-- **②③ 断点塌缩失效（级联 bug，≤1180 恒双栏）**：`#page-diagnosis .grid-2`（表单列收窄规则）源序晚于 ≤1180 塌缩块且同特异性级联必胜；`#page-monitor .grid-main`（两栏加宽）id 特异性 (1,1,0) 恒压过媒体块 (0,1,0)——两处特写规则裹 `@media (min-width:1181px)`，880/1180 单栏塌缩恢复（规约 [14-design-system.md](docs/specs/14-design-system.md) §⑫ 新钉「断点覆写须裹 min-width 门」）。
+- **②③ 断点塌缩失效（级联 bug，≤1180 恒双栏）**：`#page-diagnosis .grid-2`（表单列收窄规则）源序晚于 ≤1180 塌缩块且同特异性级联必胜；`#page-monitor .grid-main`（两栏加宽）id 特异性 (1,1,0) 恒压过媒体块 (0,1,0)——两处特写规则裹 `@media (min-width:1181px)`，880/1180 单栏塌缩恢复（规约 [14-design-system.md](docs/specs/14-design-system.md) §⑬ 新钉「断点覆写须裹 min-width 门」）。
 
 ### Changed
 
@@ -20,6 +20,32 @@
   ④**空态与两栏等高**：⑤详情注入区补同构占位卡（与③页同款 chrome，选中前后零跳变）；③复核区容器随列拉伸（左栏 419px 空带收口）；⑦转录槽 `:empty{display:none}` 空态不占位（边栏 338px 裸空白收口，末卡拉伸自然命中）；②表单卡与①日历空态垂直居中（`.card-b:has(>.empty)` 收窄居中到空态，④队列卡有数据时 71% 空带同步收口）；
   ⑤**触点与信息可达**：表内文本链接触点扩高（inline-block + padding 3px 0 + 负边距不推高行，14-16px → 22px+）；①NAV sparkline 满铺自适应（右侧死区 104-616px 归零）；⑦ kchip「台账」显全量行数（此前误显 tail 窗口 20）；③通知计数条升卡头 meta（oob 更新，此前埋在滚动容器底部首屏不可见）；单条通知「11:12 → 11:12」同刻冗余删除；watch 心跳 chip 走两档时间 + title 全值；
   ⑥**排版口径统一**：⑥页比率统一 2 位小数（此前 .0% 与 .2% 并存）、预算双表 token/USD 同名列列宽统一；④ KPI 与持仓市值金额千分位两位小数（+ 市值 title 全值）；⑦表头中英统一、「等效 USD/等效美元」双称统一；①事件流补股票名；①晨报双重标题去重；内部编号（§⑫/§15/NR-3/红线 7/I-48/方案 §1/billing_mode）出正文入 title；④权益曲线末点 NAV 标签 viewBox 上缘裁切钳制；⑥ sparkline 单点空态分支放行（此前整块静默缺失）。
+## [0.0.33] - 2026-11-10
+
+### Fixed
+
+- **selftest 安装态 4 例误红**（0.0.32 生产升级实测发现）：`ops.launchd.plist/ops.d8_probe.parsers/ops.state_probe.report/ops.upgrade-gate.baseline` 四例依赖仓内 `ops/` 件，uv tool 安装态（`~/.local/bin/stock-trading-agent selftest`）自 0.0.26 起即 FAIL——引入 `SelftestSkip` 语义：`_require_ops()` 守卫下安装态 SKIP（非 FAIL、exit 0），仓库检出态零变化全量跑（判据只收严不适用：仓态行为逐字不变）；CLI 打印器增 SKIP 行与计数注记。issue.md I-006。
+
+## [0.0.32] - 2026-11-10
+
+### Added
+
+- **特性覆盖审计（issue #37）与 paper 驱动面接线**：47 代理审计 workflow（16 特性簇实机核对 + 缺口双镜头对抗核验 + 完备性批评；19 条确认缺口/3 条证伪）确认功能级唯一系统性缺口为 paper 引擎驱动面（纯函数层 0.0.6/0.0.20 全量交付但生产零接线），本轮补齐（规约 [13-paper.md](docs/specs/13-paper.md) 新 §⑧）：
+  ①**日终驱动 `loop/paper_eod.py`**：bar 源=`monitor/ticks` 末轮快照（自带全日累计 OHLC；末轮 14:57 vs 15:00 收盘竞价微差登 ESTIMATED）→ `evaluate_day`（T2 限价/止盈止损悲观序/停牌/HK 收盘复核）+ T1/T3 判定 + GTC 到期执行 + `mark_equity` 权益点，双入口=serve worker 60s 节流自动（16:05–23:59 市场钟面窗、零 LLM 无 L2 闸）+ CLI `paper-eod [--date]` 补跑；幂等锚=`paper_eod_done/skipped` 决策当日一条（窗内无 ticks 留痕即锚）；sim.lock 内读改写、调用序 sim→decisions（§④ 纪律）。
+  ②**T1 开盘批一次性判定 `engine.judge_t1_open`**（06 Stage D）：导入后首个驱动日（`opened_date` 锚 + `judged_date` 盖戳，日历无关「次日交易日」判据）；开盘 ≤ 收盘×1.02 按开盘价成交产请求、跳空转限价 ×1.02 + 7 日历日 GTC（ESTIMATED）。
+  ③**T3 触发批复合判定 `engine.judge_t3`**（06「站上目标1 或回踩 MA20±1%，20 日未触发按收盘补足」三臂；evaluate_day 通用匹配收窄为仅 T2——原 T3 按 hi20 限价回落匹配属方向反转，无测试锚故径直收正）；新增 Position 扩展键 `opened_date/t3_ma20`、Tranche `judged_date`（13-paper §② 登记）。
+  ④**allocation 导入 `paper/allocation.py`**（06 portfolio 产物零格式发明）：CLI `paper-import --file` + ④页「allocation 导入」表单（`POST /api/paper/allocation`（+htmx 变体）+ load-only `alloc-form`，沿 ca-form 先例）；市场判定 6 位 A/5 位 HK、三价单调与手数守恒校验、单手股单段建满、T2 批 10 日 GTC（+14 日历日 ESTIMATED）、dup code 整批拒、确认前不动现金；决策 `paper_allocation_imported` payload 恰 `{date, codes}`（NR-5）。
+  ⑤**撮合价透传落账**（方案 §12 成交价口径收口）：`PendingFillRequest.fill_price`（引擎撮合请求必带；t2 事件适配请求不带维持提示口径）→ `ledger.apply_fill` notional/filled_price/avg_cost/Operation.price 四面按撮合价（旧行缺省回落 ref_price）。
+  ⑥**决策 kind 族**：`paper_eod_done/skipped`、`paper_tranche_expired`、`paper_t1_converted`、`paper_allocation_imported`（全零价格零数量 NR-5）。
+- **①页事件流/③事件表 T 级分色**：lv 徽章按 level 映射 lv0/lv1/lv2（此前恒硬编码 lv0；原型图 2-1 事件梯对账项，样式既有零新 token；§⑫ 呈现口径裁定句）。
+- **postmortem 18:05 槽本机补装**（审计发现 vibe-stock 有模板未 bootstrap、M2「agent: 记分」生产未运转）：本地安装件串联 `agent_postmortem.py`（其 plist 串联模板未物化为跨仓缺口，登记 issue.md I-005）；trading-day-verify 待办节补 T1 真跑项。
+
+### Changed
+
+- **文档对齐 15 项（issue #37 fix_doc 缺口）**：12-orchestration §③① 触发源 taxonomy（launchd 监听入队 source=monitor、monitor 非 M3 预留）与 defer 语义（持有中即 defer，0.0.4 收敛自相矛盾消除）与禁跑窗枚举补双 briefing kind；§⑦ 占位符清单退役 `__UV_PATH__`、锁冲突表述改「进程内降级只读须 kickstart 回归」（原「自动回归」与实现不符）；§⑫ 现价源「三源」→四源计数勘误（0.0.25 起即四源）+「在跑会话卡」呈现口径裁定（方案 §2 叙述超出原型 SSOT，按迁注先例以裁定句对齐不改正文）；README 仓库结构树重排（ops/ 提升根级、补 docs/ops/ 与 14-design-system、cc_client 行对齐）+ launchd sed 命令删死占位符 + 安装运行节补 archive-state/repair-decisions/paper-import/paper-eod；AGENTS 目录速查补 14-design-system、docs/ops/ 行与 d8 模板半句；knowledge-map D6 行改「已真跑」；14-design-system Primitive 54→55 枚（24 色，建档期计数笔误）与 §⑪ 页高 1466→1219px（PR #35 终态）；specs/README 节枚举补 §⑯；launchd.md「Crashed 重拉」改 KeepAlive=true 表述与锁冲突句；issue.md 重复 ID I-003 第二条重编号 I-004（补锚点）。
+- §⑮ 新行：`--no-session-persistence` 关转录旋钮（方案 §15 敏感 run 句半边；待裁定，触发=敏感 run 场景实锤）——消灭「既未落地也未登记」态。
+
+> 验证：测试 621→650 passed（+29：EOD 纯函数/判定三臂/allocation 解析导入/e2e 全链幂等/端点三件/worker 钩子委托）；selftest 49→52（paper.eod.bars_and_plan / paper.eod.t1_t3_judgement / paper.allocation.import_rows）；ruff 全绿；隔离实例实机冒烟（paper-import→④表单→paper-eod 全链）随 PR 前置验证完成。
 
 ## [0.0.31] - 2026-11-09
 

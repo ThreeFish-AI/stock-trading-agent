@@ -190,7 +190,8 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
             f'<td title="{_esc(ev.get("rule", ""))}">{_esc(ev.get("rule", ""))}</td>'
             f'<td class="num">{_fmt(price)}</td>'
             f"{dist_td}"
-            f'<td><span class="lv lv0">{_esc(ev.get("level", "T0"))}</span></td>'
+            f'<td><span class="lv {_lv_class(ev.get("level", "T0"))}"'
+            f">{_esc(ev.get('level', 'T0'))}</span></td>"
             f"<td>{riskchip or '—'}</td>"
             f'<td title="{_esc(review)}">{_esc(review or "—")}</td>'
             f'<td title="{_esc(suppress)}">{_esc(suppress or "—")}</td>'
@@ -211,7 +212,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
     summary = f'<div class="chips">{chips}</div>'
     dist_parts = ["w-num"] if has_dist else []
     dist_heads = ["距线:num"] if has_dist else []
-    # 0.0.32：级别列固定窄轨（T0 徽章 2ch）——auto 等分时 179px 虚胖挤压事件/风险/短语列
+    # 0.0.34：级别列固定窄轨（T0 徽章 2ch）——auto 等分时 179px 虚胖挤压事件/风险/短语列
     cols = "|".join(
         ["w-ts", "w-stock", "-", "w-num", *dist_parts, "w-lv", "-", "-", "w-sup", "w-op"]
     )
@@ -318,7 +319,7 @@ def render_audit(
     """⑦decisions 台账（0.0.24：链校验/预算摘要 chips 升卡首；head tag 标链尾行）。
 
     decisions_total：台账全量行数（kchip「台账」计数；decisions 入参为 tail 窗口，
-    缺省回退窗口长——0.0.32 前误把窗口数当总量展示）。
+    缺省回退窗口长——0.0.34 前误把窗口数当总量展示）。
     """
     rows = []
     tail = decisions[-20:]
@@ -456,7 +457,7 @@ def _axis_equity_svg(history: list[dict], *, width: int = 470, height: int = 150
             )
     lx, ly = x(len(navs) - 1), y(navs[-1])
     parts.append(f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3" style="fill:var(--acc)"/>')
-    # 0.0.32：末点标签基线钳制——末点为区间最高时 ly-8 越上内边距，ascent 被 viewBox 裁切
+    # 0.0.34：末点标签基线钳制——末点为区间最高时 ly-8 越上内边距，ascent 被 viewBox 裁切
     ty = max(ly - 8, pad_t + 8)
     parts.append(
         f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="6" '
@@ -549,7 +550,7 @@ def render_stats_fragment(payload: dict) -> str:
         for k, v in (d.get("kinds") or {}).items()
     )
     rate = d.get("success_rate")
-    # §⑨ 比率 2 位小数（0.0.32：此前 .0% 与同 KPI 条内 .2% 并存）
+    # §⑨ 比率 2 位小数（0.0.34：此前 .0% 与同 KPI 条内 .2% 并存）
     rate_text = f"{rate:.2%}" if rate is not None else "—"
     summary = (
         f"done {d.get('done', 0)} · failed {d.get('failed', 0)} · "
@@ -590,7 +591,7 @@ def render_stats_fragment(payload: dict) -> str:
             for p in shown
         )
         if curve:
-            # 0.0.32：1 点也出 .svgs 容器——_sparkline_svg 自带「曲线待积累」空态分支
+            # 0.0.34：1 点也出 .svgs 容器——_sparkline_svg 自带「曲线待积累」空态分支
             left.append(
                 '<div class="svgs">'
                 '<span class="kchip" title="日会话 token 合计（近 14 日为表窗口，曲线全量）">'
@@ -802,7 +803,7 @@ def render_diag_form() -> str:
 def _ts_hhmm(ts: str) -> str:
     """①时间轴显示层：ISO 串转市场钟面取 HH:MM；非 ISO 短串原样（全值走 title Tooltip）。
 
-    0.0.32：台账/落盘串多为 +00:00，纯切片会把 UTC 钟面当市场钟面（⑤页落盘 13:26 vs
+    0.0.34：台账/落盘串多为 +00:00，纯切片会把 UTC 钟面当市场钟面（⑤页落盘 13:26 vs
     拒卡 21:26 双钟面并存）——aware 串 astimezone(MARKET_TZ)（市场时区 SSOT；与 routes
     拒卡列同源，系统本地 astimezone() 在非市场时区机上会错钟面，CI/UTC 实证）；朴素串
     视为已在市场钟面原样取位（监控事件/文件 stat 均为 aware 串，此分支仅兜底）。
@@ -831,6 +832,11 @@ def _ts_short(ts: str) -> str:
         return _dt.datetime.fromisoformat(str(ts)).astimezone().strftime("%m-%d %H:%M")
     except ValueError:
         return str(ts)
+
+
+def _lv_class(level: str) -> str:
+    """事件梯 T 级配色（图 2-1：机械/刷新/需人确认分色；lv1/lv2 样式 index.html 已备）。"""
+    return {"T0": "lv0", "T1": "lv1", "T2": "lv2"}.get(str(level or "T0"), "lv0")
 
 
 def render_event_feed(payload: dict) -> str:
@@ -873,7 +879,8 @@ def render_event_feed(payload: dict) -> str:
             f'<div class="ev-name"><span class="ev-stock"><span class="code num">'
             f"{_esc(code)}</span>{name_tail} · {_esc(ev.get('rule', ''))}</span>"
             f'<span class="ev-top">{_esc(price_txt)} {riskchip}'
-            f'<span class="lv lv0">{_esc(ev.get("level", "T0"))}</span>'
+            f'<span class="lv {_lv_class(ev.get("level", "T0"))}"'
+            f">{_esc(ev.get('level', 'T0'))}</span>"
             f"{_esc(review_txt)}</span></div></div></a>"
         )
     return "".join(rows) + f'<span id="ov-ev-count" hx-swap-oob="true">{len(events)} 条</span>'
@@ -930,7 +937,7 @@ def render_notifications(payload: dict) -> str:
                 groups.append([row])
         cards = "".join(_notification_group_html(group) for group in groups)
         status_line = ""
-        # 0.0.32：计数条升卡头 meta（oob 更新）——原置 520px 滚动容器底部首屏不可见
+        # 0.0.34：计数条升卡头 meta（oob 更新）——原置 520px 滚动容器底部首屏不可见
         meta_oob = (
             f'<span id="mo-notif-meta" hx-swap-oob="true" role="status" aria-live="polite" '
             f'title="osascript 通道 · 只读">重放 {len(groups)} 组 · 共 {len(rows)} 条</span>'
@@ -1440,7 +1447,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
 
     # ── 卡A 账户与持仓（KPI 四格恒置顶；账未建时四格统一 —（§⑨ 缺数非零））──
     def _kpi_v(key: str, *, money: bool = False) -> str:
-        # money：千分位 + 两位小数（§⑨；与同卡 tbl-note 口径一致，0.0.32 前裸 float）
+        # money：千分位 + 两位小数（§⑨；与同卡 tbl-note 口径一致，0.0.34 前裸 float）
         if not exists:
             return "—"
         v = totals.get(key)
@@ -1487,7 +1494,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 "</tr>"
             )
         pos_body = (
-            # 0.0.32：股票列对齐 ①③ w-stock 先例、市值走 w-amt（千分位金额实宽）、
+            # 0.0.34：股票列对齐 ①③ w-stock 先例、市值走 w-amt（千分位金额实宽）、
             # 可卖头缩短为「可卖T+1」；外裹 tbl-wrap 令定宽恒被尊重（断点不再比例挤压）
             '<div class="tbl-wrap">'
             + _table(
@@ -1555,7 +1562,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 "</tr>"
             )
         queue_body = _table(
-            # 0.0.32：列宽和 876→778（批→84/方向与手数→68 窄轨），≤1180 单栏卡内宽 ~786 不再溢出；
+            # 0.0.34：列宽和 876→778（批→84/方向与手数→68 窄轨），≤1180 单栏卡内宽 ~786 不再溢出；
             # 时间为台账制 _ts_short（MM-DD HH:MM）保 w-ts 全格式轨
             "w-ts|w-code|w-num|w-n2|w-n2|w-num|w-ts|w-op",
             "时间:num|代码|批|方向|手数:num|参考价:num|bar 日:num|操作",
@@ -1702,6 +1709,41 @@ def render_ca_form(*, has_positions: bool = True) -> str:
             f"{form}</details>"
         )
     return _card("公司行动馈送", body, meta="手动登记送转/分红")
+
+
+def render_alloc_form(*, has_ledger: bool) -> str:
+    """④allocation 导入表单（0.0.31：三批建仓主链路用户入口；06 Stage D 产物零格式发明）。
+
+    load-only 外置容器（沿 ca-form 0.0.24 先例）；文件路径为本机产品形态（与报告列表同源）。
+    提交落点 #paper-alloc-result；成功窄通知 + SSE paper 事件驱动 #paper 重拉。
+    """
+    form = (
+        '<form class="frm" hx-post="/api/panel/paper/allocation" '
+        'hx-target="#paper-alloc-result" hx-swap="innerHTML" hx-disabled-elt="find button" '
+        "hx-confirm='导入 allocation 建仓（新建三批 pending，确认成交前不改现金）？'>"
+        '<div class="frm-row">'
+        '<label for="al-file" title="vibe-stock 批量精选产物 portfolio/allocation.json'
+        '（rows：code/price/stop/entry_ref/target1/hi20/lots/tranches 三批手数）">文件路径</label>'
+        '<input class="inp" id="al-file" name="file" required '
+        'placeholder="/Users/you/.vibe-stock/reports/_scans/…/portfolio/allocation.json"></div>'
+        '<div class="frm-row">'
+        '<label for="al-date" title="导入日（YYYY-MM-DD）；缺省市场今日。T1 开盘批在其后'
+        '首个交易日判定（开盘 ≤ +2% 按开盘价成交、跳空转限价 5 日 GTC）">导入日</label>'
+        '<input class="inp num" id="al-date" name="date" pattern="\\d{4}-\\d{2}-\\d{2}" '
+        'placeholder="缺省市场今日"></div>'
+        '<div class="frm-row"><label></label>'
+        '<button class="btn btn-pri" type="submit">导入建仓</button></div>'
+        '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内 open_position）；dup code 整批拒；'
+        '决策 payload 零价格零数量（NR-5）">账本缺席时以 allocation budget 起始建账 · '
+        "dup code 整批拒 · 决策 payload 零敏感量</p></form>"
+        '<div id="paper-alloc-result"></div>'
+    )
+    hint = "追加建仓（dup code 整批拒）" if has_ledger else "以 allocation budget 起始新建账本"
+    return _card(
+        "allocation 导入",
+        form,
+        meta=f"三批建仓入口 · {hint}",
+    )
 
 
 def _ca_basis(r: dict) -> str:
@@ -1862,7 +1904,7 @@ def render_audit_archive(payload: dict) -> str:
     files = payload.get("files") or []
 
     # 0.0.30：310px 边栏容不下四列（转录名曾塌缩 0 宽）——收敛两列，mtime/大小入 title
-    # 0.0.32：展示名剥离与日期 chip 重复的「:YYYY-MM-DD:」段（区分度集中在尾部时戳），
+    # 0.0.34：展示名剥离与日期 chip 重复的「:YYYY-MM-DD:」段（区分度集中在尾部时戳），
     # 超长再首尾截断（全值恒在 title）
     def _disp_name(fname: str) -> str:
         disp = fname.replace(f":{day}:", ":")

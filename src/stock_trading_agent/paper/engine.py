@@ -20,7 +20,11 @@ __all__ = [
     "ESTIMATED",
     "DayInput",
     "EngineOutcome",
+    "T1Judgement",
+    "T3Judgement",
     "evaluate_day",
+    "judge_t1_open",
+    "judge_t3",
     "mark_equity",
     "request_from_t2_event",
 ]
@@ -38,6 +42,121 @@ class EngineOutcome:
     requests: list[PendingFillRequest] = field(default_factory=list)
     expired_legs: list[tuple[str, str]] = field(default_factory=list)  # (code, leg)
     marks: dict[str, float] = field(default_factory=dict)  # code → last_price 更新集
+
+
+@dataclass(frozen=True)
+class T1Judgement:
+    """T1 开盘批一次性判定结果（judge_t1_open；调用方按 outcome 落请求/转限价并盖戳）。"""
+
+    request: PendingFillRequest | None = None  # 开盘价成交（无跳空）→ 待确认请求
+    convert_limit: float | None = None  # 跳空 >+2%（或闸拒）→ 转限价 = 信号日收盘 ×1.02
+    convert_expires: str | None = None  # GTC 窗口终点（+7 日历日 ≈ 5 交易日，ESTIMATED）
+
+
+def judge_t1_open(
+    position,
+    tranche,
+    bar: Bar,
+    ts: str = "",
+) -> T1Judgement:
+    """T1 开盘批「次日交易日」一次性判定（06 Stage D；evaluate_day 不驱动 T1，本函数独占）。
+
+    口径：开盘无跳空（open ≤ 收盘×1.02）→ 开盘价成交产待确认请求（fill_price=open）；
+    跳空 >+2% → 转限价 t1_gap_fallback_limit（×1.02）、5 日 GTC（+7 日历日近似，ESTIMATED）；
+    一字板不利向闸拒（理论不可达：无跳空即非一字涨停；防御位）同转限价保守处置。
+    日历无关：调用方（EOD 驱动）保证「导入后首个 ticks 在场日」即次日交易日。
+    """
+    from stock_trading_agent.paper.confirm import request_from_fill
+    from stock_trading_agent.paper.fills import (
+        Fill,
+        t1_gap_fallback_limit,
+        t1_gap_needs_fallback,
+    )
+
+    signal_day_close = tranche.ref_price
+    expires = (dt.date.fromisoformat(bar.date) + dt.timedelta(days=7)).isoformat()
+    if t1_gap_needs_fallback(signal_day_close, bar.open):
+        return T1Judgement(
+            convert_limit=t1_gap_fallback_limit(signal_day_close), convert_expires=expires
+        )
+    fill = Fill(
+        code=position.code,
+        side="buy",
+        lots=tranche.lots,
+        price=bar.open,
+        date=bar.date,
+        tranche_leg="T1_open",
+    )
+    band = limit_band(bar.prev_close) if position.market == "A" and bar.prev_close else None
+    fill = gate_fill(fill, bar, band)
+    if fill is None:  # 防御位：开盘可成交日被闸（理论不可达）→ 保守转限价
+        return T1Judgement(
+            convert_limit=t1_gap_fallback_limit(signal_day_close), convert_expires=expires
+        )
+    ts = ts or dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds")
+    req = request_from_fill(
+        fill, _request_id(position.code, "T1_open", fill.date), signal_day_close, ts
+    )
+    return T1Judgement(request=req)
+
+
+@dataclass(frozen=True)
+class T3Judgement:
+    """T3 触发批判定结果（judge_t3；None 字段=本日无动作，批保持 pending 继续逐日判）。"""
+
+    request: PendingFillRequest | None = None  # 触发/补足成交 → 待确认请求
+    reason: str = ""  # above_target1 | pullback_ma20 | window_fallback
+
+
+def judge_t3(
+    position,
+    tranche,
+    bar: Bar,
+    *,
+    window_end: str,
+    ts: str = "",
+) -> T3Judgement:
+    """T3 触发批逐日判定（06 Stage D 复合口径；evaluate_day 不驱动 T3，本函数独占）。
+
+    三臂（先到先得，触发即盖戳不再逐日）：①站上目标1（close > target1）→ 收盘价成交；
+    ②回踩 MA20±1%（low ≤ ma20×1.01 ∧ close ≥ ma20×0.99）→ 成交价 = ma20 夹入
+    当日 [low, high]（band 触及近似，ESTIMATED——日 K 内触达次序不可知）；
+    ③窗口终点未触发 → 按收盘补足（「20 日内未触发按收盘补足」；窗口锚 opened_date，
+    由调用方算 window_end=+28 日历日 ≈ 20 交易日，ESTIMATED）。
+    t3_ma20/target1 缺席（旧仓位/缺锚）→ 恒不触发（宁缺毋猜，待补锚）。
+    """
+    if position.t3_ma20 is None or position.target1 is None:
+        return T3Judgement()
+    ma20, target1 = position.t3_ma20, position.target1
+    if bar.close > target1:
+        fill = _t3_fill(position, tranche, bar, bar.close, ts)
+        return T3Judgement(request=fill, reason="above_target1")
+    if bar.low <= ma20 * 1.01 and bar.close >= ma20 * 0.99:
+        price = min(max(ma20, bar.low), bar.high)
+        fill = _t3_fill(position, tranche, bar, price, ts)
+        return T3Judgement(request=fill, reason="pullback_ma20")
+    if window_end and bar.date >= window_end:
+        fill = _t3_fill(position, tranche, bar, bar.close, ts)
+        return T3Judgement(request=fill, reason="window_fallback")
+    return T3Judgement()
+
+
+def _t3_fill(position, tranche, bar: Bar, price: float, ts: str) -> PendingFillRequest:
+    from stock_trading_agent.paper.confirm import request_from_fill
+    from stock_trading_agent.paper.fills import Fill
+
+    ts = ts or dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds")
+    fill = Fill(
+        code=position.code,
+        side="buy",
+        lots=tranche.lots,
+        price=price,
+        date=bar.date,
+        tranche_leg="T3_trigger",
+    )
+    return request_from_fill(
+        fill, _request_id(position.code, "T3_trigger", fill.date), tranche.ref_price, ts
+    )
 
 
 def _request_id(code: str, leg: str, date: str) -> str:
@@ -63,9 +182,10 @@ def evaluate_day(
             _expire_due(position, day.market_date, outcome)
             continue
         band = limit_band(bar.prev_close) if position.market == "A" and bar.prev_close else None
-        # 待成交建仓批（T2/T3 限价单；T1 开盘批由 T1 日开盘一次性判定，不在此驱动）
+        # 待成交建仓批（T2 限价单；T1 开盘批/T3 触发批为复合判定，由驱动层
+        # judge_t1_open/judge_t3 一次性或逐日判定，不在此通用驱动——06 Stage D 口径）
         for tranche in position.tranches:
-            if tranche.status != "pending" or tranche.leg == "T1_open":
+            if tranche.status != "pending" or tranche.leg in ("T1_open", "T3_trigger"):
                 continue
             limit = tranche.limit_price or tranche.ref_price
             fill = (
