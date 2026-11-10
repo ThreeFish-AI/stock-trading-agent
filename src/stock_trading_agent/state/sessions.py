@@ -1,6 +1,6 @@
 """sessions.json：CC 会话登记（方案 §11：uuid / 转录路径 / 用量 / 成本）。
 
-订阅轨双口径（F-34）：token 数 + 等效美元两列同记；等效值由调用方按其计费形态给。
+订阅轨双口径（F-34）：token 数 + 等效 USD 两列同记；等效值由调用方按其计费形态给。
 """
 
 from __future__ import annotations

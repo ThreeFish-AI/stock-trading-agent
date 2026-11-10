@@ -34,6 +34,7 @@ from stock_trading_agent.paper.corporate_actions import (
 )
 from stock_trading_agent.paper.tplus1 import available_lots
 from stock_trading_agent.server.panel import (
+    _ts_hhmm,
     render_advice_detail,
     render_advice_library,
     render_alloc_form,
@@ -552,6 +553,7 @@ def panel_overview(request: Request) -> HTMLResponse:
     #ov-events 消费主体（innerHTML）；三个 oob 元素在响应顶层，htmx 对任意 swap 均处理 oob。
     """
     payload = _monitor_events_payload(request, date=None, tail=50)
+    payload["names"] = load_name_map(_layout(request))
     events = payload.get("events") or []
     downgraded = sum(1 for ev in events if ev.get("mech_risk"))
     todo_items = todos(request).get("todos") or []
@@ -576,9 +578,10 @@ def panel_mometa(request: Request) -> HTMLResponse:
     status = monitor_status(request)
     watch_state = status.get("watch_state") or {}
     next_due = (watch_state.get("next_due") or {}).get("cn") or ""
-    beat = next_due[:16] if next_due else "—"
+    beat = _ts_hhmm(next_due) if next_due else "—"
     return HTMLResponse(
-        f'<span class="metachip">watch 心跳 {beat}</span>'
+        f'<span class="metachip" title="watch 下一心跳（cn）：{html.escape(next_due)}">'
+        f"watch 心跳 {html.escape(beat)}</span>"
         '<span class="metachip">T0 机械判据族 · 零 LLM</span>'
     )
 
@@ -1240,7 +1243,7 @@ def advice(request: Request, date: str | None = None) -> dict:
     day_dir = layout.advice_dir / day
     if day_dir.exists():
         for card_path in sorted(day_dir.glob("*.md")):
-            meta = parse_advice_card(card_path.read_text(encoding="utf-8"))
+            meta = parse_advice_card(card_path.read_text(encoding="utf-8"), stem=card_path.stem)
             if not meta:
                 continue
             code = meta.get("code", card_path.stem)
@@ -1300,7 +1303,7 @@ def advice_card(date: str, code: str, request: Request) -> dict:
         "code": code,
         "date": date,
         "md": md,
-        "meta": parse_advice_card(md),
+        "meta": parse_advice_card(md, stem=path.stem),
         # rendered：呈现态原值（12-orchestration §⑫；落盘 md 维持脱敏零改动）
         "rendered": _advice_rendered(request, code),
         # reviewed：已复核状态（advice_reviewed 决策反查；0.0.25）
@@ -1443,6 +1446,7 @@ def panel_audit(request: Request) -> HTMLResponse:
     layout = _layout(request)
     try:
         log = DecisionLog.load(layout.decisions_path)
+        total_lines = len(log.lines)
         lines = [asdict(line) for line in log.lines][-20:]
         chain_ok: bool | None = log.verify_chain()
     except DecisionChainError:
@@ -1456,8 +1460,11 @@ def panel_audit(request: Request) -> HTMLResponse:
                 except ValueError:
                     continue  # 坏行跳过——降级投影宁可少列不可拒渲
         lines = rows[-20:]
+        total_lines = len(rows)
         chain_ok = False
-    return HTMLResponse(render_audit(lines, budget(request), chain_ok=chain_ok))
+    return HTMLResponse(
+        render_audit(lines, budget(request), chain_ok=chain_ok, decisions_total=total_lines)
+    )
 
 
 # --- audit/ 归档只读（三件套互查第三腿，0.0.21；读写矩阵 §④ 面板读半边闭合） ---

@@ -117,7 +117,7 @@ def t1_review_hitrate(card_lines: list[dict], ledger_rows: dict) -> dict:
 
 
 def budget_curve(session_records: list[dict]) -> list[dict]:
-    """会话登记 → 按市场日分桶的双口径曲线（token 数 + 等效美元，F-34）。"""
+    """会话登记 → 按市场日分桶的双口径曲线（token 数 + 等效 USD，F-34）。"""
     buckets: dict[str, dict] = {}
     for record in session_records:
         ts = str(record.get("ts", ""))

@@ -86,6 +86,20 @@ class TestRenderAndScan:
         assert meta["candidate_action"] == "持有观察"
         assert meta["t1_sell_pct"] == 85.0
 
+    def test_leading_zero_code_roundtrip(self):
+        # 0 开头 A 股代码（000/002/300 段）：写侧加引号，roundtrip 免 YAML 1.1 八进制误析
+        md = render_advice_card(card_payload(), code="002513", date=market_today(), task_id="t1")
+        assert 'code: "002513"' in md
+        assert parse_advice_card(md, stem="002513")["code"] == "002513"
+        assert parse_advice_card(md)["code"] == "002513"
+
+    def test_legacy_unquoted_octal_code_stem_wins(self):
+        # 遗留未加引号卡：PyYAML 八进制误析 002513→1355；stem 在场为权威；无 stem 退化 int→str
+        legacy = render_advice_card(card_payload(), code="002513", date="d", task_id="t")
+        unquoted = legacy.replace('code: "002513"', "code: 002513")
+        assert parse_advice_card(unquoted, stem="002513")["code"] == "002513"
+        assert parse_advice_card(unquoted)["code"] == "1355"
+
     def test_share_unit_negative_assertion(self):
         md = render_advice_card(
             card_payload(rationale="建议先卖 1200 股观察"),

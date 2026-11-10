@@ -139,9 +139,9 @@ class TestTableNorms:
                 ]
             }
         )
-        assert '<span id="dg-task-meta" hx-swap-oob="true">1 项</span>' in html
+        assert '<span id="dg-task-meta" hx-swap-oob="true" class="cm">1 项</span>' in html
         empty = render_tasks_table({"tasks": []})
-        assert '<span id="dg-task-meta" hx-swap-oob="true">0 项</span>' in empty
+        assert '<span id="dg-task-meta" hx-swap-oob="true" class="cm">0 项</span>' in empty
 
     def test_event_feed_hhmm_and_oob_count(self):
         from stock_trading_agent.server.panel import render_event_feed
@@ -158,9 +158,20 @@ class TestTableNorms:
                 ]
             }
         )
-        assert ">09:31</div>" in html  # ISO 串取 HH:MM
+        assert ">09:31</div>" in html  # ISO 串取市场钟面 HH:MM（+08 输入 → 市场钟面不变）
         assert 'title="2026-11-08T09:31:17+08:00"' in html  # 全值 Tooltip
-        assert '<span id="ov-ev-count" hx-swap-oob="true">1 条</span>' in html
+        assert '<span id="ov-ev-count" hx-swap-oob="true" class="cm">1 条</span>' in html
+
+    def test_ts_hhmm_market_clock_tz_independent(self):
+        """0.0.34 CI 回归：aware 串统一转市场钟面（非系统本地——UTC runner 实证错钟面）。"""
+        from stock_trading_agent.server.panel import _ts_hhmm
+
+        # 双钟面场景：+00:00 台账串不得显示 UTC 钟面（13:26），须显示市场钟面 21:26
+        assert _ts_hhmm("2026-11-09T13:26:00+00:00") == "21:26"
+        # 市场钟面输入原位呈现；朴素串视为已在市场钟面；非 ISO 短串原样
+        assert _ts_hhmm("2026-11-09T21:26:00+08:00") == "21:26"
+        assert _ts_hhmm("2026-11-09T09:31:17") == "09:31"
+        assert _ts_hhmm("09:31") == "09:31"
 
 
 class TestMdLite:
@@ -405,6 +416,11 @@ class TestDesignUpgrade024:
         )
         assert 'class="cbx"' not in html and "sdot-wait" in html
         assert 'href="#/paper"' in html
+        # oob span 属性即终态（outerHTML 替换）：class="cm" 必带，否则轮询后丢卡头 chip 样式
+        assert '<span id="ov-todo-count" hx-swap-oob="true" class="cm">1 项</span>' in html
+        assert '<span id="ov-todo-count" hx-swap-oob="true" class="cm">0 项</span>' in render_todos(
+            {"todos": []}
+        )
 
     def test_audit_summary_chips_and_head_tag(self):
         from stock_trading_agent.server.panel import render_audit

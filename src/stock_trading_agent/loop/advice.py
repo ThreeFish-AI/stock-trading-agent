@@ -64,7 +64,8 @@ def render_advice_card(structured: dict, *, code: str, date: str, task_id: str) 
     lines = [
         "---",
         f"card: {ADVICE_SCHEMA_ID}",
-        f"code: {code}",
+        # code 加引号防 YAML 1.1 前导零八进制误析（002513→1355，0 开头 A 股代码全中招）
+        f'code: "{code}"',
         f"date: {date}",
         f"task_id: {task_id}",
         f"candidate_action: {structured.get('candidate_action', '')}",
@@ -106,8 +107,13 @@ def _esc(value: object) -> str:
     return str(value if value is not None else "").replace("|", "\\|").replace("\n", " ")
 
 
-def parse_advice_card(text: str) -> dict:
-    """front-matter 反解（面板/测试用）。无 front-matter 返回空 dict。"""
+def parse_advice_card(text: str, *, stem: str | None = None) -> dict:
+    """front-matter 反解（面板/测试用）。无 front-matter 返回空 dict。
+
+    stem（文件名去扩展）在场时为 code 权威对账锚：遗留未加引号卡里 PyYAML（YAML 1.1）
+    把前导零 int 按八进制误析（002513→1355、00700→448），写者与文件名同源，
+    int 反解值 ≠ stem 即采信 stem。
+    """
     if not text.startswith("---"):
         return {}
     import yaml
@@ -117,9 +123,12 @@ def parse_advice_card(text: str) -> dict:
         return {}
     meta = yaml.safe_load(parts[1]) or {}
     if isinstance(meta, dict):
-        # yaml 把 6 位数字反解为 int——code 语义稳定为 str（面板/消费方免类型分叉）
-        if "code" in meta:
-            meta["code"] = str(meta["code"])
+        raw = meta.get("code")
+        if isinstance(raw, int) and stem is not None and stem.isdigit() and str(raw) != stem:
+            meta["code"] = stem
+        elif "code" in meta:
+            # yaml 把纯数字反解为 int——code 语义稳定为 str（面板/消费方免类型分叉）
+            meta["code"] = str(raw)
         return meta
     return {}
 

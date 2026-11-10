@@ -374,7 +374,8 @@ class TestPriceSources:
             task = client.app.state.loop_runtime.consume_one()
             assert task is not None and task.status == "done"
             frag = client.get(f"/api/panel/advice-detail/{today}/600519?mount=mo").text
-            assert "现价（多源 asof）" in frag and "ticks" in frag and "10:05" in frag
+            # 0.0.34：现价并入走势参考块（详情卡 2×2 四块，第五块孤行退役）
+            assert "现价 · 走势参考" in frag and "ticks" in frag and "10:05" in frag
             assert 'hx-target="#advice-detail"' in frag  # mount=mo → ③页挂点
             body = client.get(f"/api/advice/{today}/600519").json()
             assert body["price"]["price"] == 9.6 and body["price"]["source"] == "ticks"
