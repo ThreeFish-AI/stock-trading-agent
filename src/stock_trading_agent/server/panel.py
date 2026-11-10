@@ -1718,13 +1718,17 @@ def render_ca_form(*, has_positions: bool = True) -> str:
         "决策 payload 零敏感量</p></form>"
         '<div id="paper-ca-result"></div>'
     )
-    body = form
-    if not has_positions:
-        body = (
-            '<details class="brief-fold"><summary class="brief-sum">'
-            "公司行动馈送（需在持仓——当前不可用，提交将 422）</summary>"
-            f"{form}</details>"
-        )
+    # 0.0.36 r2：CA 表单恒折叠——展开态 ~500px 与 allocation 卡并占 .screen，把 #paper
+    # 主区挤至 0px（review P1；有持仓态生产现网同病）；需在持仓分支保留原提示语（测试钉面）
+    summary = (
+        "公司行动馈送（需在持仓——当前不可用，提交将 422）"
+        if not has_positions
+        else "公司行动馈送（点开登记送转 / 分红）"
+    )
+    body = (
+        f'<details class="brief-fold"><summary class="brief-sum">{summary}</summary>'
+        f"{form}</details>"
+    )
     return _card("公司行动馈送", body, meta="手动登记送转/分红")
 
 
@@ -1753,12 +1757,18 @@ def render_alloc_form(*, has_ledger: bool) -> str:
         '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内 open_position）；dup code 整批拒；'
         '决策 payload 零价格零数量（NR-5）">账本缺席时以 allocation budget 起始建账 · '
         "dup code 整批拒 · 决策 payload 零敏感量</p></form>"
+    )
+    # 0.0.36 r2：表单折叠条化（沿 ca-form 先例）——常驻展开 ~230px 与 CA 卡并占 .screen
+    # 挤压 #paper 主区（review P1）；结果槽留折叠条外（注入通知不被折叠吞）
+    hint = "追加建仓（dup code 整批拒）" if has_ledger else "以 allocation budget 起始新建账本"
+    body = (
+        f'<details class="brief-fold"><summary class="brief-sum">'
+        f"allocation 导入（点开 · {hint}）</summary>{form}</details>"
         '<div id="paper-alloc-result"></div>'
     )
-    hint = "追加建仓（dup code 整批拒）" if has_ledger else "以 allocation budget 起始新建账本"
     return _card(
         "allocation 导入",
-        form,
+        body,
         meta=f"三批建仓入口 · {hint}",
     )
 

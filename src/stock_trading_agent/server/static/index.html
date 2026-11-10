@@ -112,6 +112,9 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
    0.0.36 加 :not(.grow)——末卡自身是 grow 卡（基数 0）时该规则把 basis 打回 auto，
    与同列 grow 卡非对称分配（①信号卡 290 vs 事件流 96 实测绘面） */
 .grid-main .col>.card:last-child:not(.grow){flex:1 1 auto}
+/* 0.0.36 r2：⑦主栏末卡（会话登记）降为不参与 grow——内容高基数与 #audit（基数 0）同权重
+   均分时次内容反拿大头、台账主卡被压小（177 vs 407 实测倒挂） */
+#page-audit .grid-main>.col>.card:last-child:not(.grow){flex:0 1 auto}
 /* 0.0.36 ①边栏泄压阀：矮视口下边栏三卡需求 > 可用高时列内滚动代替压没；
    thin 滚动条在经典滚动条平台常显作裁切提示（macOS overlay 滚动条不常显，半裁卡即滚动暗示） */
 #page-overview .grid-main>.col:last-child{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
@@ -241,8 +244,11 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
    留白（grid 行高只随内容不随余量） */
 .subpanel>.grid-2{flex:1 1 auto;min-height:0}
 /* 0.0.36：④#paper 承接弹性链（block 缺省下内层 .subtabs.flex-fill 拿不到高度分配，
-   重数据日 subpanel 溢出一屏）——fragment 根 div 经 innerHTML 注入，链在壳层补 */
+   重数据日 subpanel 溢出一屏）——fragment 根 div 经 innerHTML 注入，链在壳层补；
+   r2 补 96px 下限：两张常驻表单卡（allocation/CA）全展开时 #paper 挤 0px 的兜底
+   （表单已改 details 默认折叠，此为第二道防线） */
 #paper{display:flex;flex-direction:column;min-height:0}
+.screen>#paper{min-height:96px}
 .subtabs:has(.st-labels input:nth-of-type(1):checked) .subpanels .subpanel:nth-of-type(1),
 .subtabs:has(.st-labels input:nth-of-type(2):checked) .subpanels .subpanel:nth-of-type(2),
 .subtabs:has(.st-labels input:nth-of-type(3):checked) .subpanels .subpanel:nth-of-type(3),
@@ -454,6 +460,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
   /* 0.0.31：窄屏解除一屏锁（单栏自然流页面滚动），一屏判据仅面向 ≥1180 桌面档；
      0.0.36 视口锁改弹性充满后，解锁形态由 height:auto 换 flex:none（自然高） */
   .screen,#page-stats #stats{flex:none;min-height:0}
+  /* 0.0.36 r2（review P0 修复）：充满链后代须一并退位——只解容器时 .flex-fill/.grow/
+     #advice-detail 等基数 0 项在 auto 高 flex 容器里只贡献 min-height（96px 下限甚至 0），
+     ①③④⑥⑦ 五页窄档实测大面积不可见/叠印（1000px 复现：grid-main/#paper/#audit 全 0 高）。
+     同媒体块内后置源序 + 更高特异性，桌面档零影响 */
+  .screen .flex-fill,.screen .grow,#advice-detail,#page-stats #stats .grid-2{flex:none;min-height:0}
   .grid-main,.grid-rail{grid-template-columns:1fr}
   .grid-2{grid-template-columns:1fr}
   #page-diagnosis .grid-2{grid-template-columns:1fr}
