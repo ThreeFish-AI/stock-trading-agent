@@ -246,7 +246,7 @@ def render_tasks_table(queue: dict) -> str:
     if not tasks:
         return (
             _empty("队列为空。", "②页表单或③页复核按钮提交后于此跟踪。")
-            + '<span id="dg-task-meta" hx-swap-oob="true">0 项</span>'
+            + '<span id="dg-task-meta" hx-swap-oob="true" class="cm">0 项</span>'
         )
     rows = []
     for t in tasks[-20:]:
@@ -263,7 +263,7 @@ def render_tasks_table(queue: dict) -> str:
         )
     return (
         _table("w-kind|w-code|w-st|w-ts|-", "类型|代码|状态|入队:num|错误", "".join(rows))
-        + f'<span id="dg-task-meta" hx-swap-oob="true">{len(tasks)} 项</span>'
+        + f'<span id="dg-task-meta" hx-swap-oob="true" class="cm">{len(tasks)} 项</span>'
     )
 
 
@@ -852,7 +852,7 @@ def render_event_feed(payload: dict) -> str:
                 "开盘时段自动盯盘；如持续为空，检查①页右列系统状态卡或③页事件表。",
                 title="watch.py 台账为空或未运行",
             )
-            + '<span id="ov-ev-count" hx-swap-oob="true">0 条</span>'
+            + '<span id="ov-ev-count" hx-swap-oob="true" class="cm">0 条</span>'
         )
     rows = []
     names = payload.get("names") or {}
@@ -883,7 +883,8 @@ def render_event_feed(payload: dict) -> str:
             f">{_esc(ev.get('level', 'T0'))}</span>"
             f"{_esc(review_txt)}</span></div></div></a>"
         )
-    return "".join(rows) + f'<span id="ov-ev-count" hx-swap-oob="true">{len(events)} 条</span>'
+    oob = f'<span id="ov-ev-count" hx-swap-oob="true" class="cm">{len(events)} 条</span>'
+    return "".join(rows) + oob
 
 
 def render_calendar(payload: dict) -> str:
@@ -920,7 +921,11 @@ def render_notifications(payload: dict) -> str:
             title="watch.py osascript 历史；产品仓永不发通知",
         )
         status_line = ""
-        meta_oob = ""
+        # 0.0.34：空态发射归零 oob——日志轮转/清空后卡头 chip 复位，不残留陈旧计数
+        meta_oob = (
+            '<span class="cm" id="mo-notif-meta" hx-swap-oob="true" role="status" '
+            'aria-live="polite" title="osascript 通道 · 只读">osascript 通道 · 只读</span>'
+        )
     else:
         groups: list[list[dict]] = []
         index: dict[tuple[str, str], int] = {}
@@ -1120,7 +1125,7 @@ def render_todos(payload: dict) -> str:
     if not todos:
         return (
             _empty("无待办。", "逐笔确认/降档复核/晨报确认产生时于此汇总。")
-            + '<span id="ov-todo-count" hx-swap-oob="true">0 项</span>'
+            + '<span id="ov-todo-count" hx-swap-oob="true" class="cm">0 项</span>'
         )
     rows = []
     for item in todos:
@@ -1132,7 +1137,9 @@ def render_todos(payload: dict) -> str:
             f'<span class="code num">{_esc(item["code"])}</span> {_esc(item["text"])}</a></div>'
             f'<span class="chip chip-warn">{_esc(item["chip"])}</span></div>'
         )
-    return "".join(rows) + f'<span id="ov-todo-count" hx-swap-oob="true">{len(todos)} 项</span>'
+    return "".join(rows) + (
+        f'<span id="ov-todo-count" hx-swap-oob="true" class="cm">{len(todos)} 项</span>'
+    )
 
 
 def render_navcard(view: dict) -> str:
@@ -1371,7 +1378,10 @@ def render_advice_detail(body: dict, *, mount: str = "ad") -> str:
     p = price_fact.get("price")
     if isinstance(p, (int, float)):
         asof = str(price_fact.get("asof") or "")
-        asof_txt = f" · asof {_esc(asof[11:16] or asof[:16])}" if asof else ""
+        # §⑬ 当日视图单钟面：asof 感知串转市场钟面（台账 asof 多为 +00:00，切片会显 UTC）；
+        # 短串/日期串（≤16 字符）无时间位，维持原样展示
+        asof_hhmm = _ts_hhmm(asof) if len(asof) > 16 else asof[:16]
+        asof_txt = f" · asof {_esc(asof_hhmm)}" if asof else ""
         stale = ' <span class="tag">陈旧</span>' if price_fact.get("stale") else ""
         price_html = (
             f'<div class="num">{p}</div><p class="tbl-note" '
@@ -1496,8 +1506,11 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 "</tr>"
             )
         pos_body = (
-            # 0.0.34：股票列对齐 ①③ w-stock 先例、市值走 w-amt（千分位金额实宽）、
-            # 可卖头缩短为「可卖T+1」；外裹 tbl-wrap 令定宽恒被尊重（断点不再比例挤压）
+            # 0.0.34：股票列对齐 ①③ w-stock 先例、市值走 w-amt 105（千分位金额，1440 档
+            # 列随表展宽全显）、可卖头缩短为「可卖T+1」；列宽和 838→807 恰 ≤ 880 档卡内宽
+            # 807（§⑬ 列宽和规则）——建仓批 w-batch 84 + 徽章格解 nowrap 竖排（单枚 72px
+            # 恰容），市值超宽值 ellipsis+title 全值兜底；
+            # 外裹 tbl-wrap 令定宽恒被尊重（断点不再比例挤压）
             '<div class="tbl-wrap">'
             + _table(
                 "w-stock|w-st|w-batch|w-n2|w-n2|w-num|w-num|w-num|w-amt",
@@ -1564,7 +1577,7 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
                 "</tr>"
             )
         queue_body = _table(
-            # 0.0.34：列宽和 876→778（批→84/方向与手数→68 窄轨），≤1180 单栏卡内宽 ~786 不再溢出；
+            # 0.0.34：列宽和 876→762（批→84/方向与手数→60 窄轨），≤1180 单栏卡内宽不再溢出；
             # 时间为台账制 _ts_short（MM-DD HH:MM）保 w-ts 全格式轨
             "w-ts|w-code|w-num|w-n2|w-n2|w-num|w-ts|w-op",
             "时间:num|代码|批|方向|手数:num|参考价:num|bar 日:num|操作",

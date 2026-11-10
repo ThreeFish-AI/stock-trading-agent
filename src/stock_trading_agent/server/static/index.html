@@ -325,6 +325,9 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
 .legs{display:inline-flex;gap:var(--sp-3)}
 .leg{display:inline-flex;align-items:center;gap:var(--sp-2);font:600 var(--fs-10) var(--mono);padding:2.5px 6px;border-radius:var(--r-xs);border:1px solid;letter-spacing:0}
 .leg i{font-style:normal;font-weight:700;opacity:.9}
+/* 0.0.34：徽章格解除 nowrap——自适应列窄档时徽章竖排堆叠（.tbl td 默认 nowrap+ellipsis
+   会把超宽徽章整列裁没）；宽档仍单行 */
+.tbl td:has(>.leg){white-space:normal;line-height:2;padding-left:6px;padding-right:6px}
 .leg.filled{color:var(--up2);background:var(--upbg);border-color:var(--upln)}
 .leg.pending{color:var(--warn);background:var(--warnbg);border-color:var(--warnln)}
 .leg.expired{color:var(--t4);background:color-mix(in srgb,var(--px-white) 3%,transparent);border-color:var(--line)}
@@ -385,8 +388,8 @@ main h3{font-size:var(--fs-13);font-weight:600;color:var(--t1);margin:14px 0 6px
 .eq-svg{display:block;margin:0 auto}
 /* ── 0.0.15 列宽 SSOT（同属性列跨表同宽）── */
 .w-ts{width:118px}.w-code{width:88px}.w-num{width:84px}.w-kind{width:132px}
-.w-st{width:96px}.w-op{width:150px}.w-sup{width:128px}.w-batch{width:164px}.w-file{width:240px}
-.w-lv{width:56px}.w-n2{width:68px}.w-amt{width:104px}
+.w-st{width:96px}.w-op{width:150px}.w-sup{width:128px}.w-batch{width:84px}.w-file{width:240px}
+.w-lv{width:56px}.w-n2{width:60px}.w-amt{width:105px}
 .w-seq{width:52px}.w-hash{width:176px}.w-stock{width:150px}.w-act{width:76px}
 
 /* ── 0.0.16 交互与可达性 ── */
