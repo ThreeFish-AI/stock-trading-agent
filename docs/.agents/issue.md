@@ -11,6 +11,7 @@
 | I-005 | 特性覆盖审计（#37）：paper 驱动面缺口补齐（EOD 驱动/allocation 导入/撮合价透传）+ 15 项文档对齐 + postmortem 槽补装 | ✅ 已完成 | 2026-11-10 | [详情](#I-005) |
 | I-006 | selftest 安装态 4 例误红（ops/ 类 case 缺仓 FAIL）→ SelftestSkip 守卫 | ✅ 已完成 | 2026-11-10 | [详情](#I-006) |
 | I-007 | 界面梳理第五轮（issue #36）：PyYAML 前导零八进制误析 + CSS 断点级联双坑，44 项逐模块修复 | ✅ 已完成 | 2026-11-10 | [详情](#I-007) |
+| I-008 | ①⑦ 页 grid-main.screen 级联：两栏纵向堆叠、⑦ 台账 0px 不可见（0.0.31 引入）→ .grid-main.screen{display:grid} 一行收口 | ✅ 已完成 | 2026-11-10 | [详情](#I-008) |
 
 <a id="I-001"></a>
 
@@ -87,3 +88,14 @@
 - **后续防范**：YAML 数值型身份字段一律引号落盘，读侧以文件名/键位对账兜底；断点行为必须实测（matchMedia + computed grid-template-columns 双探针），勿信「媒体块写了就生效」；审计证据链用 headless 专属浏览器（共享 Playwright 实例的 viewport 会被并发会话反复改写，测量全废）。
 - **同类问题影响**：audit 归档/ledger 等 yaml/数值身份字段面暂无同型消费点（grep 复核）；CSS 侧其余 id 特异性覆写仅剩 #page-diagnosis/#page-monitor 两处（已修），新增覆写走 §⑬ 门。
 - **注意事项**：本条与 0.0.31 一屏化（PR #38）并发撞车——处置沿既定法：WIP 提交 → 从 origin/main 重建分支 → cherry-pick 语义重放（2 文件 3 处冲突手工按「限高壳 + 新列宽」合并）。
+
+<a id="I-008"></a>
+
+## I-008：①⑦ 页 grid-main.screen 级联冲突——两栏纵向堆叠、⑦ 台账区 0px 不可见（0.0.31 引入）
+
+- **问题描述**：①⑦ 页两 `.col` 自 0.0.31 起纵向堆叠（非左右两栏），⑦ 页 `#audit`（decisions 台账 grow 区）塌 0px 完全不可见，≤1180/880 塌缩块亦全数失效；生产 0.0.33 与工作树双实测复现（PR #39 review 轮浏览器探针发现）。
+- **表因根因**：`grid-main` 与 `screen` 叠挂同元素时两基座类各设 `display`（grid vs flex）且同特异性 (0,1,0)，`.screen`（行 186）源序晚于 `.grid-main`（行 103）级联必胜——flex 竖排下 grid-template-columns/塌缩媒体块全部空转；`#audit` 的 `.grow{flex:1 1 0;min-height:0}` 在内容高 flex 列中基准 0 塌缩。与 I-007 级联双坑同族（源序压胜支），但受害面是整页布局。
+- **处理方式（0.0.34）**：`.grid-main.screen{display:grid}`（(0,2,0) 特异性压胜，一行收口）；1440 两栏恢复（⑦ 台账区实测 >600px 可见）、1180/880 单栏塌缩恢复；规约 14-design-system §⑬ 新钉「组合基座 display 归属显式化」无条件规则（替代形态＝外层 .screen 包内层 .grid-main，③④页先例）。
+- **后续防范**：同一元素叠加两个基座类时 grep 两类是否都设 display，必须显式组合选择器声明归属；布局类验收必含 computed display + grid-template-columns 双探针，勿只看媒体块文本。
+- **同类问题影响**：全仓 grep 组合基座仅此一处（③④页为包裹形态无冲突）；⑤ `#dg-form` 等注入槽无基座叠加。
+- **注意事项**：0.0.31–0.0.33 生产面板 ①⑦ 一直处于堆叠态（用户感知为「页面依旧丑」的部分来源）；修复后 ①⑦ K 值（318/236）与两栏布局经三档实测无回归。
