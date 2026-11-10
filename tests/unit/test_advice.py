@@ -100,6 +100,12 @@ class TestRenderAndScan:
         assert parse_advice_card(unquoted, stem="002513")["code"] == "002513"
         assert parse_advice_card(unquoted)["code"] == "1355"
 
+    def test_corrupt_frontmatter_returns_empty(self):
+        # 0.0.35：坏 front-matter 视同无元数据（/panel/advice 列表对坏卡免疫，不再 500）
+        corrupt = "---\ncode: [unclosed\n---\nbody"
+        assert parse_advice_card(corrupt) == {}
+        assert parse_advice_card(corrupt, stem="600519") == {}
+
     def test_share_unit_negative_assertion(self):
         md = render_advice_card(
             card_payload(rationale="建议先卖 1200 股观察"),

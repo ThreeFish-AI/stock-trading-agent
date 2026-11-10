@@ -155,7 +155,7 @@ class CCResult:
 | agent/sessions.json | 会话登记（uuid/转录路径/用量/成本） | 写 | 读 | — |
 | agent/decisions.jsonl | decision log（`agent:` 前缀，hash 链防篡改） | 追加写 | 读 | postmortem 消费 |
 | agent/audit/<date>/ | stream-json 原始归档（官方转录默认 30 天清理，F-38） | 写 | 读 | — |
-| agent/budget.json | token+等效美元台账（订阅轨双口径，F-34） | 写 | 读写 | — |
+| agent/budget.json | token+等效 USD台账（订阅轨双口径，F-34） | 写 | 读写 | — |
 | monitor/advice/<date>/<code>.md | T2 建议卡 monitor-advice/1（07 P2 契约路径，写者例外） | 写（断言器放行后原子写） | 读 | — |
 
 sim-portfolio.json 留 `~/.vibe-stock/` 根（07 P3 schema 原样，写者=paper 引擎）；`monitor/advice/` 沿用 07 已钉死的建议卡落位，是 `agent/` 之外唯一的写者例外：卡由 T2 会话产出、经断言器放行后由主 Agent 原子写入，`watch.py` 不产卡，`monitor/` 其余产物（events/ticks/day-summary）写者仍为 `watch.py`；卡面落盘形态遵 07 脱敏边界，只落百分比与档位词，T+1 可卖份额原值仅在面板与会话呈现态给值，导出卡片同口径降级（R2/NR-5）；既有 SSOT 对主 Agent 全部只读或既有写者不变（R3/R8 的状态层实现）。锁纪律：agent/daemon.lock 单实例；尊重 fetch_state.lock 取数串行与 watch.lock。
@@ -170,7 +170,7 @@ sim-portfolio.json 留 `~/.vibe-stock/` 根（07 P3 schema 原样，写者=paper
 
 ### 13 安全与预算
 
-权限分级：L0 纯脚本（零 CC）/ L1 人在环 CC（面板触发）/ L2 无人值守 CC（M3、默认关）。CC 会话标准件：`--permission-mode dontAsk`+精确 `--allowedTools`+`--permission-prompts none`（拒绝记入 permission_denials 审计流水，F-24/F-28）；PreToolUse hook deny 为裁决链不可绕过的宿主侧抓手、零例外红线交 harness 强制（F-56/C-81）；paper 逐笔确认走 -p 第四决策值 defer 挂起等人工（F-57）。预算双闸+硬顶：内闸=每次 spawn 必带 `--max-budget-usd`（真实上限=cap+最贵单次调用，实测 $1 顶停于 $1.38，F-17/F-18）；外闸=发送前预检（任务数×单次估算 vs 日/月 USD 信封）+硬性次数闸；订阅轨按 token 数+等效美元双口径记账（F-19/F-34）；订阅登录态下程序化用量（`claude -p`/Agent SDK）仍计入订阅 5 小时/周额度窗口，独立 credit 池拆分已被官方暂缓（Anthropic. Use the Claude Agent SDK with your Claude plan, 2026-11-06 复核, https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan；暂缓非取消，列政策观察项）。预算数值按计费形态分档（D2）：形态由 `probe()` 认证态机判（订阅 OAuth 且无 ANTHROPIC_API_KEY，F-31），订阅形态数值放开、真实上限是额度窗口；若开启 usage credits 且未设支出上限，额度耗尽后会按量计费（官方 costs 页；D-44 另载中途静默切换且 /cost 停止累计），探针认证态一旦变化即按 API 档默认值收紧。面板安全：绑 127.0.0.1 之上加 TrustedHostMiddleware 白名单防 DNS rebinding（I-46/I-47）；数据面单文件/JSON 原子写，不引数据库。
+权限分级：L0 纯脚本（零 CC）/ L1 人在环 CC（面板触发）/ L2 无人值守 CC（M3、默认关）。CC 会话标准件：`--permission-mode dontAsk`+精确 `--allowedTools`+`--permission-prompts none`（拒绝记入 permission_denials 审计流水，F-24/F-28）；PreToolUse hook deny 为裁决链不可绕过的宿主侧抓手、零例外红线交 harness 强制（F-56/C-81）；paper 逐笔确认走 -p 第四决策值 defer 挂起等人工（F-57）。预算双闸+硬顶：内闸=每次 spawn 必带 `--max-budget-usd`（真实上限=cap+最贵单次调用，实测 $1 顶停于 $1.38，F-17/F-18）；外闸=发送前预检（任务数×单次估算 vs 日/月 USD 信封）+硬性次数闸；订阅轨按 token 数+等效 USD双口径记账（F-19/F-34）；订阅登录态下程序化用量（`claude -p`/Agent SDK）仍计入订阅 5 小时/周额度窗口，独立 credit 池拆分已被官方暂缓（Anthropic. Use the Claude Agent SDK with your Claude plan, 2026-11-06 复核, https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan；暂缓非取消，列政策观察项）。预算数值按计费形态分档（D2）：形态由 `probe()` 认证态机判（订阅 OAuth 且无 ANTHROPIC_API_KEY，F-31），订阅形态数值放开、真实上限是额度窗口；若开启 usage credits 且未设支出上限，额度耗尽后会按量计费（官方 costs 页；D-44 另载中途静默切换且 /cost 停止累计），探针认证态一旦变化即按 API 档默认值收紧。面板安全：绑 127.0.0.1 之上加 TrustedHostMiddleware 白名单防 DNS rebinding（I-46/I-47）；数据面单文件/JSON 原子写，不引数据库。
 
 ### 14 可靠性与降级
 

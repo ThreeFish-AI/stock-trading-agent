@@ -4,6 +4,17 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.35] - 2026-11-10
+
+### Fixed
+
+- **①页 overview 同响应 ov-ev-count 双发射收口（PR #39 review 遗留）**：`panel_overview` 顶层与 `render_event_feed` 片段尾部对同 id 各发一次 oob（外层后置二次 outerHTML 替换、次序耦合脆弱）——删外层留片内单源，既有两断言（feed 单测/overview e2e）不变全绿。
+- **⑤ 建议卡坏 front-matter 免疫（PR #39 review 遗留）**：`parse_advice_card` 对非法 YAML 抛 `YAMLError` 致 `/panel/advice` 列表 500——`safe_load` 包 try/except 视同无元数据跳过该卡（单测钉死）。
+
+### Changed
+
+- `docs/research/` 四处「等效美元」→「等效 USD」（0.0.34 双称统一的档案收尾；main-agent.md ×2、main-agent-proposal.md ×2）。
+
 ## [0.0.34] - 2026-11-10
 
 ### Fixed

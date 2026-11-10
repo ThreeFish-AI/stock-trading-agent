@@ -548,9 +548,10 @@ def panel_syscard(request: Request) -> HTMLResponse:
 
 @router.get("/panel/overview")
 def panel_overview(request: Request) -> HTMLResponse:
-    """①事件流卡体 + hero 计数带 oob 下发（ov-sub/ov-ev-count/ov-todo-count）。
+    """①事件流卡体 + hero 计数带 oob 下发（ov-sub/ov-todo-count）。
 
-    #ov-events 消费主体（innerHTML）；三个 oob 元素在响应顶层，htmx 对任意 swap 均处理 oob。
+    #ov-events 消费主体（innerHTML）；ov-ev-count 由 feed 片段尾部单源自带（0.0.35 收口
+    同响应双发射——顶层不再重复，htmx 对任意 swap 均处理 oob）。
     """
     payload = _monitor_events_payload(request, date=None, tail=50)
     payload["names"] = load_name_map(_layout(request))
@@ -567,7 +568,6 @@ def panel_overview(request: Request) -> HTMLResponse:
     return HTMLResponse(
         body
         + f'<div id="ov-sub" hx-swap-oob="true" class="sub">{html.escape(sub)}</div>'
-        + f'<span id="ov-ev-count" hx-swap-oob="true" class="cm">{len(events)} 条</span>'
         + f'<span id="ov-todo-count" hx-swap-oob="true" class="cm">{len(todo_items)} 项</span>'
     )
 

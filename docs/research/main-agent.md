@@ -377,7 +377,7 @@ SDK 与 CLI 共享同一 loop，「headless CLI 主通道 + Agent SDK 对照」�
 
 ### 8.4 结构化输出与预算闸
 
---json-schema 是意见段强类型收口的直接武器：本机 2.1.310 实测返回独立 structured_output 字段承载过 schema 校验的对象、enum 约束生效、退出码 0，机制为合成 StructuredOutput 工具调用，CLI 旗标与 SDK output_format 同源同机制（F-11）。schema 约束面两通道同构：按 draft-07 客户端校验，声明 2020-12 等新方言启动即拒（Pydantic model_json_schema() 默认 2020-12，必须转 draft-7 或剥离 $schema）；支持基本类型/enum/const/required/嵌套/$ref，format 仅作注记（F-12、F-06）；递归 $ref 在 CLI 层可用、比 API strict 层限制清单宽松，但稳妥仍用扁平 schema（F-20、F-13）。两个设防点：strict schema 推导失败会静默回退非严格模式，结果信封/stderr/--debug 均无信号，本地确定性校验不可省（F-14）；Opus 5.5 长 StructuredOutput（10–17KB）高发少一个右括号（27 次尝试 14 次无效），意见段应保持小 schema 短输出（F-16）。校验失败自动重试，超限报 error_max_structured_output_retries，subtype=success 但缺 structured_output 仍须视为失败；重试预算默认 5（F-15、F-54）。预算闸：--max-budget-usd 仅 print 模式生效，按客户端价格表估算而非账单，subagent 花费计入，达限报 error_max_budget_usd（F-17）；订阅 OAuth 登录态下闸同样生效，计量口径为 list 牌价估算而非订阅额度消耗，须以「单次调用估算乘次数」的软预算口径向用户呈现（F-19）。#100111 实测 $1 上限停于 $1.38（3/3 复现）：预算在调用返回计价后才检查，真实上限=cap+最贵单次调用，批量场景须在编排层再加发送前预检闸（F-18）；计价口径随版本漂移（2.1.296 调低 cache read 牌价），预算闸不能作唯一防线（F-35）。订阅下会话美元成本与账单无关，订阅轨审计留 token 数加等效美元即可（F-34）。
+--json-schema 是意见段强类型收口的直接武器：本机 2.1.310 实测返回独立 structured_output 字段承载过 schema 校验的对象、enum 约束生效、退出码 0，机制为合成 StructuredOutput 工具调用，CLI 旗标与 SDK output_format 同源同机制（F-11）。schema 约束面两通道同构：按 draft-07 客户端校验，声明 2020-12 等新方言启动即拒（Pydantic model_json_schema() 默认 2020-12，必须转 draft-7 或剥离 $schema）；支持基本类型/enum/const/required/嵌套/$ref，format 仅作注记（F-12、F-06）；递归 $ref 在 CLI 层可用、比 API strict 层限制清单宽松，但稳妥仍用扁平 schema（F-20、F-13）。两个设防点：strict schema 推导失败会静默回退非严格模式，结果信封/stderr/--debug 均无信号，本地确定性校验不可省（F-14）；Opus 5.5 长 StructuredOutput（10–17KB）高发少一个右括号（27 次尝试 14 次无效），意见段应保持小 schema 短输出（F-16）。校验失败自动重试，超限报 error_max_structured_output_retries，subtype=success 但缺 structured_output 仍须视为失败；重试预算默认 5（F-15、F-54）。预算闸：--max-budget-usd 仅 print 模式生效，按客户端价格表估算而非账单，subagent 花费计入，达限报 error_max_budget_usd（F-17）；订阅 OAuth 登录态下闸同样生效，计量口径为 list 牌价估算而非订阅额度消耗，须以「单次调用估算乘次数」的软预算口径向用户呈现（F-19）。#100111 实测 $1 上限停于 $1.38（3/3 复现）：预算在调用返回计价后才检查，真实上限=cap+最贵单次调用，批量场景须在编排层再加发送前预检闸（F-18）；计价口径随版本漂移（2.1.296 调低 cache read 牌价），预算闸不能作唯一防线（F-35）。订阅下会话美元成本与账单无关，订阅轨审计留 token 数加等效 USD即可（F-34）。
 
 ### 8.5 权限、信任与认证收敛
 
@@ -392,7 +392,7 @@ SDK 与 CLI 共享同一 loop，「headless CLI 主通道 + Agent SDK 对照」�
 - 通道定型：headless CLI 子进程为大脑主通道、Agent SDK 仅作对照，mcp serve 拒绝进入大脑链路（工具桥、约 2.6 万 token 固定开销且未文档化）；对照实验须 cli_path 钉同一本机二进制并显式对齐 system prompt 与 settings 继承，否则两通道输出不可比（F-01、D-12、D-22、D-24、D-17、D-16）。
 - 完成判据三段式：退出码加 result 信封加 result 行存在（缺一不可），exit 0 不代表业务成功，并以会话转写 JSONL 对账兜底（D-01、D-05、D-06、D-77）。
 - 意见段输出收口用 --json-schema 加本地确定性校验双层：schema 收敛 draft-07 扁平子集、success 缺 structured_output 视为失败；strict 静默回退无法自证，RiskGuard 前置的本地校验不可省（F-11、F-12、F-14、F-15）。
-- 预算闸按「cap+最贵单次调用」的真实上限建模并叠加自记 token 与硬性次数闸：--max-budget-usd 是 list 牌价估算且事后计价可越限，订阅轨以 token 数加等效美元口径向用户呈现（F-17、F-18、F-19、F-34）。
+- 预算闸按「cap+最贵单次调用」的真实上限建模并叠加自记 token 与硬性次数闸：--max-budget-usd 是 list 牌价估算且事后计价可越限，订阅轨以 token 数加等效 USD口径向用户呈现（F-17、F-18、F-19、F-34）。
 - 无人值守权限标准件：dontAsk 加精确 allowlist 加 --permission-prompts none，PreToolUse hook deny 作裁决链不可绕过的宿主侧抓手，模拟盘逐笔确认走 defer 挂起等人工（F-24、F-28、F-56、F-57）。
 - 版本治理先钉死再回归：stable 通道加精确版本 install 锁二进制，升级门禁=--help 快照 diff 加 init.capabilities 探测加 CHANGELOG 扫描；「-p 默认 --bare」是订阅 OAuth 主线的头号升级观察项（F-44、F-10、F-37、D-04）。
 

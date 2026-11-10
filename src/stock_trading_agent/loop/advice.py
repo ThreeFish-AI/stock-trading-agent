@@ -121,7 +121,11 @@ def parse_advice_card(text: str, *, stem: str | None = None) -> dict:
     parts = text.split("---", 2)
     if len(parts) < 3:
         return {}
-    meta = yaml.safe_load(parts[1]) or {}
+    try:
+        meta = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        # 0.0.35：坏 front-matter 视同无元数据（/panel/advice 列表跳过该卡，不再 500）
+        return {}
     if isinstance(meta, dict):
         raw = meta.get("code")
         if isinstance(raw, int) and stem is not None and stem.isdigit() and str(raw) != stem:
