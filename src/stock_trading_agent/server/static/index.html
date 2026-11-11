@@ -202,7 +202,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1;dis
    main(flex:1)→.page.on(flex:1)→.screen(flex:1) 恒恰满视口余高，两病根同灭；
    页级 K 常量全退役（K 值漂移维护成本一并消除） */
 /* 0.0.36：.screen 直子间距补齐——0.0.31-0.0.35 缺 gap 致 ①③④ 直子卡贴边（实测 0px，
- * 违背全站 --sp-6 卡距节奏；⑤⑤ 无 .screen 页不受影响，② 页签条与面板间同补） */
+ * 违背全站 --sp-6 卡距节奏；⑤ 无 .screen 页不受影响，② 页签条与面板间同补） */
 .screen{display:flex;flex-direction:column;flex:1 1 auto;min-height:460px;gap:var(--sp-6)}
 .screen>*{min-height:0}
 /* 0.0.34：组合基座 display 归属显式化——grid-main 叠挂 .screen 时两基座类各设 display 且同

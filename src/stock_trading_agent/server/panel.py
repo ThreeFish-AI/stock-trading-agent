@@ -517,7 +517,7 @@ def render_settings_fragment(state: dict) -> str:
     note = (
         '<p class="tbl-note" title="开启后：T2-worthy monitor 事件自动触发盯盘复核（每日 ≤5 票、'
         "预算闸联动开启、probe 认证态判定计费形态）。关闭仅封 monitor 源自动任务，"
-        '面板手动提交不受影响">开启后：T2 级 monitor 事件自动触发盯盘复核（每日 ≤5 票、'
+        '面板手动提交不受影响">开启后：T2-worthy monitor 事件自动触发盯盘复核（每日 ≤5 票、'
         "预算闸联动）。关闭仅停自动任务，手动提交不受影响。</p>"
     )
     target = 'hx-target="#l2-settings" hx-swap="innerHTML"'
@@ -1673,8 +1673,8 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
 def render_ca_form(*, has_positions: bool = True) -> str:
     """④公司行动手动馈送表单（0.0.24 外置 load-only 容器：轮询重渲不再擦输入态）。
 
-    提交落点 #paper-ca-result（表单自带）；成功窄通知 + SSE paper 事件驱动 #paper 重拉；
-    无持仓时 details 收起（提交必 422）。
+    提交落点 #paper-ca-result（折叠条外，注入通知不被折叠吞）；成功窄通知 + SSE paper
+    事件驱动 #paper 重拉；0.0.36 起 details 恒折叠（无持仓提交必 422，summary 提示语区分）。
     """
     form = (
         '<form class="frm" hx-post="/api/panel/paper/corporate-action" '
@@ -1716,7 +1716,6 @@ def render_ca_form(*, has_positions: bool = True) -> str:
         '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内直调）；决策 payload 零敏感量'
         '（NR-5）">写者=paper 引擎 · 幂等：同口径重复馈送 409 · '
         "决策 payload 零敏感量</p></form>"
-        '<div id="paper-ca-result"></div>'
     )
     # 0.0.36 r2：CA 表单恒折叠——展开态 ~500px 与 allocation 卡并占 .screen，把 #paper
     # 主区挤至 0px（review P1；有持仓态生产现网同病）；需在持仓分支保留原提示语（测试钉面）
@@ -1725,9 +1724,11 @@ def render_ca_form(*, has_positions: bool = True) -> str:
         if not has_positions
         else "公司行动馈送（点开登记送转 / 分红）"
     )
+    # 结果槽留折叠条外（沿 alloc-form r2 同例：注入通知不被折叠吞）
     body = (
         f'<details class="brief-fold"><summary class="brief-sum">{summary}</summary>'
         f"{form}</details>"
+        '<div id="paper-ca-result"></div>'
     )
     return _card("公司行动馈送", body, meta="手动登记送转/分红")
 
