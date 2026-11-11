@@ -364,7 +364,11 @@ class TestLatestAdviceReference:
         self._card(tmp_path, "2026-11-09", "300001")
         self._card(tmp_path, "2026-11-10", "600519")
         os.utime(tmp_path / "monitor/advice/2026-11-09/300001.md", (2_000_000_000, 2_000_000_000))
-        lines = [self._reviewed("2026-11-10", "600519")]
+        # 两卡均已复核（门3 F2：旧版仅复核一张、实际走的仍是未复核分支，fallback 零覆盖）
+        lines = [
+            self._reviewed("2026-11-10", "600519"),
+            self._reviewed("2026-11-09", "300001"),
+        ]
         assert latest_advice_reference(tmp_path / "monitor/advice", lines) == (
             "2026-11-09",
             "300001",

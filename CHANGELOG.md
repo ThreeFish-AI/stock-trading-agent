@@ -8,12 +8,12 @@
 
 ### Added
 
-- **②裁决卡强视觉三件（PR #43 遗留建议回吸，对齐原型 diagnosis.html）**：RiskGuard 降档红横幅（↓ + `initial → final` + 机械覆写原因，全 log 沉 title）；终判大字（`v-word` fs-26，按信号五词着色红涨绿跌 + 同族 glow）；分歧三格（同向/分歧/冲突计数，分歧/冲突 warn 高亮；flex 承载规避「grid 子元素=轨道数」约束）。置信帽 track（fill=聚合置信、capmark=evidence 置信帽，数值不可解析时整体降级省略）；旧 verd-line/final/sub 文本行三件退役。
+- **②裁决卡强视觉三件（PR #43 遗留建议回吸，对齐原型 diagnosis.html）**：RiskGuard 降档红横幅（↓ + `initial → final` + 机械覆写原因，全 log 沉 title）；终判大字（`v-word` fs-26，按信号五词着色红涨绿跌 + 同族 glow）；分歧三格（生产键形 `bullish/bearish/neutral` 为意见自身信号方向的**绝对分桶**（vibe-stock 03-synthesis SSOT，实数据对拍 buy:6↔bullish:6），呈现层直译「看多/看空/中性」、title 挂原键，warn 高亮动态判定＝桶方向族与终判族相异且桶非空（与终判不同向的异见桶）；flex 承载规避「grid 子元素=轨道数」约束；`evidence_quality` 非 dict 坏形态防御守卫（视同缺席不炸页））。置信帽 track（fill=聚合置信恒渲染；capmark 仅当 evidence `confidence_cap` 为可解析数值时渲染——生产实测该字段为档位词 `high`，帽线常态省略；置信不可解析时 track 整体降级省略）；旧 verd-line/final/sub 文本行三件退役。
 - **③页复核区默认态自动注入最新待复核建议卡（PR #43 遗留建议回吸）**：`/api/panel/advice-detail/latest` 端点（解析器 `latest_advice_reference` 落 panel_data 纯函数族：近 5 日优先未复核、全复核回落最新、无卡 None）；③ `#advice-detail` 挂 `hx-trigger="load"` 一次注入，无卡回空态卡（不 404）；事件表点选注入链与 htmx 契约零变化。
 
 ### Changed
 
-- 版本 0.0.36→0.0.37；规约 [14-design-system.md](docs/specs/14-design-system.md) §⑩ 增「详情注入区默认态」一句。
+- 版本 0.0.36→0.0.37；规约 [14-design-system.md](docs/specs/14-design-system.md) §⑩ 增「详情注入区默认态」句；§⑪ 对齐学说居中白名单四类→五类（`.bk` 分歧三格入白名单 + 「新增居中类须同步本白名单」坑位）。
 
 ## [0.0.36] - 2026-11-10
 

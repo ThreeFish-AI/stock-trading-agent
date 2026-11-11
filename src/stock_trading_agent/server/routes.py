@@ -37,6 +37,7 @@ from stock_trading_agent.server.panel import (
     _ts_hhmm,
     render_advice_detail,
     render_advice_library,
+    render_advice_zone_empty,
     render_alloc_form,
     render_audit,
     render_audit_archive,
@@ -672,16 +673,14 @@ def panel_advice_detail(
 @router.get("/panel/advice-detail/latest")
 def panel_advice_detail_latest(request: Request, mount: str = Query(default="mo")) -> HTMLResponse:
     """③页复核区默认态：自动注入最新待复核建议卡（0.0.37；无卡回空态卡不 404）。"""
-    ref = latest_advice_reference(_layout(request).advice_dir, decisions(request, tail=200))
+    # 复核判定喂全量 decisions 行（门6 F-1：tail=200 尾窗实测仅 ~2.5 天 < 解析器 5 日扫描
+    # 窗，旧卡复核态误判会令默认注入错选并复活已复核卡按钮——读侧无 API 契约约束，全量廉价）
+    all_lines = [
+        json.loads(raw) for raw in read_jsonl_lines_cached(_layout(request).decisions_path)
+    ]
+    ref = latest_advice_reference(_layout(request).advice_dir, all_lines)
     if ref is None:
-        return HTMLResponse(
-            '<div class="card"><div class="card-h"><span class="ct">T2 复核区</span>'
-            '<span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，'
-            'LLM 只补 rationale">NR-1 · 原命令重裁决</span></div>'
-            '<div class="card-b"><p class="empty">暂无建议卡。'
-            '<span class="empty-tip">T2 复核产出后于此自动呈现最新待复核卡。</span></p>'
-            "</div></div>"
-        )
+        return HTMLResponse(render_advice_zone_empty())
     date, code = ref
     body = advice_card(date, code, request)
     return HTMLResponse(render_advice_detail(body, mount=mount if mount in ("mo", "ad") else "mo"))

@@ -502,7 +502,47 @@ class TestVerdictStrongVisuals037:
             }
         )
 
+    def test_cap_press_attributed_not_riskguard(self):
+        # 门4 F-1：核心证据降级 + strong 初判时 RiskGuard no-op、降档来自置信帽压制——
+        # 归因须指向置信帽，副文案取首条非 no-op log（不再显示自相矛盾的 no-op）
+        html = self._render(
+            {
+                "initial": "strong_buy",
+                "final_before_cap": "strong_buy",
+                "final": "buy",
+                "risk_guard_log": [
+                    "no-op",
+                    "confidence_cap strong_buy->buy (core evidence degraded)",
+                ],
+                "confidence": 0.55,
+                "buckets": {},
+            }
+        )
+        assert ">置信帽压制 · strong_buy → buy<" in html
+        assert ">confidence_cap strong_buy-&gt;buy (core evidence degraded)<" in html
+        assert 'title="裁决链：no-op；confidence_cap' in html  # 全链沉 title
+
+    def test_dual_segment_attribution(self):
+        # RiskGuard 降档 + 置信帽压制双段并存：动手段者并列表述
+        html = self._render(
+            {
+                "initial": "strong_buy",
+                "final_before_cap": "strong_sell",
+                "final": "sell",
+                "risk_guard_log": [
+                    "veto 强制反转",
+                    "confidence_cap strong_sell->sell (core evidence degraded)",
+                ],
+                "confidence": 0.5,
+                "buckets": {},
+            }
+        )
+        assert ">RiskGuard 降档 + 置信帽压制 · strong_buy → sell<" in html
+        assert ">veto 强制反转<" in html
+
     def test_downgrade_banner_and_track(self):
+        # 桶键=意见自身信号方向的绝对分桶（vibe-stock 03-synthesis SSOT，实数据对拍）；
+        # 标签直译 看多/看空/中性，warn 高亮=与终判不同族且非空（review 门2 F1 语义钉正）
         html = self._render(
             {
                 "initial": "buy",
@@ -510,7 +550,7 @@ class TestVerdictStrongVisuals037:
                 "risk_guard_log": ["止损击穿机械覆写"],
                 "confidence": 0.55,
                 "consensus_level": "majority",
-                "buckets": {"同向": ["a", "b"], "分歧": ["c"], "冲突": []},
+                "buckets": {"bullish": ["a", "b"], "bearish": ["c"], "neutral": []},
                 "evidence_quality": {"confidence_cap": 0.58},
             }
         )
@@ -519,15 +559,66 @@ class TestVerdictStrongVisuals037:
         assert 'class="v-word hd">hold<' in html
         assert '<div class="fill" style="width:55%"></div>' in html
         assert '<div class="capmark" style="left:58%"></div>' in html
-        assert '<div class="bk hot"><div class="bk-v num">1</div><div class="bk-k">分歧<' in html
-        assert '<div class="bk"><div class="bk-v num">2</div><div class="bk-k">同向<' in html
+        # final=hold：看多（buy 族）/看空（sell 族）均与终判异向 → hot；中性同族 + 空桶不高亮
+        hot_bull = '<div class="bk hot" title="bullish">'
+        assert hot_bull + '<div class="bk-v num">2</div><div class="bk-k">看多<' in html
+        hot_bear = '<div class="bk hot" title="bearish">'
+        assert hot_bear + '<div class="bk-v num">1</div><div class="bk-k">看空<' in html
+        assert (
+            '<div class="bk" title="neutral"><div class="bk-v num">0</div><div class="bk-k">中性<'
+            in html
+        )
+
+    def test_bucket_highlight_follows_final_family(self):
+        # final=sell：看空同族不亮；看多/中性异向亮（方向语义随终判翻转，非恒挂 bearish）
+        html = self._render(
+            {
+                "initial": "sell",
+                "final": "sell",
+                "confidence": 0.6,
+                "buckets": {"bullish": ["a"], "bearish": ["b", "c"], "neutral": ["d"]},
+            }
+        )
+        assert '<div class="bk hot" title="bullish">' in html
+        assert '<div class="bk hot" title="neutral">' in html
+        assert '<div class="bk" title="bearish">' in html
+        assert "看空" in html and "分歧" not in html
+
+    def test_bad_evidence_quality_shape_no_crash(self):
+        # 外仓坏形态（list）视同缺席不炸页（review 门2 F2 防御守卫）
+        html = self._render(
+            {
+                "initial": "hold",
+                "final": "hold",
+                "confidence": 0.6,
+                "buckets": {},
+                "evidence_quality": ["bad", "shape"],
+            }
+        )
+        assert 'class="v-word hd">hold<' in html and "帽" not in html
 
     def test_no_downgrade_no_banner(self):
         html = self._render(
-            {"initial": "hold", "final": "hold", "confidence": 0.6, "buckets": {"同向": ["a"]}}
+            {"initial": "hold", "final": "hold", "confidence": 0.6, "buckets": {"bullish": ["a"]}}
         )
         assert "dg-tx" not in html
         assert 'class="v-word hd">hold<' in html
+
+    def test_tier_word_cap_omits_capmark(self):
+        # 生产 evidence_quality.confidence_cap 为档位词（high）非数值——fill 恒渲染、帽线省略（F2）
+        html = self._render(
+            {
+                "initial": "hold",
+                "final": "hold",
+                "confidence": 0.63,
+                "buckets": {},
+                "evidence_quality": {"confidence_cap": "high"},
+            }
+        )
+        assert '<div class="fill" style="width:63%"></div>' in html
+        assert "capmark" not in html
+        # 标签恒显帽原值（与 v-meta 同口径），帽线仅数值可解析时渲染
+        assert "0.63 / 帽 high" in html
 
     def test_confidence_unparseable_no_track(self):
         html = self._render({"initial": "buy", "final": "sell", "confidence": "—"})
