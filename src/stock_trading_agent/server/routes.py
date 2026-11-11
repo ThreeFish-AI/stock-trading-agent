@@ -69,6 +69,7 @@ from stock_trading_agent.server.panel_data import (
     aggregate_calendar,
     build_name_map,
     derive_todos,
+    latest_advice_reference,
     load_name_map,
     load_root_json,
     market_phase,
@@ -666,6 +667,24 @@ def panel_advice_detail(
 
     body = advice_card(date, code, request)  # 复用 JSON 端点（404 语义同源）
     return HTMLResponse(render_advice_detail(body, mount=mount if mount in ("mo", "ad") else "ad"))
+
+
+@router.get("/panel/advice-detail/latest")
+def panel_advice_detail_latest(request: Request, mount: str = Query(default="mo")) -> HTMLResponse:
+    """③页复核区默认态：自动注入最新待复核建议卡（0.0.37；无卡回空态卡不 404）。"""
+    ref = latest_advice_reference(_layout(request).advice_dir, decisions(request, tail=200))
+    if ref is None:
+        return HTMLResponse(
+            '<div class="card"><div class="card-h"><span class="ct">T2 复核区</span>'
+            '<span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，'
+            'LLM 只补 rationale">NR-1 · 原命令重裁决</span></div>'
+            '<div class="card-b"><p class="empty">暂无建议卡。'
+            '<span class="empty-tip">T2 复核产出后于此自动呈现最新待复核卡。</span></p>'
+            "</div></div>"
+        )
+    date, code = ref
+    body = advice_card(date, code, request)
+    return HTMLResponse(render_advice_detail(body, mount=mount if mount in ("mo", "ad") else "mo"))
 
 
 # --- L2 总闸（M3：面板⑦设置区；写者=主 Agent 进程内直调，12-orchestration §⑩） ---

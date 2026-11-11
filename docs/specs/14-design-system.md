@@ -77,6 +77,7 @@
 
 - **错误呈现**：`meta[name=htmx-config] responseHandling` 令 4xx/5xx 也 swap；`app.py` 异常处理器把 `/api/panel/*` + `HX-Request` 的错误统一渲 HTML 错误卡（`render_error_card`，**状态码保留**，GET 附重试/POST 不附）；JSON 孪生端点零变化。`showErr` 以 content-type 守卫避免与局部错误卡叠加。
 - **滚动定位**：用户点击驱动的详情注入统一 `hx-swap="innerHTML show:top"`（③详情/复核、⑤code 链接、②报告、⑦转录/sessions 互查）；轮询容器一律不带 show（防阅读打断）。
+- **详情注入区默认态（0.0.37 建）**：可注入复核区（③`#advice-detail`）壳层挂 `hx-trigger="load"` 一次注入默认目标（`/api/panel/advice-detail/latest`：近 5 日优先未复核卡），无卡回空态卡不 404。做法：默认注入只 fire 一次、不轮询（防覆盖用户点选）；解析器落 panel_data 纯函数族。坑位：勿与 180s 轮询计数门（`load, every 180s` 精确 22）混挂——默认注入 trigger 串不带 every。
 - **阅读态保护**：含输入的表单外置 load-only 容器（④ca-form 先例）；阅读容器不嵌轮询 fragment（⑦转录外置先例）。
 - **破坏性防护**：改账本/不可逆操作带 `hx-confirm`（④确认/驳回/馈送；L2 开启既有）；briefing ack 例行操作不确认。
 - **加载反馈**：卡级 `.htmx-indicator spin`（13 卡）+ 顶栏全局忙灯 `#busy`（beforeRequest/afterRequest 计数）。

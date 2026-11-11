@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from stock_trading_agent.loop.advice import has_review, parse_advice_card
 from stock_trading_agent.loop.events import MARKET_TZ
 
 VALID_SIGNALS = ("strong_buy", "buy", "hold", "sell", "strong_sell")
@@ -477,3 +478,34 @@ def briefing_action_items(cards_md: list[str]) -> list[dict]:
                 item = line.partition("]")[2].strip() if "]" in line else line.strip()
                 out.append({"code": code, "item": item.removeprefix("复核：").strip()})
     return out
+
+
+def latest_advice_reference(advice_dir: Path, decision_lines: list[dict]) -> tuple[str, str] | None:
+    """③页复核区默认注入目标（0.0.37）：最新建议卡。
+
+    近 5 个日期目录内优先未复核卡（mtime 最新者胜），全部已复核回落最新卡；
+    无卡返回 None（端点回空态卡）。纯函数（目录 + decisions 入参），单测直测。
+    """
+    if not advice_dir.exists():
+        return None
+    best_unreviewed: tuple[dt.datetime, str, str] | None = None  # (mtime, date, code)
+    fallback: tuple[dt.datetime, str, str] | None = None
+    day_dirs = sorted(
+        (p for p in advice_dir.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True
+    )[:5]
+    for day_dir in day_dirs:
+        day = day_dir.name
+        for card_path in day_dir.glob("*.md"):
+            meta = parse_advice_card(card_path.read_text(encoding="utf-8"), stem=card_path.stem)
+            if not meta:
+                continue
+            code = str(meta.get("code") or card_path.stem)
+            mtime = dt.datetime.fromtimestamp(card_path.stat().st_mtime, tz=dt.UTC)
+            entry = (mtime, day, code)
+            if has_review(decision_lines, date=day, code=code):
+                if fallback is None or entry > fallback:
+                    fallback = entry
+            elif best_unreviewed is None or entry > best_unreviewed:
+                best_unreviewed = entry
+    picked = best_unreviewed or fallback
+    return (picked[1], picked[2]) if picked else None

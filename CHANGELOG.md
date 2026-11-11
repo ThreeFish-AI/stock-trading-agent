@@ -4,6 +4,17 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.37] - 2026-11-11
+
+### Added
+
+- **②裁决卡强视觉三件（PR #43 遗留建议回吸，对齐原型 diagnosis.html）**：RiskGuard 降档红横幅（↓ + `initial → final` + 机械覆写原因，全 log 沉 title）；终判大字（`v-word` fs-26，按信号五词着色红涨绿跌 + 同族 glow）；分歧三格（同向/分歧/冲突计数，分歧/冲突 warn 高亮；flex 承载规避「grid 子元素=轨道数」约束）。置信帽 track（fill=聚合置信、capmark=evidence 置信帽，数值不可解析时整体降级省略）；旧 verd-line/final/sub 文本行三件退役。
+- **③页复核区默认态自动注入最新待复核建议卡（PR #43 遗留建议回吸）**：`/api/panel/advice-detail/latest` 端点（解析器 `latest_advice_reference` 落 panel_data 纯函数族：近 5 日优先未复核、全复核回落最新、无卡 None）；③ `#advice-detail` 挂 `hx-trigger="load"` 一次注入，无卡回空态卡（不 404）；事件表点选注入链与 htmx 契约零变化。
+
+### Changed
+
+- 版本 0.0.36→0.0.37；规约 [14-design-system.md](docs/specs/14-design-system.md) §⑩ 增「详情注入区默认态」一句。
+
 ## [0.0.36] - 2026-11-10
 
 ### Fixed

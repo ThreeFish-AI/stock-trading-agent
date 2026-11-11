@@ -995,6 +995,85 @@ def _notification_group_html(group: list[dict]) -> str:
     )
 
 
+_VERD_WORD_CLS = {"strong_buy": "up", "buy": "up", "hold": "hd", "sell": "dn", "strong_sell": "dn"}
+
+
+def _maybe_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _verdict_html(verdict: dict) -> list[str]:
+    """裁决卡强视觉（0.0.37 对齐原型 diagnosis.html）：initial 行 + RiskGuard 降档横幅 +
+    终判大字 + 分歧格 + 置信帽 track。置信/帽非可解析数值时 track 降级省略。"""
+    initial = str(verdict.get("initial") or "—")
+    final = str(verdict.get("final") or "—")
+    rg_log = [str(x) for x in (verdict.get("risk_guard_log") or [])]
+    quality = verdict.get("evidence_quality") or {}
+    cap_raw = quality.get("confidence_cap")
+    conf = _maybe_float(verdict.get("confidence"))
+    cap = _maybe_float(cap_raw)
+    degraded = bool(verdict.get("initial") and verdict.get("final") and initial != final)
+    out = ['<div class="verd verd-box">']
+    out.append(
+        '<div class="v-row"><span class="v-k">initial aggregate</span>'
+        f'<span class="v-init"><span class="d"></span>{_esc(initial)}</span></div>'
+    )
+    if degraded:
+        log_txt = rg_log[0] if rg_log else "方向永久单向 · 只降不升"
+        log_title = "；".join(rg_log) or "no-op"
+        out.append(
+            '<div class="dg"><span class="dg-arr">↓</span><div>'
+            f'<div class="dg-tx">RiskGuard 降档 · {_esc(initial)} → {_esc(final)}</div>'
+            f'<div class="dg-sub" title="RiskGuard：{_esc(log_title)}">{_esc(log_txt)}</div>'
+            "</div></div>"
+        )
+    meta_bits = []
+    if verdict.get("confidence") is not None:
+        meta_bits.append(f"置信 {_esc(verdict.get('confidence'))}")
+    if cap_raw is not None:
+        meta_bits.append(f"帽 {_esc(cap_raw)}")
+    if verdict.get("consensus_level"):
+        meta_bits.append(_esc(str(verdict.get("consensus_level"))))
+    word_cls = _VERD_WORD_CLS.get(final, "")
+    word_cls_html = f" {word_cls}" if word_cls else ""
+    out.append(
+        '<div class="v-final">'
+        f'<span class="v-word{word_cls_html}">{_esc(final)}</span>'
+        f'<span class="v-meta">{_esc(" · ".join(meta_bits)) or "—"}</span></div>'
+    )
+    buckets = verdict.get("buckets") or {}
+    cells = []
+    for k, v in buckets.items():
+        if not isinstance(v, list):
+            continue
+        hot = " hot" if str(k) in ("分歧", "冲突") else ""
+        cells.append(
+            f'<div class="bk{hot}"><div class="bk-v num">{len(v)}</div>'
+            f'<div class="bk-k">{_esc(k)}</div></div>'
+        )
+    if cells:
+        out.append('<div class="buckets">' + "".join(cells) + "</div>")
+    if conf is not None:
+        fill_w = max(0.0, min(1.0, conf)) * 100
+        label_r = f"{verdict.get('confidence')}"
+        cap_html = ""
+        if cap is not None:
+            cap_w = max(0.0, min(1.0, cap)) * 100
+            cap_html = f'<div class="capmark" style="left:{cap_w:.0f}%"></div>'
+            label_r = f"{verdict.get('confidence')} / 帽 {cap_raw}"
+        out.append(
+            '<div class="capbar"><div class="v-k"><span>聚合置信</span>'
+            f"<b>{_esc(label_r)}</b></div>"
+            f'<div class="track"><div class="fill" style="width:{fill_w:.0f}%"></div>'
+            f"{cap_html}</div></div>"
+        )
+    out.append("</div>")
+    return out
+
+
 def render_session_obs(body: dict) -> str:
     """②会话观测：五段进度条（done/cur/pend）+ 双轨意见板 + 裁决卡（P2 §⑫ 案 a）。"""
     stages = body.get("stages") or []
@@ -1029,20 +1108,7 @@ def render_session_obs(body: dict) -> str:
         parts.append(_empty("意见未产出。", "LLM 意见段待会话推进。"))
     verdict = body.get("verdict")
     if verdict:
-        buckets = verdict.get("buckets") or {}
-        bucket_line = " · ".join(f"{_esc(k)} {len(v)}" for k, v in buckets.items())
-        rg_log = "；".join(verdict.get("risk_guard_log") or []) or "no-op"
-        parts.append('<div class="verd verd-box">')
-        parts.append(
-            '<div class="num verd-line">'
-            f"initial {_esc(verdict.get('initial'))} → final "
-            f'<b class="verd-final">{_esc(verdict.get("final"))}</b>'
-            f" · 置信 {_esc(verdict.get('confidence'))} · "
-            f"{_esc(verdict.get('consensus_level'))}</div>"
-        )
-        parts.append(f'<div class="verd-sub">RiskGuard：{_esc(rg_log)}</div>')
-        parts.append(f'<div class="verd-sub">分歧：{_esc(bucket_line) or "无"}</div>')
-        parts.append("</div>")
+        parts.extend(_verdict_html(verdict))
         parts.append(
             '<p class="tbl-note" title="LLM 零直写裁决面（R3）· RiskGuard 只降不升（R5）'
             '· 裁决链经 adjudicate 原命令">RiskGuard 只降不升 · 裁决链经 adjudicate 原命令</p>'

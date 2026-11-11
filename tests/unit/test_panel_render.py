@@ -485,3 +485,51 @@ class TestDesignUpgrade024:
 
         html = _perf_grid({"sharpe": None, "max_drawdown": None, "win_rate": None})
         assert 'role="list"' in html and html.count('role="listitem"') == 3
+
+
+class TestVerdictStrongVisuals037:
+    """②裁决卡强视觉（0.0.37 对齐原型）：降档横幅 / 终判大字 / 分歧格 / 置信帽 track。"""
+
+    @staticmethod
+    def _render(verdict: dict) -> str:
+        from stock_trading_agent.server.panel import render_session_obs
+
+        return render_session_obs(
+            {
+                "stages": [{"stage": 4, "name": "裁决", "state": "done"}],
+                "opinions": {},
+                "verdict": verdict,
+            }
+        )
+
+    def test_downgrade_banner_and_track(self):
+        html = self._render(
+            {
+                "initial": "buy",
+                "final": "hold",
+                "risk_guard_log": ["止损击穿机械覆写"],
+                "confidence": 0.55,
+                "consensus_level": "majority",
+                "buckets": {"同向": ["a", "b"], "分歧": ["c"], "冲突": []},
+                "evidence_quality": {"confidence_cap": 0.58},
+            }
+        )
+        assert 'class="dg-tx">RiskGuard 降档 · buy → hold<' in html
+        assert "止损击穿机械覆写" in html
+        assert 'class="v-word hd">hold<' in html
+        assert '<div class="fill" style="width:55%"></div>' in html
+        assert '<div class="capmark" style="left:58%"></div>' in html
+        assert '<div class="bk hot"><div class="bk-v num">1</div><div class="bk-k">分歧<' in html
+        assert '<div class="bk"><div class="bk-v num">2</div><div class="bk-k">同向<' in html
+
+    def test_no_downgrade_no_banner(self):
+        html = self._render(
+            {"initial": "hold", "final": "hold", "confidence": 0.6, "buckets": {"同向": ["a"]}}
+        )
+        assert "dg-tx" not in html
+        assert 'class="v-word hd">hold<' in html
+
+    def test_confidence_unparseable_no_track(self):
+        html = self._render({"initial": "buy", "final": "sell", "confidence": "—"})
+        assert 'class="track"' not in html and "capbar" not in html
+        assert 'class="v-word dn">sell<' in html

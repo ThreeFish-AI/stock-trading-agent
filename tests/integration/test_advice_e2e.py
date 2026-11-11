@@ -379,3 +379,29 @@ class TestPriceSources:
             assert 'hx-target="#advice-detail"' in frag  # mount=mo → ③页挂点
             body = client.get(f"/api/advice/{today}/600519").json()
             assert body["price"]["price"] == 9.6 and body["price"]["source"] == "ticks"
+
+
+class TestLatestAutoInject037:
+    """③页复核区默认态自动注入（0.0.37）：无卡空态卡、有卡注入最新。"""
+
+    def test_empty_returns_placeholder_card(self, tmp_path: Path):
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            resp = client.get("/api/panel/advice-detail/latest")
+            assert resp.status_code == 200
+            assert "暂无建议卡" in resp.text and 'class="empty"' in resp.text
+
+    def test_with_card_injects_latest(self, tmp_path: Path):
+        app = make_app(tmp_path)
+        with TestClient(app, headers=ORIGIN_HEADERS) as client:
+            root = Path(client.app.state.state_root)
+            day_dir = root / "monitor" / "advice" / "2026-11-10"
+            day_dir.mkdir(parents=True)
+            (day_dir / "600519.md").write_text(
+                '---\ncode: "600519"\n---\n\n候选动作：持有观察\n', encoding="utf-8"
+            )
+            resp = client.get("/api/panel/advice-detail/latest")
+            assert resp.status_code == 200
+            assert "600519" in resp.text and 'class="card adv"' in resp.text
+            # mount 缺省 mo：按钮 target 指向③页 #advice-detail
+            assert 'hx-target="#advice-detail"' in resp.text
