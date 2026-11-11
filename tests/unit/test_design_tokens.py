@@ -258,8 +258,9 @@ class TestLayoutNorms029:
     """
 
     def test_long_table_scroll_container(self):
-        assert ".tbl-wrap{max-height:300px;overflow:auto;overscroll-behavior:contain}" in RULES
-        assert ".tbl-wrap.sm{max-height:200px}" in RULES  # 一屏化降档
+        # 0.0.38：tbl-wrap 定帽退役（滚动统一归页滚位），thead 吸顶保留（相对页滚位吸附）
+        assert ".tbl-wrap{max-height" not in RULES
+        assert ".tbl-wrap.sm{max-height" not in RULES
         assert ".tbl-wrap .tbl thead th{position:sticky;top:0" in RULES  # thead 吸顶
 
     def test_sys_row_four_tracks(self):
@@ -297,17 +298,23 @@ class TestOneScreen031:
         assert "height:calc(100vh" not in RULES  # 族级：基座 K=236 与任意新 K 回流皆拒
 
     def test_grow_floor_present(self):
-        # 0.0.36：grow 卡 96px 可读下限（矮视口宁可页面滚动不可压没模块）
-        assert ".card.grow,.grow>.card{min-height:96px}" in RULES
+        # 0.0.38：grow 族整体退役（卡体滚动归页滚位）——机制零回流负钉
+        assert ".grow{flex" not in RULES
+        assert ".grow>.card-b,.grow>.card>.card-b" not in RULES
+        assert ".card.grow,.grow>.card{min-height:96px}" not in RULES
 
     def test_last_card_stretch_grow_exclusion(self):
-        # 0.0.36：末卡拉伸排除 grow 卡——否则末位 grow 卡 basis 被打回 auto，
-        # 同列双 grow 非对称分配（①信号卡 290 vs 事件流 96 实测先例）
-        assert ".grid-main .col>.card:last-child:not(.grow){flex:1 1 auto}" in RULES
+        # 0.0.29 末卡拉伸（0.0.38 grow 退役后选择器简化）+ 滚位列例外（内容流不拉伸）
+        assert ".grid-main .col>.card:last-child{flex:1 1 auto}" in RULES
+        assert ".grid-main .col.scrollhost>.card:last-child{flex:0 1 auto}" in RULES
 
     def test_main_flex_chain_root(self):
-        # 0.0.36：弹性充满链首环 main{flex:1}（缺此环 .page.on 拿不到分配高度）
-        main_pin = "main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1"
+        # 0.0.36 弹性充满链首环 main{flex:1}；0.0.38 底 padding 归零 + min-height:0
+        # （页脚上方间距统一交 .foot margin-top:12 承载：模块间/页脚上方全站 12px 节奏；
+        #   min-content 撑破可用高致 body 滚的漏环由 min-height:0 收口，滚位接管前提）
+        main_pin = (
+            "main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-height:0"
+        )
         assert main_pin in RULES
 
     def test_subtabs_component(self):
@@ -318,3 +325,57 @@ class TestOneScreen031:
     def test_narrow_unlock(self):
         assert "@media (max-width:1180px){" in RULES
         assert ".screen,#page-stats #stats{flex:none;min-height:0}" in RULES
+
+
+class TestSingleScroller038:
+    """0.0.38 单滚动条治理（issue #36 第八轮）：每页至多一个滚动容器（页滚位）。
+
+    判据只收严：页滚位外区域零 overflow、旧三套滚动机制（grow 卡体滚/定帽滚/①泄压阀）
+    零回流；间距全站 12px 节奏（footer 上方 token 化）；矮视口 ≤760 退位自然流。
+    页滚位清单：①左列 .scrollhost｜② .subpanel｜③ .screen｜④ 无（零滚）｜
+    ⑤ #page-advice.on｜⑥ #stats｜⑦主列 .scrollhost。
+    """
+
+    def test_scrollhost_rule(self):
+        assert (
+            ".scrollhost{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}" in RULES
+        )
+
+    def test_scrollhost_mounted(self):
+        # ①⑦ 主列挂载（BODY 为 </style> 后正文）
+        assert BODY.count('class="col scrollhost"') == 2
+        # ③ 页 screen 滚 + grid 退拉伸顶对齐
+        assert "#page-monitor .screen{overflow:auto;overscroll-behavior:contain" in RULES
+        assert "#page-monitor .screen>.grid-main{flex:0 1 auto;align-items:start}" in RULES
+        # ⑤ 页容器滚
+        assert "#page-advice.on{overflow:auto;overscroll-behavior:contain}" in RULES
+        # ⑥ #stats 容器滚
+        assert "#page-stats #stats{display:flex;flex-direction:column;flex:1 1 auto" in RULES
+        assert "min-height:460px;gap:var(--sp-6);overflow:auto" in RULES
+
+    def test_old_scrollers_retired(self):
+        # ① 泄压阀 / .feed-cap 帽 / 转录 md-pre 帽 / ③⑤ 详情卡体滚 零回流
+        assert "#page-overview .grid-main>.col:last-child{overflow:auto" not in RULES
+        assert ".feed-cap{max-height" not in RULES
+        assert "#au-transcript .md-pre{max-height" not in RULES
+        assert "#advice-detail-2>.card>.card-b{flex:1 1 auto;overflow:auto" not in RULES
+        assert "#advice-detail{flex:1 1 0;min-height:0;overflow:auto" not in RULES
+        assert "#page-stats .grid-2>.card>.card-b{flex:1 1 auto;overflow:auto" not in RULES
+
+    def test_grow_class_zero_in_body(self):
+        # HTML 壳零 grow 类残留（CSS 退役 + DOM 同步清理）
+        assert "grow" not in BODY
+
+    def test_spacing_tokens_uniform(self):
+        # 页脚上方 30px（14 margin + 16 padding）死区收口：foot margin 单源 12px
+        # （main 底 padding 归零，模块间/页脚上方全站统一 12px 节奏）
+        assert ".foot{border-top:1px solid var(--line);margin-top:var(--sp-6);" in RULES
+        assert "padding:18px 22px 0;flex:1;min-height:0" in RULES
+
+    def test_short_viewport_unlock(self):
+        # 0.0.38 极矮视口（≤760 高）退位自然流：body 滚成为唯一滚动条（与窄档同构）
+        assert "@media (max-height:760px){" in RULES
+
+    def test_transcript_slot_moved_to_main_col(self):
+        # ⑦ 转录槽挪主列（边列恒收敛；注入后自然高随主列页滚位滚）
+        assert '<div id="au-transcript" class="transcript-slot"></div>' in BODY

@@ -425,6 +425,130 @@ class TestDesignUpgrade024:
             {"todos": []}
         )
 
+    def test_cap_note_contract(self):
+        from stock_trading_agent.server.panel import _cap_note
+
+        # 无截断（shown >= total）零输出
+        assert _cap_note(3, 3) == ""
+        assert _cap_note(2, 5) == ""
+        # 截断态：计数 + 余量 + 可选 hint
+        html = _cap_note(17, 3, unit="项", hint="行级可点跳对应处置页")
+        assert "显示 3 / 17 项（余 14）" in html
+        assert "行级可点跳对应处置页" in html
+        assert html.startswith('<p class="tbl-note"')
+        assert "hint" not in _cap_note(5, 0)
+
+    def test_topn_cap_renderers(self):
+        """0.0.38 topN 收敛（单滚动条治理）：页滚位外区域截断 + counter 行。"""
+        from stock_trading_agent.server.panel import (
+            render_advice_library,
+            render_audit_archive,
+            render_calendar,
+            render_notifications,
+            render_sessions_table,
+            render_tasks_table,
+            render_todos,
+        )
+
+        many_todos = [
+            {"source": "pending_fill", "code": "600519", "text": "x", "chip": "待确认"}
+            for _ in range(17)
+        ]
+        html = render_todos({"todos": many_todos})
+        assert html.count('<div class="todo">') == 3
+        assert "显示 3 / 17 项（余 14）" in html
+        # 卡头计数保持全量
+        assert ">17 项</span>" in html
+
+        rows = [{"code": "600519", "date": "2026-11-12", "type": "公告", "detail": "d"}] * 7
+        assert render_calendar({"upcoming": rows}).count("kchip") == 3
+        assert "显示 3 / 7 条（余 4）" in render_calendar({"upcoming": rows})
+
+        notif_rows = [
+            {
+                "source": "watch",
+                "code": "600519",
+                "ts": "2026-11-12T10:00:00+08:00",
+                "title": "t",
+                "body": "b",
+            }
+            for _ in range(8)
+        ]
+        html = render_notifications({"items": notif_rows})
+        # 同 (source, code) 全并入一组 → 1 组卡不截断
+        assert html.count('class="card note"') == 1
+        notif_rows2 = [
+            {
+                "source": "watch",
+                "code": f"60051{i}",
+                "ts": "2026-11-12T10:00:00+08:00",
+                "title": "t",
+                "body": "b",
+            }
+            for i in range(7)
+        ]
+        html = render_notifications({"items": notif_rows2})
+        assert html.count('class="card note"') == 5
+        assert "显示 5 / 7 组（余 2）" in html
+
+        tasks = [
+            {
+                "kind": "diagnosis",
+                "code": "600519",
+                "status": "done",
+                "enqueued_at": "2026-11-12T10:00:00+08:00",
+            }
+        ] * 9
+        html = render_tasks_table({"tasks": tasks})
+        assert html.count("</td>") == 6 * 5  # 6 行 × 5 列
+        assert "显示 6 / 9 项（余 3）" in html
+
+        cards = [
+            {
+                "code": "600519",
+                "candidate_action": "hold",
+                "final_signal": "hold",
+                "prev_final_signal": "",
+                "t1_sell_pct": "10",
+                "t1_sell_tier": "mid",
+                "reviewed": False,
+                "mtime": "2026-11-12T10:00:00+08:00",
+            }
+            for _ in range(12)
+        ]
+        html = render_advice_library({"cards": cards, "refused": [], "date": "2026-11-12"})
+        assert html.count("</td>") == 10 * 7
+        assert "显示 10 / 12 张（余 2）" in html
+
+        sess = {
+            "sessions": {
+                f"u{i}": {
+                    "ts": f"2026-11-12T10:0{i}:00+08:00",
+                    "session_uuid": f"u{i}",
+                    "task_id": "t",
+                    "usage_tokens": {"total": 1},
+                    "cost_usd_equiv": 0.1,
+                    "transcript_path": "",
+                }
+                for i in range(8)
+            }
+        }
+        html = render_sessions_table(sess)
+        assert html.count("</td>") == 6 * 6
+        assert "显示 6 / 8 条（余 2）" in html
+
+        files = [
+            {
+                "file": f"sess-2026-11-12-t{i}.jsonl",
+                "size_bytes": 100,
+                "mtime": "2026-11-12T10:00:00+08:00",
+            }
+            for i in range(6)
+        ]
+        html = render_audit_archive({"dates": ["2026-11-12"], "date": "2026-11-12", "files": files})
+        assert html.count("</td>") == 5 * 2
+        assert "显示 5 / 6 个（余 1）" in html
+
     def test_audit_summary_chips_and_head_tag(self):
         from stock_trading_agent.server.panel import render_audit
 
