@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
+from pathlib import Path
 
 from stock_trading_agent.loop.advice import parse_trend_table, render_advice_card
 from stock_trading_agent.server.panel_data import (
@@ -14,6 +16,7 @@ from stock_trading_agent.server.panel_data import (
     briefing_action_items,
     build_name_map,
     derive_todos,
+    latest_advice_reference,
     load_name_map,
     market_phase,
     merge_price_facts,
@@ -329,3 +332,50 @@ class TestRebuildNotifications:
             {},
         )
         assert rows == []
+
+
+class TestLatestAdviceReference:
+    """③页默认注入目标解析（0.0.37）：未复核优先、回落最新、无卡 None。"""
+
+    CARD = '---\ncode: "{}"\n---\n\n候选动作：持有观察\n'
+
+    @staticmethod
+    def _card(root: Path, day: str, code: str) -> None:
+        d = root / "monitor" / "advice" / day
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{code}.md").write_text(TestLatestAdviceReference.CARD.format(code), encoding="utf-8")
+
+    @staticmethod
+    def _reviewed(day: str, code: str) -> dict:
+        return {"kind": "advice_reviewed", "payload": {"date": day, "code": code}}
+
+    def test_prefers_unreviewed_over_newer_reviewed(self, tmp_path: Path):
+        self._card(tmp_path, "2026-11-10", "000001")
+        self._card(tmp_path, "2026-11-10", "600519")
+        os.utime(tmp_path / "monitor/advice/2026-11-10/000001.md", (2_000_000_000, 2_000_000_000))
+        # 000001 更新但已复核；600519 较旧但未复核 → 应选 600519
+        lines = [self._reviewed("2026-11-10", "000001")]
+        assert latest_advice_reference(tmp_path / "monitor/advice", lines) == (
+            "2026-11-10",
+            "600519",
+        )
+
+    def test_all_reviewed_falls_back_to_newest(self, tmp_path: Path):
+        self._card(tmp_path, "2026-11-09", "300001")
+        self._card(tmp_path, "2026-11-10", "600519")
+        os.utime(tmp_path / "monitor/advice/2026-11-09/300001.md", (2_000_000_000, 2_000_000_000))
+        # 两卡均已复核（门3 F2：旧版仅复核一张、实际走的仍是未复核分支，fallback 零覆盖）
+        lines = [
+            self._reviewed("2026-11-10", "600519"),
+            self._reviewed("2026-11-09", "300001"),
+        ]
+        assert latest_advice_reference(tmp_path / "monitor/advice", lines) == (
+            "2026-11-09",
+            "300001",
+        )
+
+    def test_empty_and_missing_dir(self, tmp_path: Path):
+        assert latest_advice_reference(tmp_path / "monitor/advice", []) is None
+        self._card(tmp_path, "2026-11-10", "600519")
+        (tmp_path / "monitor/advice/2026-11-10/600519.md").unlink()
+        assert latest_advice_reference(tmp_path / "monitor/advice", []) is None

@@ -995,6 +995,131 @@ def _notification_group_html(group: list[dict]) -> str:
     )
 
 
+_VERD_WORD_CLS = {"strong_buy": "up", "buy": "up", "hold": "hd", "sell": "dn", "strong_sell": "dn"}
+# 分歧三桶标签（vibe-stock 03-synthesis SSOT：bullish/bearish/neutral 为**意见自身信号方向**
+# 的绝对分桶，与终判无关——实数据 601225 对拍 buy:6↔bullish:6 佐证）；呈现层直译看多/看空/
+# 中性，title 挂原键；warn 高亮动态判定＝桶方向族≠终判族且桶非空（与终判不同向的异见桶）
+_BUCKET_LABEL = {"bullish": "看多", "bearish": "看空", "neutral": "中性"}
+_BUCKET_FAMILY = {"bullish": "buy", "bearish": "sell", "neutral": "hold"}
+_VERD_FAMILY = {
+    "strong_buy": "buy",
+    "buy": "buy",
+    "hold": "hold",
+    "sell": "sell",
+    "strong_sell": "sell",
+}
+
+
+def _maybe_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _verdict_html(verdict: dict) -> list[str]:
+    """裁决卡强视觉（0.0.37 对齐原型 diagnosis.html）：initial 行 + RiskGuard 降档横幅 +
+    终判大字 + 分歧格 + 置信帽 track。置信/帽非可解析数值时 track 降级省略。"""
+    initial_raw = verdict.get("initial")
+    final_raw = verdict.get("final")
+    fbc = verdict.get("final_before_cap")
+    initial = str(initial_raw or "—")
+    final = str(final_raw or "—")
+    rg_log = [str(x) for x in (verdict.get("risk_guard_log") or [])]
+    eq = verdict.get("evidence_quality")
+    quality = eq if isinstance(eq, dict) else {}  # 外仓 schema 防御（坏形态视同缺席，不炸页）
+    cap_raw = quality.get("confidence_cap")
+    conf = _maybe_float(verdict.get("confidence"))
+    cap = _maybe_float(cap_raw)
+    # 两段归因（adjudicate SSOT：log=[glog, caplog]、final_before_cap=RiskGuard 后中间值）——
+    # 置信帽压制段（strong_* 压一档，核心证据降级）不是 RiskGuard 动手，归因错位会在
+    # glog="no-op" 时呈现「横幅断言降档、副文案答 no-op」自相矛盾（门4 F-1）
+    rg_seg = initial_raw is not None and fbc is not None and str(initial_raw) != str(fbc)
+    cap_seg = fbc is not None and final_raw is not None and str(fbc) != str(final_raw)
+    degraded = (
+        rg_seg or cap_seg or bool(initial_raw and final_raw and str(initial_raw) != str(final_raw))
+    )
+    out = ['<div class="verd verd-box">']
+    out.append(
+        '<div class="v-row"><span class="v-k">initial aggregate</span>'
+        f'<span class="v-init"><span class="d"></span>{_esc(initial)}</span></div>'
+    )
+    if degraded:
+        if rg_seg and cap_seg:
+            actor = "RiskGuard 降档 + 置信帽压制"
+        elif cap_seg:
+            actor = "置信帽压制"
+        else:
+            actor = "RiskGuard 降档"  # 无 final_before_cap 数据时保守回落整体判定
+        log_txt = (
+            next((x for x in rg_log if x and x != "no-op"), None)
+            or (rg_log[0] if rg_log else "")
+            or "方向永久单向 · 只降不升"
+        )
+        log_title = "；".join(rg_log) or "no-op"
+        out.append(
+            '<div class="dg"><span class="dg-arr">↓</span><div>'
+            f'<div class="dg-tx">{actor} · {_esc(initial)} → {_esc(final)}</div>'
+            f'<div class="dg-sub" title="裁决链：{_esc(log_title)}">{_esc(log_txt)}</div>'
+            "</div></div>"
+        )
+    meta_bits = []
+    if verdict.get("confidence") is not None:
+        meta_bits.append(f"置信 {verdict.get('confidence')}")
+    if cap_raw is not None:
+        meta_bits.append(f"帽 {cap_raw}")
+    if verdict.get("consensus_level"):
+        meta_bits.append(str(verdict.get("consensus_level")))
+    word_cls = _VERD_WORD_CLS.get(final, "")
+    word_cls_html = f" {word_cls}" if word_cls else ""
+    out.append(
+        '<div class="v-final">'
+        f'<span class="v-word{word_cls_html}">{_esc(final)}</span>'
+        f'<span class="v-meta">{_esc(" · ".join(meta_bits)) or "—"}</span></div>'
+    )
+    buckets = verdict.get("buckets") or {}
+    final_family = _VERD_FAMILY.get(final)
+    cells = []
+    for k, v in buckets.items():
+        if not isinstance(v, list):
+            continue
+        key = str(k)
+        label = _BUCKET_LABEL.get(key, key)
+        bucket_family = _BUCKET_FAMILY.get(key)
+        divergent = (
+            bool(v)
+            and final_family is not None
+            and bucket_family is not None
+            and bucket_family != final_family
+        )
+        hot_cls = " hot" if divergent else ""
+        cells.append(
+            f'<div class="bk{hot_cls}" title="{_esc(key)}">'
+            f'<div class="bk-v num">{len(v)}</div>'
+            f'<div class="bk-k">{_esc(label)}</div></div>'
+        )
+    if cells:
+        out.append('<div class="buckets">' + "".join(cells) + "</div>")
+    if conf is not None:
+        fill_w = max(0.0, min(1.0, conf)) * 100
+        cap_html = ""
+        if cap is not None:
+            cap_w = max(0.0, min(1.0, cap)) * 100
+            cap_html = f'<div class="capmark" style="left:{cap_w:.0f}%"></div>'
+        # 标签恒显帽原值（数值或档位词 high 一致口径）；帽线仅数值可解析时渲染
+        label_r = f"{verdict.get('confidence')}"
+        if cap_raw is not None:
+            label_r = f"{verdict.get('confidence')} / 帽 {cap_raw}"
+        out.append(
+            '<div class="capbar"><div class="v-k"><span>聚合置信</span>'
+            f"<b>{_esc(label_r)}</b></div>"
+            f'<div class="track"><div class="fill" style="width:{fill_w:.0f}%"></div>'
+            f"{cap_html}</div></div>"
+        )
+    out.append("</div>")
+    return out
+
+
 def render_session_obs(body: dict) -> str:
     """②会话观测：五段进度条（done/cur/pend）+ 双轨意见板 + 裁决卡（P2 §⑫ 案 a）。"""
     stages = body.get("stages") or []
@@ -1029,20 +1154,7 @@ def render_session_obs(body: dict) -> str:
         parts.append(_empty("意见未产出。", "LLM 意见段待会话推进。"))
     verdict = body.get("verdict")
     if verdict:
-        buckets = verdict.get("buckets") or {}
-        bucket_line = " · ".join(f"{_esc(k)} {len(v)}" for k, v in buckets.items())
-        rg_log = "；".join(verdict.get("risk_guard_log") or []) or "no-op"
-        parts.append('<div class="verd verd-box">')
-        parts.append(
-            '<div class="num verd-line">'
-            f"initial {_esc(verdict.get('initial'))} → final "
-            f'<b class="verd-final">{_esc(verdict.get("final"))}</b>'
-            f" · 置信 {_esc(verdict.get('confidence'))} · "
-            f"{_esc(verdict.get('consensus_level'))}</div>"
-        )
-        parts.append(f'<div class="verd-sub">RiskGuard：{_esc(rg_log)}</div>')
-        parts.append(f'<div class="verd-sub">分歧：{_esc(bucket_line) or "无"}</div>')
-        parts.append("</div>")
+        parts.extend(_verdict_html(verdict))
         parts.append(
             '<p class="tbl-note" title="LLM 零直写裁决面（R3）· RiskGuard 只降不升（R5）'
             '· 裁决链经 adjudicate 原命令">RiskGuard 只降不升 · 裁决链经 adjudicate 原命令</p>'
@@ -2017,6 +2129,15 @@ def render_sessions_table(sessions: dict) -> str:
         + '<p class="tbl-note" title="三件套互查：decisions（hash 链）× sessions × audit/ '
         'stream-json 归档 · 30 天官方清理（F-38）">'
         "三件套互查 · 归档 30 天自动清理</p>"
+    )
+
+
+def render_advice_zone_empty() -> str:
+    """③复核区默认态空卡（latest 端点无卡回体；0.0.37——卡片壳走 _card SSOT）。"""
+    return _card(
+        "T2 复核区",
+        _empty("暂无建议卡。", "T2 复核产出后于此自动呈现最新待复核卡。"),
+        meta="NR-1 · 原命令重裁决|NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale",
     )
 
 

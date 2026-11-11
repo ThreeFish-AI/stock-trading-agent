@@ -77,6 +77,7 @@
 
 - **错误呈现**：`meta[name=htmx-config] responseHandling` 令 4xx/5xx 也 swap；`app.py` 异常处理器把 `/api/panel/*` + `HX-Request` 的错误统一渲 HTML 错误卡（`render_error_card`，**状态码保留**，GET 附重试/POST 不附）；JSON 孪生端点零变化。`showErr` 以 content-type 守卫避免与局部错误卡叠加。
 - **滚动定位**：用户点击驱动的详情注入统一 `hx-swap="innerHTML show:top"`（③详情/复核、⑤code 链接、②报告、⑦转录/sessions 互查）；轮询容器一律不带 show（防阅读打断）。
+- **详情注入区默认态（0.0.37 建）**：可注入复核区（③`#advice-detail`）壳层挂 `hx-trigger="load"` 一次注入默认目标（`/api/panel/advice-detail/latest`：近 5 日优先未复核卡），无卡回空态卡不 404。做法：默认注入只 fire 一次、不轮询（防覆盖用户点选）；解析器落 panel_data 纯函数族。坑位：勿与 180s 轮询计数门（`load, every 180s` 精确 22）混挂——默认注入 trigger 串不带 every。
 - **阅读态保护**：含输入的表单外置 load-only 容器（④ca-form 先例）；阅读容器不嵌轮询 fragment（⑦转录外置先例）。
 - **破坏性防护**：改账本/不可逆操作带 `hx-confirm`（④确认/驳回/馈送；L2 开启既有）；briefing ack 例行操作不确认。
 - **加载反馈**：卡级 `.htmx-indicator spin`（13 卡）+ 顶栏全局忙灯 `#busy`（beforeRequest/afterRequest 计数）。
@@ -88,7 +89,7 @@
 - **两栏上限（无条件全局规则：每行分栏最多左右两栏）**：页面级布局仅两基座——`.grid-main`（`1fr 340px` 主+边栏，①⑦ 页；③ 页作用域覆写 `1fr 380px`）与 `.grid-rail`（`1fr 500px`，④ 页 fragment 内）+ 既有 `.grid-2`（等宽两栏，②⑥ 页与①页底部信息带）与全宽单栏；三栏及以上布局禁止（机器门 `grid3` 绝根）。做法：内容按「主信息流 1fr + 辅助面定宽栏」分派；两栏 `align-items:stretch` 等高（grid 行高取两栏最大者）。坑位：卡内内容格（`.stats`/`.opins` KPI 与意见格）是内容网格非分栏，不受两栏上限约束；1180/880 断点一律单栏塌缩。
 - **模块间隙等距**：见 §② 0.0.28 gap 迁移句（模块间 `--sp-6`、卡内 `--sp-4` 两档节奏，机器门 gap 仅 `var()`/`0`）。
 - **末卡拉伸（0.0.29 建；0.0.36 加 grow 排除）**：`.grid-main .col>.card:last-child:not(.grow){flex:1 1 auto}` 矮列末张非 grow 卡拉伸至底（0.0.36 ①三区重构与 `:not(.grow)` 后暂无活跃消费者：①两列/③边栏末卡均 grow，⑦主栏末卡经页内规则 `flex:0 1 auto` 显式退出——保留机制位防回流；1180/880 单栏无剩余空间自然无变化）。坑位：末卡自身是 grow 卡（flex 基数 0）时必须 `:not(.grow)` 排除——否则末位 grow 卡 basis 被打回 auto，同列双 grow 非对称分配（①信号卡 290 vs 事件流 96 实测先例）。
-- **对齐学说（无条件全局规则：三类对齐各归其位）**：标题/正文/表格文本列左对齐（默认）；数值列右对齐（`td.num`/`th.num` 配对标注，panel.py 十表已标）；居中仅四类——空态（`.empty` 居中 + 18px 呼吸）、流水线步骤（`.pipe`）、徽章圆点、页脚单行（§⑫ 页脚单行居中）。坑位：日期/时间列按数值列右对齐（等宽数字同位对齐），代码列保持左对齐（与名称同格时防推挤错位）。
+- **对齐学说（无条件全局规则：三类对齐各归其位）**：标题/正文/表格文本列左对齐（默认）；数值列右对齐（`td.num`/`th.num` 配对标注，panel.py 十表已标）；居中白名单五类——空态（`.empty` 居中 + 18px 呼吸）、流水线步骤（`.pipe`）、徽章圆点、页脚单行（§⑫ 页脚单行居中）、②分歧三格（`.bk`，0.0.37：KPI 计数瓦片「数字+短标签」原型对齐 diagnosis.html，先例区别于左对齐 `.stat` 长标签瓦片）。坑位：日期/时间列按数值列右对齐（等宽数字同位对齐），代码列保持左对齐（与名称同格时防推挤错位）；新增居中类须同步本白名单（居中面是收严门，非开禁区）。
 - **卡片化统一（0.0.28）**：④⑥ 页裸 `h3` 段收编 `.card` 模块——④：账户与持仓 / 逐笔确认队列|权益曲线+模拟绩效（grid-rail）/ 公司行动登记；⑥：任务画像·预算双口径 | 管线质量·T+1 复核（grid-2 双卡等宽）；`h3` 仅存卡内节标题。坑位：`.stats-4` 修饰类供四格 KPI 一行四列（≤880 塌缩 2×2），三格绩效仍用 `.stats`。
 - **长表滚动容器（0.0.29）**：行数无上界或常态 ≥20 行的表（③事件/②任务表·sm 档/⑦decisions 台账/⑦sessions）一律 `<div class="tbl-wrap">` 外裹——`max-height:460px;overflow:auto;overscroll-behavior:contain` + `thead th` sticky 吸顶（底色 `var(--bg1)` 防透视）；数据层 `tail` 截断不动（API 契约稳定），`.tbl-note` 计数条留在容器外恒可见。坑位：包裹层不得成为 hx-target（swap 目标仍指 card-b 级容器）；③页实机页高 5370→1219px 即此范式收益（0.0.32 勘误：原句 1466 为中间态数字，PR #35 终态 1219）。
 - **网格子元素数=轨道数（0.0.29，无条件全局规则：display:grid 容器的直接子元素数必须等于显式轨道数）**：`.sys-row` 4 子元素（sdot/sys-l/sys-sched/sys-st）配 `14px minmax(0,1fr) 56px 56px` 四轨（0.0.28 三轨致第 4 元素掉隐式行）；`sys-desc` 恒带 `title` 全值兜底截断。坑位：改子元素数时同步改轨道数并跑 `TestLayoutNorms029`。

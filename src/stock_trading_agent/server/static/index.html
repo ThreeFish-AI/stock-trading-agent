@@ -494,9 +494,35 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .opins-dense{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--sp-4)}
 .h3-tight{margin:var(--sp-5) 0 var(--sp-3)}
 .verd-box{margin-top:var(--sp-5);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--sp-5)}
-.verd-line{font-size:var(--fs-12);color:var(--t4)}
-.verd-final{font-size:var(--fs-19);color:var(--t1)}
-.verd-sub{font-size:var(--fs-12);color:var(--t3);margin-top:var(--sp-2)}
+/* ── 0.0.37 裁决卡强视觉（对齐原型 diagnosis.html：降档横幅/终判大字/分歧三格/置信帽 track）── */
+.v-row{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-5)}
+.v-k{font-size:var(--fs-11);color:var(--t3);letter-spacing:.4px}
+.v-init{font:600 var(--fs-14) var(--mono);color:var(--hold);display:inline-flex;align-items:center;gap:var(--sp-3)}
+.v-init .d{width:8px;height:8px;border-radius:50%;background:var(--hold)}
+.dg{display:flex;align-items:center;gap:var(--sp-5);margin:var(--sp-5) 0;padding:8px 12px;border-radius:var(--r-md);
+  background:var(--upbg);border:1px solid var(--upln)}
+.dg-arr{font:700 var(--fs-14) var(--mono);color:var(--up2);line-height:1}
+.dg-tx{font:600 var(--fs-12) var(--mono);color:var(--up2);letter-spacing:.2px}
+.dg-sub{font-size:var(--fs-11);color:var(--t3);margin-top:1px}
+.v-final{display:flex;align-items:baseline;gap:var(--sp-6);flex-wrap:nowrap}
+.v-word{font:700 var(--fs-26)/1.1 var(--mono);letter-spacing:1px;color:var(--t1)}
+.v-word.up{color:var(--up2);text-shadow:0 0 22px color-mix(in srgb,var(--px-red) 35%,transparent)}
+.v-word.dn{color:var(--dn2);text-shadow:0 0 22px color-mix(in srgb,var(--px-green) 35%,transparent)}
+.v-word.hd{color:var(--hold)}
+.v-meta{font:500 var(--fs-11) var(--mono);color:var(--t3)}
+.buckets{display:flex;gap:var(--sp-4);margin-top:var(--sp-6)}
+.bk{flex:1;border:1px solid var(--line);background:var(--bg2);border-radius:var(--r-md);padding:8px 10px;text-align:center;min-width:0}
+.bk-v{font:700 var(--fs-17) var(--mono);color:var(--t1)}
+.bk-k{font-size:var(--fs-11);color:var(--t3);margin-top:1px}
+.bk.hot .bk-v{color:var(--warn)}
+.capbar{margin-top:var(--sp-6)}
+.capbar .v-k{display:flex;justify-content:space-between;margin-bottom:6px}
+.capbar .v-k b{font:600 var(--fs-11) var(--mono);color:var(--t2)}
+.track{position:relative;height:8px;border-radius:var(--r-xs);background:var(--bg3);border:1px solid var(--line)}
+.fill{position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-xs);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--px-green) 55%,transparent),color-mix(in srgb,var(--px-green) 85%,transparent))}
+.capmark{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--warn);border-radius:var(--r-xs);
+  box-shadow:0 0 6px color-mix(in srgb,var(--px-amber) 60%,transparent)}
 .nv-chips{display:flex;gap:var(--sp-4);margin:var(--sp-3) 0 var(--sp-4)}
 .w-sess-ts{width:118px}.w-uuid{width:136px}.w-task{width:200px}.w-tok{width:90px}.w-usd{width:90px}
 
@@ -639,7 +665,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm" title="T0 机械事实 · 短语措辞限定「复核」（R7）">T0 机械事实</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div class="grid-main flex-fill"><!-- 复核主区 + 通知边栏两栏等高；点击详情/复核后左栏呈现 NR-1 重裁决卡 -->
-  <div class="col"><div id="advice-detail"><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><p class="empty">尚未选择复核事件。<span class="empty-tip">点击上方事件表「详情 / 盯盘复核」后于此呈现 NR-1 重裁决卡。</span></p></div></div></div></div>
+  <div class="col"><div id="advice-detail" hx-get="/api/panel/advice-detail/latest?mount=mo" hx-trigger="load" hx-swap="innerHTML"><!-- 0.0.37 默认态自动注入最新待复核建议卡（无卡时服务端回空态卡）；点击事件表详情/复核仍按原链注入 --><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><div class="loadmsg">加载中……</div></div></div></div></div>
   <div class="col"><div class="card grow"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" id="mo-notif-meta" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div></div>
 </div>
