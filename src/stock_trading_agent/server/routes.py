@@ -172,6 +172,16 @@ def decisions(request: Request, tail: int = Query(default=20, ge=1, le=200)) -> 
     return lines[-tail:]
 
 
+def _all_decision_lines(request: Request) -> list[dict]:
+    """全量 decisions 行＝复核判定单一事实源（补审 F-1：/api/decisions 的 tail≤200 属 HTTP
+    响应契约、不约束服务端内部判定；尾窗实测 ~2.5 天 < 卡扫描 5 日窗——选卡器与渲染器
+    必须同窗，否则旧卡复核事件滑出尾窗被误判未复核，复活必 422 的「标记已复核」按钮）。
+
+    解析成本与 decisions() 同（其本就全量 json.loads 再切片）；台账仅 T1 门 100k 行上限。
+    """
+    return [json.loads(raw) for raw in read_jsonl_lines_cached(_layout(request).decisions_path)]
+
+
 @router.get("/paper")
 def paper(request: Request) -> dict:
 
@@ -673,12 +683,7 @@ def panel_advice_detail(
 @router.get("/panel/advice-detail/latest")
 def panel_advice_detail_latest(request: Request, mount: str = Query(default="mo")) -> HTMLResponse:
     """③页复核区默认态：自动注入最新待复核建议卡（0.0.37；无卡回空态卡不 404）。"""
-    # 复核判定喂全量 decisions 行（门6 F-1：tail=200 尾窗实测仅 ~2.5 天 < 解析器 5 日扫描
-    # 窗，旧卡复核态误判会令默认注入错选并复活已复核卡按钮——读侧无 API 契约约束，全量廉价）
-    all_lines = [
-        json.loads(raw) for raw in read_jsonl_lines_cached(_layout(request).decisions_path)
-    ]
-    ref = latest_advice_reference(_layout(request).advice_dir, all_lines)
+    ref = latest_advice_reference(_layout(request).advice_dir, _all_decision_lines(request))
     if ref is None:
         return HTMLResponse(render_advice_zone_empty())
     date, code = ref
@@ -1321,7 +1326,7 @@ def advice_card(date: str, code: str, request: Request) -> dict:
         # rendered：呈现态原值（12-orchestration §⑫；落盘 md 维持脱敏零改动）
         "rendered": _advice_rendered(request, code),
         # reviewed：已复核状态（advice_reviewed 决策反查；0.0.25）
-        "reviewed": has_review(decisions(request, tail=200), date=date, code=code),
+        "reviewed": has_review(_all_decision_lines(request), date=date, code=code),
         # price：呈现态三源现价（signals 同源单股取值；无价 None——价格非敏感量且系呈现态字段）
         "price": _advice_price(request, code),
     }
