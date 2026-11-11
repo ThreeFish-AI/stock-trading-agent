@@ -468,7 +468,7 @@ def panel_topbar(request: Request) -> HTMLResponse:
     events = _monitor_events_payload(request, date=None, tail=50).get("events") or []
     todo_items = todos(request).get("todos") or []
     return HTMLResponse(
-        f'<span class="metachip">刷新 {now:%H:%M:%S} · 180s 轮询</span>'
+        f'<span class="metachip" title="SSE 实时流 + 180s 轮询兜底">刷新 {now:%H:%M:%S}</span>'
         f'<span class="metachip">事件 {len(events)} · 待办 {len(todo_items)}</span>'
     )
 
@@ -1095,11 +1095,9 @@ def panel_paper_corporate_action(
         "per_share_cash": float(per_share_cash) if per_share_cash else None,
     }
     resp = _corporate_action_decide(request, data)
-    notice = (
-        f"公司行动已入账：{resp['action_kind']} {resp['code']} @ {resp['ex_date']}"
-        "（表格刷新由事件驱动，最迟 180s）"
-    )
-    return HTMLResponse(f'<p class="ok">{html.escape(notice)}</p>')
+    notice = f"公司行动已入账：{resp['action_kind']} {resp['code']} @ {resp['ex_date']}"
+    tip = "表格刷新由事件驱动（SSE 断连时最迟 180s 轮询兜底）"
+    return HTMLResponse(f'<p class="ok" title="{html.escape(tip)}">{html.escape(notice)}</p>')
 
 
 @router.get("/panel/paper/ca-form")
@@ -1178,11 +1176,9 @@ def panel_paper_allocation(
     import html as _html
 
     resp = _allocation_decide(request, {"file": file, "date": date})
-    notice = (
-        f"已导入 {len(resp['codes'])} 只三批建仓（{resp['date']}；T1 批其后首个交易日判定，"
-        "持仓表刷新由事件驱动，最迟 180s）"
-    )
-    return HTMLResponse(f'<p class="ok">{_html.escape(notice)}</p>')
+    notice = f"已导入 {len(resp['codes'])} 只三批建仓（{resp['date']}；T1 批其后首个交易日判定）"
+    tip = "持仓表刷新由事件驱动（SSE 断连时最迟 180s 轮询兜底）"
+    return HTMLResponse(f'<p class="ok" title="{_html.escape(tip)}">{_html.escape(notice)}</p>')
 
 
 @router.get("/panel/paper/alloc-form")

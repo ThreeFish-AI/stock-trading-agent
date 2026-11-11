@@ -111,7 +111,7 @@ def render_budget_line(budget: dict) -> str:
         f"{_esc(budget.get('billing_mode', 'subscription'))} · "
         f"任务数 {int(budget.get('tasks', 0))} · "
         f"token 累计 {int(tokens.get('total', 0))} · "
-        f"等效 USD {budget.get('cost_usd_equiv', 0)}（订阅轨双口径记账）</p>"
+        f"等效 USD {budget.get('cost_usd_equiv', 0)}</p>"
     )
 
 
@@ -127,7 +127,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
     if not events:
         return _empty(
             "今日暂无盯盘事件。",
-            "开盘时段自动盯盘；如持续为空，检查盯盘进程是否在跑（①页右列系统状态卡）。",
+            "开盘时段自动盯盘；持续为空见①页系统状态卡。",
             title="watch.py 台账为空或未运行",
         )
     names = payload.get("names") or {}
@@ -235,9 +235,8 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         + '<div class="tbl-wrap sm">'
         + _table(cols, heads, "".join(rows))
         + "</div>"
-        + '<p class="tbl-note" title="盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · 盘中结论以'
-        '收盘复核为准（R9）">盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · '
-        "盘中结论以收盘复核为准</p>"
+        + '<p class="tbl-note" title="盯盘轮询零 LLM · 事件语义对齐 vibe-stock/07 · '
+        '盘中结论以收盘复核为准（R9）">零 LLM 轮询 · 盘中结论以收盘复核为准</p>'
     )
 
 
@@ -262,7 +261,11 @@ def render_tasks_table(queue: dict) -> str:
             "</tr>"
         )
     return (
-        _table("w-kind|w-code|w-st|w-ts|-", "类型|代码|状态|入队:num|错误", "".join(rows))
+        # 0.0.36：任务表入 tbl-wrap sm 限高——裸表 20 行可拉至 ~800px，把同列「会话观测」
+        # grow 卡（基数 0）挤至 2px 完全不可见（Issue #36 ②页实测绘面）
+        '<div class="tbl-wrap sm">'
+        + _table("w-kind|w-code|w-st|w-ts|-", "类型|代码|状态|入队:num|错误", "".join(rows))
+        + "</div>"
         + f'<span id="dg-task-meta" hx-swap-oob="true" class="cm">{len(tasks)} 项</span>'
     )
 
@@ -290,9 +293,7 @@ def render_task_card(task: dict, *, session_target: str | None = "#dg-session") 
         )
     note = ""
     if status == "done":
-        note = (
-            '<p class="ok">任务完成（会话产物已过断言器落盘；报告见 vibe-stock reports 目录）。</p>'
-        )
+        note = '<p class="ok">任务完成（产物已过断言器落盘；报告见②页「报告档案」）。</p>'
     elif status in ("failed", "abandoned"):
         note = f'<p class="warn">任务 {_esc(status)}：{_esc(task.get("error") or "")}</p>'
     if session_target is None:
@@ -375,7 +376,8 @@ def render_audit(
         else _empty("decision log 为空。", "首条决策写入后于此呈现。")
     )
     body = summary_chips + table + chain_note + render_budget_line(budget)
-    return _card("decisions 台账（尾部 20 条）", body, meta="hash 链防篡改 · 只读投影")
+    audit_meta = "hash 链防篡改 · 只读|尾部 20 条窗口 · hash 链防篡改 · 只读投影"
+    return _card("decisions 台账", body, meta=audit_meta)
 
 
 def _tranche_badge(t: dict) -> str:
@@ -513,9 +515,10 @@ def render_settings_fragment(state: dict) -> str:
         f" {_esc(mode)}{updated_txt}</p>"
     )
     note = (
-        '<p class="tbl-note">开启后：T2-worthy monitor 事件自动触发盯盘复核（每日 ≤5 票、'
+        '<p class="tbl-note" title="开启后：T2-worthy monitor 事件自动触发盯盘复核（每日 ≤5 票、'
         "预算闸联动开启、probe 认证态判定计费形态）。关闭仅封 monitor 源自动任务，"
-        "面板手动提交不受影响。</p>"
+        '面板手动提交不受影响">开启后：T2-worthy monitor 事件自动触发盯盘复核（每日 ≤5 票、'
+        "预算闸联动）。关闭仅停自动任务，手动提交不受影响。</p>"
     )
     target = 'hx-target="#l2-settings" hx-swap="innerHTML"'
     if enabled:
@@ -624,7 +627,7 @@ def render_stats_fragment(payload: dict) -> str:
         right.append(
             '<h3 title="NR-3 拒落盘原因（§15 指标族管线）">断言违例分桶</h3>'
             + _table("-|w-num", "违例类型|计数:num", brows)
-            + '<p class="tbl-note">legacy 无码行归 uncategorized（0.0.22 前存量）</p>'
+            + '<p class="tbl-note">legacy 无码行归 uncategorized</p>'
         )
     if route.get("submitted"):
         right.append(
@@ -665,11 +668,11 @@ def render_stats_fragment(payload: dict) -> str:
         _card(
             "任务画像 · 预算双口径",
             "".join(left),
-            meta="全样本登记 · 含失败与弃单|全样本登记，含失败与弃单",
+            meta="全样本登记，含失败与弃单",
         ),
         _card("管线质量 · T+1 复核", "".join(right), meta="指标族管线|§15 指标族管线"),
         "</div>",
-        '<p class="muted">后验画像：全样本登记含亏损；模拟绩效均为假设性推演。</p>',
+        '<p class="muted">模拟绩效均为假设性推演。</p>',
     ]
     return "".join(parts)
 
@@ -734,7 +737,7 @@ def render_briefing_fragment(payload: dict) -> str:
         parts.append(
             '<p class="empty">当日无晨报/复盘卡。<span class="empty-tip">'
             "L2 开启时盘前 09:00–09:29 / 盘后 18:15 起自动触发；"
-            "也可在②页手动触发 briefing_morning / briefing_evening。</span></p>"
+            "也可在②页手动触发（briefing_morning / briefing_evening）。</span></p>"
         )
         return "".join(parts)
     for slot_key, title in (("am", "盘前晨报"), ("pm", "盘后复盘")):
@@ -794,8 +797,9 @@ def render_diag_form() -> str:
         "</div>"
         '<div class="frm-row">'
         '<label></label><button class="btn btn-pri" type="submit">开始</button></div>'
-        '<p class="frm-tip" title="NR-3 断言器前置门">LLM 只产意见 · 聚合一律确定性裁决 · '
-        "断言器前置门 · 锁/禁跑窗内提交将被拒（423）</p></form>"
+        '<p class="frm-tip" title="LLM 只产意见 · 聚合一律确定性裁决 · NR-3 断言器前置门 · '
+        '锁/禁跑窗内提交将被拒（423）">断言器前置 · 禁跑窗内拒提交（423）'
+        "</p></form>"
         '<div id="dg-result" class="dg-result"></div>'
     )
 
@@ -849,7 +853,7 @@ def render_event_feed(payload: dict) -> str:
         return (
             _empty(
                 "今日暂无盯盘事件。",
-                "开盘时段自动盯盘；如持续为空，检查①页右列系统状态卡或③页事件表。",
+                "开盘时段自动盯盘；持续为空见①页系统状态卡。",
                 title="watch.py 台账为空或未运行",
             )
             + '<span id="ov-ev-count" hx-swap-oob="true" class="cm">0 条</span>'
@@ -893,8 +897,8 @@ def render_calendar(payload: dict) -> str:
     if not rows:
         return _empty(
             "暂无日历事件。",
-            "诊股产出证据后自动聚合披露/解禁/公告；A 股专属事件不适用于港股。",
-            title="需 T1 刷新或诊股会话产出 evidence",
+            "诊股产出证据后自动聚合披露/解禁/公告。",
+            title="需 T1 刷新或诊股会话产出 evidence；A 股专属事件不适用于港股",
         )
     items = []
     for row in rows:
@@ -955,7 +959,7 @@ def render_notifications(payload: dict) -> str:
         '<p class="tbl-note" title="仅本地 osascript（terminal 通道）· 禁第三方推送（红线 7）· '
         "告警主通道永久留服务端（后台标签页冻结，I-48）· 锁屏不保证送达——离机触达按面板"
         '常驻拉取式主动查看设计（方案 §1）——本卡为只读历史重放">'
-        "仅本地通道 · 禁第三方推送 · 告警主通道留服务端 · 本卡为只读历史重放</p>"
+        "仅本地通道 · 禁第三方推送</p>"
     )
 
 
@@ -1040,8 +1044,8 @@ def render_session_obs(body: dict) -> str:
         parts.append(f'<div class="verd-sub">分歧：{_esc(bucket_line) or "无"}</div>')
         parts.append("</div>")
         parts.append(
-            '<p class="tbl-note">LLM 零直写裁决面（R3）· RiskGuard 只降不升（R5）'
-            "· 裁决链经 adjudicate 原命令</p>"
+            '<p class="tbl-note" title="LLM 零直写裁决面（R3）· RiskGuard 只降不升（R5）'
+            '· 裁决链经 adjudicate 原命令">RiskGuard 只降不升 · 裁决链经 adjudicate 原命令</p>'
         )
     notes = body.get("notes") or []
     if notes:
@@ -1104,8 +1108,7 @@ def render_signals_table(payload: dict) -> str:
         + "</div>"
         + '<p class="tbl-note" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）；'
         "距止损需现价源（paper last_price / 盘中 facts.price），无价显 —；"
-        '排序 breach 置顶">adjudicate 产出 · 盘中结论以收盘复核为准 · '
-        "距止损需现价源（无价显 —）</p>"
+        '排序 breach 置顶">adjudicate 产出 · 盘中结论以收盘复核为准</p>'
     )
 
 
@@ -1190,6 +1193,11 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
         )
     cc_active = bool((status.get("loop") or {}).get("active"))
     probe_at = (l2_state or {}).get("updated_at") or ""
+    sess_count = len(sessions.get("sessions") or {})
+    latest = list((sessions.get("sessions") or {}).values())[-1:] or [{}]
+    cost = latest[0].get("cost_usd_equiv", 0) if isinstance(latest[0], dict) else 0
+    queued = (status.get("loop") or {}).get("queued", 0)
+    running = (status.get("loop") or {}).get("running", 0)
     probe_html = (
         f'<span class="sys-sched num" title="probe 认证态判定时刻">probe {probe_at[:19]}</span>'
         if probe_at
@@ -1201,7 +1209,9 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
         '<div class="sys-l"><span class="sys-name">CC 大脑</span>'
         f'<div class="sys-desc" title="{_esc(cc_desc)}">{_esc(cc_desc)}</div></div>'
         f"{probe_html}"
-        f'<span class="sys-st">{"运行中" if cc_active else "降级只读"}</span></div>'
+        f'<span class="sys-st" title="在册会话 {_esc(sess_count)} · 队列 queued {_esc(queued)} / '
+        f'running {_esc(running)} · 最新会话等效 {_esc(cost)} USD">'
+        f"{'运行中' if cc_active else '降级只读'}</span></div>"
     )
     chain_error = (status.get("loop") or {}).get("chain_error")
     if chain_error:
@@ -1213,17 +1223,9 @@ def render_syscard(status: dict, sessions: dict, queue: dict, l2_state: dict | N
             "<span></span>"
             '<span class="sys-st">待修复</span></div>'
         )
-    sess_count = len(sessions.get("sessions") or {})
-    latest = list((sessions.get("sessions") or {}).values())[-1:] or [{}]
-    cost = latest[0].get("cost_usd_equiv", 0) if isinstance(latest[0], dict) else 0
-    queued = (status.get("loop") or {}).get("queued", 0)
-    running = (status.get("loop") or {}).get("running", 0)
-    body = "".join(rows)
-    return (
-        f"{body}"
-        f'<p class="tbl-note">在册会话 {sess_count} · 队列 queued {queued} / running {running}'
-        f" · 最新会话等效 {cost} USD</p>"
-    )
+    # 0.0.36：会话/队列尾注行撤出①边栏（与⑦页 sessions/budget 卡冗余、挤占待办卡高度）——
+    # 运营计数全值挂 CC 行状态位 title
+    return "".join(rows)
 
 
 def render_reports_list(payload: dict) -> str:
@@ -1251,7 +1253,7 @@ def render_reports_list(payload: dict) -> str:
         '<div class="tbl-wrap">'
         + _table("w-code|w-file", "标的|最新报告:num", "".join(trs))
         + "</div>"
-        + '<p class="tbl-note" title="vibe-stock/04 规约结构 · 免责段必含">'
+        + '<p class="tbl-note" title="vibe-stock reports 目录 · 04 规约结构 · 免责段必含">'
         "报告按规约结构归档 · 免责段必含</p>"
     )
 
@@ -1671,8 +1673,8 @@ def render_paper_fragment(payload: dict, *, notice: str = "") -> str:
 def render_ca_form(*, has_positions: bool = True) -> str:
     """④公司行动手动馈送表单（0.0.24 外置 load-only 容器：轮询重渲不再擦输入态）。
 
-    提交落点 #paper-ca-result（表单自带）；成功窄通知 + SSE paper 事件驱动 #paper 重拉；
-    无持仓时 details 收起（提交必 422）。
+    提交落点 #paper-ca-result（折叠条外，注入通知不被折叠吞）；成功窄通知 + SSE paper
+    事件驱动 #paper 重拉；0.0.36 起 details 恒折叠（无持仓提交必 422，summary 提示语区分）。
     """
     form = (
         '<form class="frm" hx-post="/api/panel/paper/corporate-action" '
@@ -1714,15 +1716,20 @@ def render_ca_form(*, has_positions: bool = True) -> str:
         '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内直调）；决策 payload 零敏感量'
         '（NR-5）">写者=paper 引擎 · 幂等：同口径重复馈送 409 · '
         "决策 payload 零敏感量</p></form>"
+    )
+    # 0.0.36 r2：CA 表单恒折叠——展开态 ~500px 与 allocation 卡并占 .screen，把 #paper
+    # 主区挤至 0px（review P1；有持仓态生产现网同病）；需在持仓分支保留原提示语（测试钉面）
+    summary = (
+        "公司行动馈送（需在持仓——当前不可用，提交将 422）"
+        if not has_positions
+        else "公司行动馈送（点开登记送转 / 分红）"
+    )
+    # 结果槽留折叠条外（沿 alloc-form r2 同例：注入通知不被折叠吞）
+    body = (
+        f'<details class="brief-fold"><summary class="brief-sum">{summary}</summary>'
+        f"{form}</details>"
         '<div id="paper-ca-result"></div>'
     )
-    body = form
-    if not has_positions:
-        body = (
-            '<details class="brief-fold"><summary class="brief-sum">'
-            "公司行动馈送（需在持仓——当前不可用，提交将 422）</summary>"
-            f"{form}</details>"
-        )
     return _card("公司行动馈送", body, meta="手动登记送转/分红")
 
 
@@ -1751,12 +1758,18 @@ def render_alloc_form(*, has_ledger: bool) -> str:
         '<p class="tbl-note" title="写者=paper 引擎（sim.lock 内 open_position）；dup code 整批拒；'
         '决策 payload 零价格零数量（NR-5）">账本缺席时以 allocation budget 起始建账 · '
         "dup code 整批拒 · 决策 payload 零敏感量</p></form>"
+    )
+    # 0.0.36 r2：表单折叠条化（沿 ca-form 先例）——常驻展开 ~230px 与 CA 卡并占 .screen
+    # 挤压 #paper 主区（review P1）；结果槽留折叠条外（注入通知不被折叠吞）
+    hint = "追加建仓（dup code 整批拒）" if has_ledger else "以 allocation budget 起始新建账本"
+    body = (
+        f'<details class="brief-fold"><summary class="brief-sum">'
+        f"allocation 导入（点开 · {hint}）</summary>{form}</details>"
         '<div id="paper-alloc-result"></div>'
     )
-    hint = "追加建仓（dup code 整批拒）" if has_ledger else "以 allocation budget 起始新建账本"
     return _card(
         "allocation 导入",
-        form,
+        body,
         meta=f"三批建仓入口 · {hint}",
     )
 
@@ -2001,9 +2014,9 @@ def render_sessions_table(sessions: dict) -> str:
             "".join(trs),
         )
         + "</div>"
-        + '<p class="tbl-note" title="audit/ stream-json 归档 30 天官方清理（F-38）">'
-        "三件套互查：decisions（hash 链）× sessions × audit/ stream-json 归档"
-        "（30 天自动清理）</p>"
+        + '<p class="tbl-note" title="三件套互查：decisions（hash 链）× sessions × audit/ '
+        'stream-json 归档 · 30 天官方清理（F-38）">'
+        "三件套互查 · 归档 30 天自动清理</p>"
     )
 
 

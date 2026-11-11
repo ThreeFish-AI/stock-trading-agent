@@ -271,23 +271,44 @@ class TestLayoutNorms029:
 
 
 class TestOneScreen031:
-    """0.0.31 一屏化只收严断言：视口锁 / subtabs 页签 / 窄屏解锁。
+    """0.0.31 一屏化只收严断言；0.0.36 视口锁 calc(100vh-K) 定高改弹性充满（Issue #36）。
 
     规范 SSOT = docs/specs/14-design-system.md §⑫（index.html :root/CSS 为实现层）。
     一屏判据：≥1280 桌面档 scrollHeight ≤ 视口高（实机探针验证；本门钉机制在场）。
+    0.0.36 机制：main(flex:1)→.page.on(flex:1)→.screen(flex:1 1 auto) 恒恰满视口余高，
+    K 值定高退役（定高小于内容时 grow 卡被挤没、大于可用时页脚上方恒留死带，双病灶）。
     """
 
     def test_screen_lock_present(self):
-        assert ".screen{display:flex;flex-direction:column;height:calc(100vh - 236px)" in RULES
+        assert ".screen{display:flex;flex-direction:column;flex:1 1 auto" in RULES
         assert ".flex-fill{flex:1 1 0;min-height:0}" in RULES
 
-    def test_page_offsets_pinned(self):
+    def test_page_stretch_chain(self):
+        # 弹性充满传导链：.page.on 漏加 flex 则 .screen 拿不到分配高度整链失效
+        assert ".page.on{display:flex;flex-direction:column;gap:var(--sp-6);flex:1 1 auto" in RULES
+        assert "#page-stats #stats{display:flex;flex-direction:column;flex:1 1 auto" in RULES
+
+    def test_page_k_offsets_retired(self):
+        # 0.0.36：页级 K 值定高全退役——逐页精确负钉 + 族级负钉（calc 定高形态整体禁回；
+        # 若未来确需 max-height:calc 再按需收窄至 .screen 作用域）
         for page, k in (("overview", 318), ("diagnosis", 273), ("paper", 288)):
-            assert f"#page-{page} .screen{{height:calc(100vh - {k}px)}}" in RULES, page
-        assert (
-            "#page-stats #stats{display:flex;flex-direction:column;height:calc(100vh - 243px)"
-            in RULES
-        )
+            assert f"#page-{page} .screen{{height:calc(100vh - {k}px)}}" not in RULES, page
+        assert "#page-stats #stats{display:flex;flex-direction:column;height:calc" not in RULES
+        assert "height:calc(100vh" not in RULES  # 族级：基座 K=236 与任意新 K 回流皆拒
+
+    def test_grow_floor_present(self):
+        # 0.0.36：grow 卡 96px 可读下限（矮视口宁可页面滚动不可压没模块）
+        assert ".card.grow,.grow>.card{min-height:96px}" in RULES
+
+    def test_last_card_stretch_grow_exclusion(self):
+        # 0.0.36：末卡拉伸排除 grow 卡——否则末位 grow 卡 basis 被打回 auto，
+        # 同列双 grow 非对称分配（①信号卡 290 vs 事件流 96 实测先例）
+        assert ".grid-main .col>.card:last-child:not(.grow){flex:1 1 auto}" in RULES
+
+    def test_main_flex_chain_root(self):
+        # 0.0.36：弹性充满链首环 main{flex:1}（缺此环 .page.on 拿不到分配高度）
+        main_pin = "main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 16px;flex:1"
+        assert main_pin in RULES
 
     def test_subtabs_component(self):
         assert ".subtabs:has(.st-labels input:nth-of-type(1):checked)" in RULES
@@ -296,4 +317,4 @@ class TestOneScreen031:
 
     def test_narrow_unlock(self):
         assert "@media (max-width:1180px){" in RULES
-        assert ".screen,#page-stats #stats{height:auto;min-height:0}" in RULES
+        assert ".screen,#page-stats #stats{flex:none;min-height:0}" in RULES
