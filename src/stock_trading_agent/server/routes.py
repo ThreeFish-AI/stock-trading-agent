@@ -577,10 +577,10 @@ def panel_overview(request: Request) -> HTMLResponse:
         + f" · 待办 {len(todo_items)} 项"
     )
     body = render_event_feed(payload)
+    # 0.0.39：ov-todo-count 单源化（render_todos 自持发射「N 项/显示 3/N 项」chip，
+    # 此处重复发射会与截断态计数竞态闪烁——0.0.35 ov-sub 单源收口同款坑位）
     return HTMLResponse(
-        body
-        + f'<div id="ov-sub" hx-swap-oob="true" class="sub">{html.escape(sub)}</div>'
-        + f'<span id="ov-todo-count" hx-swap-oob="true" class="cm">{len(todo_items)} 项</span>'
+        body + f'<div id="ov-sub" hx-swap-oob="true" class="sub">{html.escape(sub)}</div>'
     )
 
 

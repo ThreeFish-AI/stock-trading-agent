@@ -126,6 +126,10 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
 #ov-events{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 #page-overview .grid-main>.col:first-child>.card:has(>#ov-signals){flex:0 0 auto}
 #ov-signals .tbl-wrap{max-height:152px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+/* 0.0.39 ①右列待办卡：模块级滚动兜底（矮视口下右列需求 > 可用高时内容溢出卡界被裁——
+   末卡拉伸链 + 卡体单滚，行级内容全量可达；宽裕态拉伸吃余行后自然留白） */
+#page-overview .grid-main>.col:last-child>.card:has(>#ov-todos){display:flex;flex-direction:column;min-height:0}
+#ov-todos{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 /* 0.0.38.1 信息带模块化 + 高度预算：卡体 96 帽（thead+2 kchip 可视，超帽列表体滚）——
    事件流主区归还（信息带 190→134；①信号 26 行极端态事件流卡体 67→184）；
    空态紧凑（信息带内 .empty 呼吸减半，辅助面让位主区） */
@@ -626,7 +630,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
       <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col"><!-- 序对齐原型右栏：净值/系统/待办——待办 topN 收敛，末卡拉伸吃余 -->
-    <div class="card"><div class="card-h"><span class="ct">模拟盘净值</span><span class="cm">含费用与滑点</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">模拟盘净值</span><span class="cm" title="初始 1.0000 · 含费用与滑点 · 模拟绩效为假设性推演">含费用与滑点</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-nav" hx-get="/api/panel/navcard" hx-trigger="load, every 180s, sse:paper, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">系统状态</span><span class="cm" title="launchd 三槽（monitor/outlook/postmortem）· 并存收编不替代">launchd 三槽调度</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-sys" hx-get="/api/panel/syscard" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
@@ -635,7 +639,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   </div>
   </div>
   <div class="grid-2"><!-- 底部信息带：日历+晨报横排（topN 收敛自然高），原型底部条对齐 -->
-    <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm" title="披露/解禁/公告 · 诊股 evidence 聚合">披露 / 解禁 / 公告</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">事件日历</span><span class="cm" id="ov-cal-cm" title="披露/解禁/公告 · 诊股 evidence 聚合">披露 / 解禁 / 公告</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-calendar" hx-get="/api/panel/calendar" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div class="card"><div class="card-h"><span class="ct">晨报 / 复盘行动项</span><span class="cm" title="briefing 投影 · 正文折叠">briefing 投影</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-brief" hx-get="/api/panel/briefing" hx-trigger="load, every 180s, sse:briefing, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
@@ -663,7 +667,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
       </div>
     </div>
     <div class="subpanel">
-      <div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="htmx-indicator spin"></span></div>
+      <div class="card"><div class="card-h"><span class="ct">报告档案</span><span class="cm" title="vibe-stock reports 目录 · 04 规约结构 · 免责段必含">04 规约 · 免责段必含</span><span class="htmx-indicator spin"></span></div>
         <div class="card-b" id="dg-reports" hx-get="/api/panel/reports" hx-trigger="load, every 180s, sse:reports, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
       <div id="dg-report-body"></div>
     </div>
@@ -673,7 +677,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="hero"><div><h1>盯盘事件与 T2 复核</h1><div class="sub" title="watch.py 机械判据族 · 盘中只读、永不写 signals.json（R8）">机械判据盯盘 · 零 LLM</div></div>
 <div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
 <div class="screen"><!-- 0.0.38：主列（事件表+复核区）页滚位全量滚动 | 右列通知 topN 收敛自然高 -->
-<div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm" title="T0 机械事实 · 短语措辞限定「复核」（R7）">T0 机械事实</span><span class="htmx-indicator spin"></span></div>
+<div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm" title="T0 机械事实 · 短语措辞限定「复核」（R7）· 盯盘轮询零 LLM · 盘中结论以收盘复核为准（R9）">T0 机械事实</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
 <div class="grid-main flex-fill"><!-- 复核主区 + 通知边栏两栏；点击详情/复核后左栏呈现 NR-1 重裁决卡 -->
   <div class="col"><div id="advice-detail" hx-get="/api/panel/advice-detail/latest?mount=mo" hx-trigger="load" hx-swap="innerHTML"><!-- 0.0.37 默认态自动注入最新待复核建议卡（无卡时服务端回空态卡）；点击事件表详情/复核仍按原链注入 --><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><div class="loadmsg">加载中……</div></div></div></div></div>
@@ -706,13 +710,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="grid-main screen"><!-- 0.0.38：主栏=台账+会话+转录（页滚位全量流）· 边栏=总闸/归档（topN 收敛恒可见） -->
   <div class="col scrollhost">
     <div id="audit" hx-get="/api/panel/audit" hx-trigger="load, every 180s, sse:decisions, sse:budget, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
-    <div class="card"><div class="card-h"><span class="ct">会话登记</span><span class="cm" title="sessions.json · 三件套互查">三件套互查</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">会话登记</span><span class="cm" id="au-sess-cm" title="sessions.json · 三件套互查">三件套互查</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="au-sessions" hx-get="/api/panel/sessions" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
     <div id="au-transcript" class="transcript-slot"></div>
   </div>
   <div class="col">
     <div id="l2-settings" hx-get="/api/panel/l2" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div>
-    <div class="card"><div class="card-h"><span class="ct">归档索引</span><span class="cm" title="agent/audit/ · 三件套互查">三件套互查</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">归档索引</span><span class="cm" id="au-arch-cm" title="agent/audit/ · 三件套互查">三件套互查</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="au-archive" hx-get="/api/panel/audit-archive" hx-trigger="load, every 180s, sse:decisions, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
 </div></section>
