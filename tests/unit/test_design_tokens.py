@@ -398,6 +398,24 @@ class TestSingleScroller038:
         # 0.0.38.1：信号表说明行上移卡头（表下 tbl-note 零输出由 test_panel_render 钉）
         assert "adjudicate 产出 · 盘中结论以收盘复核为准</span>" in BODY
 
+    def test_counter_chips_in_card_heads(self):
+        """0.0.39 计数/说明归卡头：静态头 cm 占位（fragment oob 整替换）+ 待办卡滚动兜底。"""
+        # ①日历 / ⑦会话 / ⑦归档：占位 id（render_* 侧 _cap_cm oob 单源发射）
+        assert '<span class="cm" id="ov-cal-cm"' in BODY
+        assert '<span class="cm" id="au-sess-cm"' in BODY
+        assert '<span class="cm" id="au-arch-cm"' in BODY
+        # ② 报告档案说明 cm（04 规约口径，title 全文）
+        assert 'title="vibe-stock reports 目录 · 04 规约结构 · 免责段必含"' in BODY
+        # ①待办卡模块级滚动兜底（矮视口右列溢出→卡体单滚，行级内容全量可达）
+        assert (
+            "#page-overview .grid-main>.col:last-child>.card:has(>#ov-todos)"
+            "{display:flex;flex-direction:column;min-height:0}" in RULES
+        )
+        assert (
+            "#ov-todos{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain"
+            in RULES
+        )
+
     def test_old_scrollers_retired(self):
         # ① 泄压阀 / .feed-cap 帽 / 转录 md-pre 帽 / ③⑤ 详情卡体滚 零回流
         assert "#page-overview .grid-main>.col:last-child{overflow:auto" not in RULES

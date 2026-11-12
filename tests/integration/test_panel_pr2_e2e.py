@@ -175,8 +175,9 @@ class TestOverviewOob:
         with TestClient(app, headers=ORIGIN_HEADERS) as client:
             frag = client.get("/api/panel/overview").text
         assert 'id="ov-sub" hx-swap-oob="true"' in frag
-        assert 'id="ov-ev-count" hx-swap-oob="true" class="cm"' in frag
-        assert 'id="ov-todo-count" hx-swap-oob="true" class="cm"' in frag
+        assert 'id="ov-ev-count" class="cm" hx-swap-oob="true"' in frag
+        # 0.0.39：ov-todo-count 单源化（render_todos 自持发射；此处重复发射已退役）
+        assert "ov-todo-count" not in frag
         assert "事件 2 条（1 条降档高亮）" in frag  # mech_risk 计数
 
     def test_briefing_key_level_kchips_conditional(self, tmp_path: Path):

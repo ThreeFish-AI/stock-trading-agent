@@ -139,12 +139,18 @@ class TestTableNorms:
                 ]
             }
         )
-        assert '<span id="dg-task-meta" hx-swap-oob="true" class="cm">1 项</span>' in html
+        assert (
+            '<span id="dg-task-meta" class="cm" hx-swap-oob="true"' in html
+            and ">1 项</span>" in html
+        )
         # 0.0.36：任务表入 tbl-wrap sm 限高——裸表 20 行可拉至 ~800px，把同列「会话观测」
         # grow 卡挤至 2px 不可见（Issue #36 ②页实测绘面）
         assert '<div class="tbl-wrap sm"><table class="tbl">' in html
         empty = render_tasks_table({"tasks": []})
-        assert '<span id="dg-task-meta" hx-swap-oob="true" class="cm">0 项</span>' in empty
+        assert (
+            '<span id="dg-task-meta" class="cm" hx-swap-oob="true"' in empty
+            and ">共 0 项</span>" in empty
+        )
 
     def test_event_feed_hhmm_and_oob_count(self):
         from stock_trading_agent.server.panel import render_event_feed
@@ -163,7 +169,10 @@ class TestTableNorms:
         )
         assert ">09:31</div>" in html  # ISO 串取市场钟面 HH:MM（+08 输入 → 市场钟面不变）
         assert 'title="2026-11-08T09:31:17+08:00"' in html  # 全值 Tooltip
-        assert '<span id="ov-ev-count" hx-swap-oob="true" class="cm">1 条</span>' in html
+        assert (
+            '<span id="ov-ev-count" class="cm" hx-swap-oob="true"' in html
+            and ">1 条</span>" in html
+        )
 
     def test_ts_hhmm_market_clock_tz_independent(self):
         """0.0.34 CI 回归：aware 串统一转市场钟面（非系统本地——UTC runner 实证错钟面）。"""
@@ -422,23 +431,30 @@ class TestDesignUpgrade024:
         assert 'class="cbx"' not in html and "sdot-wait" in html
         assert 'href="#/paper"' in html
         # oob span 属性即终态（outerHTML 替换）：class="cm" 必带，否则轮询后丢卡头 chip 样式
-        assert '<span id="ov-todo-count" hx-swap-oob="true" class="cm">1 项</span>' in html
-        assert '<span id="ov-todo-count" hx-swap-oob="true" class="cm">0 项</span>' in render_todos(
-            {"todos": []}
+        assert (
+            '<span id="ov-todo-count" class="cm" hx-swap-oob="true"' in html
+            and ">1 项</span>" in html
         )
+        empty = render_todos({"todos": []})
+        assert '<span id="ov-todo-count" class="cm" hx-swap-oob="true"' in empty
+        assert ">共 0 项</span>" in empty
 
-    def test_cap_note_contract(self):
-        from stock_trading_agent.server.panel import _cap_note
+    def test_cap_cm_contract(self):
+        """0.0.39 卡头 counter chip：截断「显示 X/Y unit」、未截断回落 uncapped、恒发射 oob。"""
+        from stock_trading_agent.server.panel import _cap_cm
 
-        # 无截断（shown >= total）零输出
-        assert _cap_note(3, 3) == ""
-        assert _cap_note(2, 5) == ""
-        # 截断态：计数 + 余量 + 可选 hint
-        html = _cap_note(17, 3, unit="项", hint="行级可点跳对应处置页")
-        assert "显示 3 / 17 项（余 14）" in html
-        assert "行级可点跳对应处置页" in html
-        assert html.startswith('<p class="tbl-note"')
-        assert "hint" not in _cap_note(5, 0)
+        # 截断态
+        html = _cap_cm("x-cm", 17, 3, unit="项", title="指引")
+        assert 'id="x-cm"' in html and "hx-swap-oob" in html and 'class="cm"' in html
+        assert "显示 3/17 项" in html and 'title="指引"' in html
+        # 未截断态：uncapped 回落，缺省「共 N unit」
+        assert "17 项" in _cap_cm("x-cm", 17, 3, unit="项", uncapped="17 项")
+        assert "共 17 项" in _cap_cm("x-cm", 17, 17, unit="项")
+        # 空态：共 0 恒复位（防陈旧计数残留）
+        assert "共 0 项" in _cap_cm("x-cm", 0, 0, unit="项")
+        # capped 覆写 + extra_attrs
+        html = _cap_cm("x-cm", 7, 5, capped="重放 5/7 组 · 共 14 条", extra_attrs=' role="status"')
+        assert "重放 5/7 组 · 共 14 条" in html and 'role="status"' in html
 
     def test_topn_cap_renderers(self):
         """0.0.38 topN 收敛（单滚动条治理）：页滚位外区域截断 + counter 行。"""
@@ -458,13 +474,14 @@ class TestDesignUpgrade024:
         ]
         html = render_todos({"todos": many_todos})
         assert html.count('<div class="todo">') == 3
-        assert "显示 3 / 17 项（余 14）" in html
-        # 卡头计数保持全量
-        assert ">17 项</span>" in html
+        # counter 归卡头 chip（截断态），卡体零独立说明行
+        assert 'id="ov-todo-count"' in html and "显示 3/17 项" in html
+        assert "tbl-note" not in html
 
         rows = [{"code": "600519", "date": "2026-11-12", "type": "公告", "detail": "d"}] * 7
         assert render_calendar({"upcoming": rows}).count("kchip") == 3
-        assert "显示 3 / 7 条（余 4）" in render_calendar({"upcoming": rows})
+        assert "显示 3/7 条" in render_calendar({"upcoming": rows})
+        assert "共 0 条" in render_calendar({"upcoming": []})  # 空态恒复位
 
         notif_rows = [
             {
@@ -491,7 +508,7 @@ class TestDesignUpgrade024:
         ]
         html = render_notifications({"items": notif_rows2})
         assert html.count('class="card note"') == 5
-        assert "显示 5 / 7 组（余 2）" in html
+        assert "重放 5/7 组 · 共 7 条" in html
 
         tasks = [
             {
@@ -503,7 +520,7 @@ class TestDesignUpgrade024:
         ] * 9
         html = render_tasks_table({"tasks": tasks})
         assert html.count("</td>") == 6 * 5  # 6 行 × 5 列
-        assert "显示 6 / 9 项（余 3）" in html
+        assert "显示 6/9 项" in html
 
         cards = [
             {
@@ -520,7 +537,7 @@ class TestDesignUpgrade024:
         ]
         html = render_advice_library({"cards": cards, "refused": [], "date": "2026-11-12"})
         assert html.count("</td>") == 10 * 7
-        assert "显示 10 / 12 张（余 2）" in html
+        assert "显示 10/12 张 · 只读" in html
 
         sess = {
             "sessions": {
@@ -537,7 +554,7 @@ class TestDesignUpgrade024:
         }
         html = render_sessions_table(sess)
         assert html.count("</td>") == 6 * 6
-        assert "显示 6 / 8 条（余 2）" in html
+        assert "显示 6/8 条" in html
 
         files = [
             {
@@ -549,7 +566,7 @@ class TestDesignUpgrade024:
         ]
         html = render_audit_archive({"dates": ["2026-11-12"], "date": "2026-11-12", "files": files})
         assert html.count("</td>") == 5 * 2
-        assert "显示 5 / 6 个（余 1）" in html
+        assert "显示 5/6 个" in html
 
     def test_audit_summary_chips_and_head_tag(self):
         from stock_trading_agent.server.panel import render_audit
