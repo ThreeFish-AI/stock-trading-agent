@@ -4,6 +4,13 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.40] - 2026-11-12
+
+### Changed
+
+- **③页「盘中事件表｜T2 复核区｜通知预览（历史重放）」改三平级页签（issue #36 追加，用户需求）**。复用②页 0.0.31 radio 零 JS 分签范式（`name="mo-st"` ×3，默认签1 事件表；`:has` CSS 通用规则零新增承高），三块内容 htmx 契约零改（id/hx-get/hx-trigger 原样搬移，SSE 轮询与 oob `mo-notif-meta` 不受签显隐影响）；页面滚动形态自 `.screen` 页滚位改 `.subpanel` 随签滚（与②页同形态），0.0.38 的 screen 滚/grid-main 两栏（`1fr 380px` 覆写与 `align-items:start`）及 0.0.34 复核区容器语义规约同步退役；签条 `.st-labels` 入 0.0.39 穿模防御家族（`flex:none`）。**跨签注入联动**：事件表「详情/盯盘复核」按钮加 `hx-on::before-request` 先切签2 再注入——目标在隐藏 subpanel 时用户看不到注入且 `show:top` 定位失效（htmx 2.0.9 `hx-on` 简写）。
+- spec 14 §⑪ 两栏上限（③覆写退役）/§⑫ 单滚动条判据（③形态改分签 + `_cap_note` 陈旧引用订正为 `_cap_cm`）/§⑫ subtabs 规约句（③消费者 + 跨签注入切签坑位）同步；测试：`test_monitor_subtabs` 新钉面（radio ×3/默认签1/htmx 契约零改）+ 穿模家族选择器换挂 + ③页旧规约零回流负钉 + e2e 切签属性断言。全量 686 passed / ruff 绿。
+
 ## [0.0.39] - 2026-11-12
 
 ### Fixed

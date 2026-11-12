@@ -328,6 +328,25 @@ class TestOneScreen031:
         assert ".subpanels .subpanel:nth-of-type(1)" in RULES
         assert "radio" in PANEL  # ②④ fragment 页签 radio 在场
 
+    def test_monitor_subtabs(self):
+        """0.0.40 ③页三区平级分签：radio 零 JS（name=mo-st ×3 默认签1）+ htmx 契约零改。"""
+        mo = BODY.split('id="page-monitor"', 1)[1].split("</section>", 1)[0]
+        assert 'class="subtabs screen"' in mo
+        for i in (1, 2, 3):
+            assert f'<input type="radio" name="mo-st" id="mo-st-{i}"' in mo
+        assert '<input type="radio" name="mo-st" id="mo-st-1" checked>' in mo  # 默认签1
+        for label in ("盘中事件表", "T2 复核区", "通知预览（历史重放）"):
+            assert f">{label}</label>" in mo, label
+        # 三块 htmx 契约零改：id/hx-get/hx-trigger 原样（分签仅重排容器）
+        for pin in (
+            'id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor',
+            'id="advice-detail" hx-get="/api/panel/advice-detail/latest?mount=mo"',
+            'id="mo-notif" hx-get="/api/panel/notifications"',
+            'id="mo-notif-meta"',
+        ):
+            assert pin in mo, pin
+        assert mo.count('class="subpanel"') == 3
+
     def test_narrow_unlock(self):
         assert "@media (max-width:1180px){" in RULES
         assert ".screen,#page-stats #stats{flex:none;min-height:0}" in RULES
@@ -338,8 +357,9 @@ class TestSingleScroller038:
 
     判据只收严：模块外（页/列）零滚动 + 每模块至多列表体一条滚动；旧三套滚动机制
     （grow 卡体滚/定帽滚/①泄压阀）零回流；间距全站 12px 节奏；矮视口 ≤760 退位自然流。
-    页滚位清单（0.0.38.1）：② .subpanel｜③ .screen｜④ 无（零滚）｜⑤ #page-advice.on｜
-    ⑥ #stats｜⑦主列 .scrollhost；① 页为模块级滚动（事件流卡体单滚 + 信号卡表列帽单滚）。
+    页滚位清单（0.0.40）：② .subpanel｜③ .subpanel（0.0.40 三区分签）｜④ 无（零滚）｜
+    ⑤ #page-advice.on｜⑥ #stats｜⑦主列 .scrollhost；
+    ① 页为模块级滚动（事件流卡体单滚 + 信号卡表列帽单滚）。
     """
 
     def test_scrollhost_rule(self):
@@ -350,9 +370,10 @@ class TestSingleScroller038:
     def test_scrollhost_mounted(self):
         # 0.0.38.1：仅⑦主列挂载（①列滚位退役改模块级滚动）
         assert BODY.count('class="col scrollhost"') == 1
-        # ③ 页 screen 滚 + grid 退拉伸顶对齐
-        assert "#page-monitor .screen{overflow:auto;overscroll-behavior:contain" in RULES
-        assert "#page-monitor .screen>.grid-main{flex:0 1 auto;align-items:start}" in RULES
+        # 0.0.40 ③页改分签：页滚位自 .screen 退役归 .subpanel（②页同形态，通用规则承载），
+        # screen 滚与 grid-main 两栏专属规约零残留
+        assert "#page-monitor .screen{overflow:auto" not in RULES
+        assert "#page-monitor .grid-main" not in RULES
         # ⑤ 页容器滚
         assert "#page-advice.on{overflow:auto;overscroll-behavior:contain}" in RULES
         # ⑥ #stats 容器滚
@@ -420,7 +441,7 @@ class TestSingleScroller038:
         """0.0.39 穿模家族修复：滚位/锁高容器内容子项 flex:none（flex 收缩先于容器滚动，
         min-height:0 直子被压缩后表格 overflow visible 穿出叠印下层——③页用户生产钉面）。"""
         for sel in (
-            "#page-monitor .screen>*{flex:none}",
+            ".subtabs .st-labels{flex:none}",
             "#page-stats #stats>*{flex:none}",
             "#page-advice.on>*{flex:none}",
             ".col.scrollhost>*{flex:none}",
@@ -438,6 +459,9 @@ class TestSingleScroller038:
         assert "#advice-detail-2>.card>.card-b{flex:1 1 auto;overflow:auto" not in RULES
         assert "#advice-detail{flex:1 1 0;min-height:0;overflow:auto" not in RULES
         assert "#page-stats .grid-2>.card>.card-b{flex:1 1 auto;overflow:auto" not in RULES
+        # 0.0.40 ③页分签：0.0.38 screen 滚/grid 两栏规约零回流
+        assert "#page-monitor .screen>.grid-main" not in RULES
+        assert "#page-monitor .grid-main .col>#advice-detail" not in RULES
 
     def test_grow_class_zero_in_body(self):
         # HTML 壳零 grow 类残留（CSS 退役 + DOM 同步清理）

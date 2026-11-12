@@ -14,6 +14,7 @@
 | I-008 | ①⑦ 页 grid-main.screen 级联：两栏纵向堆叠、⑦ 台账 0px 不可见（0.0.31 引入）→ .grid-main.screen{display:grid} 一行收口 | ✅ 已完成 | 2026-11-10 | [详情](#I-008) |
 | I-009 | PR #39 review 遗留清理：overview 双发射收口/坏 front-matter 免疫/research 术语档案收尾 | ✅ 已完成 | 2026-11-10 | [详情](#I-009) |
 | I-010 | 界面梳理第六轮（issue #36）：视口锁 calc(100vh-K) 定高双病灶（模块压没+页脚死带）→ 弹性充满机制，七页文案瘦身 | ✅ 已完成 | 2026-11-10 | [详情](#I-010) |
+| I-011 | 禁跑窗时钟 flake：CI 恰落在 17:30–18:10 Asia/Shanghai（UTC 09:30–10:10）窗内时 loop 全家 24 例必红（非分支引入） | ✅ 已完成 | 2026-11-12 | [详情](#I-011) |
 
 <a id="I-001"></a>
 
@@ -124,3 +125,14 @@
 - **同类问题影响**：K 值机制族（五页锁、#dg-report-body calc 帽、#mo-notif/#advice-detail-2 定帽）全数退役；`height:calc(100vh` 形态零残留（逐页精确负钉 + 族级负钉双门防回流，宽泛负钉刻意不设以免误伤未来合法 vh 用法）。
 - **注意事项**：判据只收严——钉面替换经 CHANGELOG 0.0.36 登记；②④ 页签与 ⑥ 在超短窗口（<600px 高）由 96px 下限触发页面轻微滚动，属设计内行为（一屏判据仅面向 ≥1280 桌面档）。
 
+
+<a id="I-011"></a>
+
+## I-011：禁跑窗时钟 flake：CI 恰落在 17:30–18:10 Asia/Shanghai 窗内时 loop 全家 24 例必红（非分支引入）
+
+- **问题描述**：PR #45（纯面板 UI 改动）CI test job 24 例红，全部死于同一 `LoopReject: 17:30–18:10 禁跑窗内拒跑 report`；check 运行于 09:57:34 UTC = 北京 17:57:34，恰在禁跑窗内。
+- **表因根因**：`AgentLoop.ingest`（loop.py）取真实时钟 `datetime.now(tz=UTC)` 经 `gate_report_event` 拒跑 report 类 kind；受影响测试（panel_submit/loop_dryrun/worker/sse 等族）未冻结时间，任何恰落在窗内的运行（本地或 CI）必红。属 main 既有 flake：gate 自 0.0.4（PR #4）在场、失败测试文件与 loop/ 在分支与 main 字节级一致；确定性复现：origin/main 干净 worktree 强制 `in_no_report_window=True` 跑同集合，失败与 CI 一致。
+- **处理方式**：定谳非本分支造成 → 仅重跑 CI（出窗后 `test: success`），未动代码；flake 根治（受影响测试时间冻结/时钟注入）留待后续单独 PR，未混入 UI 分支。
+- **后续防范**：CI 在 UTC 09:30–10:10 失败先查钟面再查 diff；新增走 `ingest` 的测试一律冻结/注入时钟，勿依赖运行时刻在窗外。
+- **同类问题影响**：窗口占全天约 2.8% 运行时段，随机复发；修法建议 conftest 级 autouse 时钟 fixture 或 gate 函数参数化注入，二选一在根治 PR 定夺。
+- **注意事项**：重跑即愈是时钟 flake 的特征签名（同 commit 出窗绿）；勿把此类失败当回归回滚代码。

@@ -104,11 +104,6 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
 .metachip{font:500 var(--fs-11) var(--mono);color:var(--t2);border:1px solid var(--line);border-radius:var(--r-sm);padding:4px 9px;white-space:nowrap}
 .grid-main{display:grid;grid-template-columns:1fr 340px;gap:var(--sp-6);align-items:stretch}
 .grid-rail{display:grid;grid-template-columns:1fr 500px;gap:var(--sp-6);align-items:stretch}
-/* ③页两栏加宽覆写须裹 min-width 门（0.0.34）：id 特异性 (1,1,0) 恒压过 ≤1180 塌缩块
-   的 (0,1,0)，裸置会令 880/1180 断点双栏不塌（§⑪ 两栏上限规约被打破） */
-@media (min-width:1181px){
-  #page-monitor .grid-main{grid-template-columns:1fr 380px}
-}
 .col{display:flex;flex-direction:column;gap:var(--sp-6);min-width:0}
 /* 0.0.29 两栏等高收口：grid-main 矮列末卡拉伸至底（①右栏/③通知栏），模块间距恒 12px 节奏
    （列底留白会呈现为「模块间超大间隔」——issue #36 红框形态，末卡内收优于列底裸露空白）；
@@ -208,17 +203,15 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
 #page-advice>#advice-detail-2{flex:1 0 auto;min-height:0;display:flex;flex-direction:column}
 #advice-detail-2>.card{flex:1 1 auto;display:flex;flex-direction:column}
 #advice-detail-2>.card>.card-b{flex:1 1 auto}
-/* ③页 0.0.38：.screen 即页滚位（事件表在 grid 外的 screen 直子，全量表 + 复核报告
-   顺序流共享同一滚动）；grid-main 退拉伸改内容流、两列顶对齐（screen 滚模式下
-   等高拉伸只会在通知列造大片卡内死区——issue #36 间距红框同源形态） */
-#page-monitor .screen{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
-#page-monitor .screen>.grid-main{flex:0 1 auto;align-items:start}
+/* ③页 0.0.40：三区改 radio 平级分签——页滚位自 .screen 退役归 .subpanel（与②页同形态，
+   通用 .subtabs 规则链承高；0.0.38 的 screen 滚/grid-main 两栏规约同步退役） */
 /* 0.0.39 ③穿模修复 + 同构家族防御（用户生产核验钉面：事件表行叠印复核区/通知）——
    .screen>*{min-height:0} 是 0.0.31 卡内滚时代的收缩许可，容器变滚位后反成病灶：
    flex 收缩先于容器滚动，min-height:0 直子被压缩后表格 overflow visible 穿出叠印
    下层模块。滚位/锁高 flex 容器的内容子项一律 flex:none（自然高，超高恒走容器滚动）；
-   ⑤吃余项特例 1 0 auto（吃余不收缩）；① flex-fill 直子不受影响（basis 0 无可缩） */
-#page-monitor .screen>*{flex:none}
+   ⑤吃余项特例 1 0 auto（吃余不收缩）；① flex-fill 直子不受影响（basis 0 无可缩）；
+   0.0.40 ③改分签后 .subpanel 子项已由通用规则覆盖，签条 .st-labels 入家族防御 */
+.subtabs .st-labels{flex:none}
 #page-stats #stats>*{flex:none}
 #page-advice.on>*{flex:none}
 .col.scrollhost>*{flex:none}
@@ -587,8 +580,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
 #page-diagnosis .grid-2>.card{display:flex;flex-direction:column}
 #page-diagnosis .grid-2>.card>.card-b{flex:1 1 auto}
 #dg-form:has(>form){display:flex;flex-direction:column;justify-content:center}
-/* 0.0.34：③页复核区容器语义保留；0.0.38 末卡拉伸退役（screen 滚内容流下拉伸即死区） */
-#page-monitor .grid-main .col>#advice-detail{display:flex;flex-direction:column}
 /* ①事件流/待办行可导航（hash 路由跳转，零 JS 新增） */
 .ev-link{display:block;color:inherit;border-radius:var(--r-md)}
 .todo-link{color:inherit}
@@ -686,14 +677,25 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <section class="page" id="page-monitor" data-page="monitor">
 <div class="hero"><div><h1>盯盘事件与 T2 复核</h1><div class="sub" title="watch.py 机械判据族 · 盘中只读、永不写 signals.json（R8）">机械判据盯盘 · 零 LLM</div></div>
 <div class="hero-r" id="mo-hero-r" hx-get="/api/panel/mometa" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
-<div class="screen"><!-- 0.0.38：主列（事件表+复核区）页滚位全量滚动 | 右列通知 topN 收敛自然高 -->
+<div class="subtabs screen"><!-- 0.0.40：事件表/复核区/通知三平级分签（radio 零 JS 复用②页范式；三块 htmx 契约零改，滚动归 .subpanel 页滚位；跨签注入按钮带 before-request 切签） -->
+  <div class="st-labels">
+    <input type="radio" name="mo-st" id="mo-st-1" checked><label for="mo-st-1">盘中事件表</label>
+    <input type="radio" name="mo-st" id="mo-st-2"><label for="mo-st-2">T2 复核区</label>
+    <input type="radio" name="mo-st" id="mo-st-3"><label for="mo-st-3">通知预览（历史重放）</label>
+  </div>
+  <div class="subpanels">
+    <div class="subpanel">
 <div class="card"><div class="card-h"><span class="ct">盘中事件表</span><span class="cm" title="T0 机械事实 · 短语措辞限定「复核」（R7）· 盯盘轮询零 LLM · 盘中结论以收盘复核为准（R9）">T0 机械事实</span><span class="htmx-indicator spin"></span></div>
   <div class="card-b" id="mo-events" hx-get="/api/panel/events" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-<div class="grid-main flex-fill"><!-- 复核主区 + 通知边栏两栏；点击详情/复核后左栏呈现 NR-1 重裁决卡 -->
-  <div class="col"><div id="advice-detail" hx-get="/api/panel/advice-detail/latest?mount=mo" hx-trigger="load" hx-swap="innerHTML"><!-- 0.0.37 默认态自动注入最新待复核建议卡（无卡时服务端回空态卡）；点击事件表详情/复核仍按原链注入 --><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><div class="loadmsg">加载中……</div></div></div></div></div>
-  <div class="col"><div class="card"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" id="mo-notif-meta" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
-  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div></div>
-</div>
+    </div>
+    <div class="subpanel"><!-- 0.0.37 默认态自动注入最新待复核建议卡（无卡时服务端回空态卡）；事件表详情/复核仍按原链注入并自动切签 -->
+<div id="advice-detail" hx-get="/api/panel/advice-detail/latest?mount=mo" hx-trigger="load" hx-swap="innerHTML"><div class="card"><div class="card-h"><span class="ct">T2 复核区</span><span class="cm" title="NR-1 重裁决：重放过门意见 + 机械覆写 risk，LLM 只补 rationale">NR-1 · 原命令重裁决</span></div><div class="card-b"><div class="loadmsg">加载中……</div></div></div></div>
+    </div>
+    <div class="subpanel">
+<div class="card"><div class="card-h"><span class="ct">通知预览（历史重放）</span><span class="cm" id="mo-notif-meta" title="osascript 通道 · 只读">osascript 通道 · 只读</span><span class="htmx-indicator spin"></span></div>
+  <div class="card-b" id="mo-notif" hx-get="/api/panel/notifications" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
+    </div>
+  </div>
 </div>
 </section>
 <section class="page" id="page-paper" data-page="paper">

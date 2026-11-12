@@ -75,6 +75,8 @@ class TestMonitorPageFacts:
         assert "mech_risk high" in frag  # riskchip
         assert f'hx-get="/api/panel/advice-detail/{day}/600519?mount=mo"' in frag
         assert 'hx-target="#advice-detail"' in frag and ">详情</button>" in frag
+        # 0.0.40 ③页分签：跨签注入按钮带 before-request 切签2（注入恒落可见面板）
+        assert "hx-on::before-request=\"document.getElementById('mo-st-2').checked=true\"" in frag
         # 无复核短语行（000001）无盯盘复核按钮，但有详情（无卡 → 也不给详情）
         assert "盯盘复核 000001" not in frag
 

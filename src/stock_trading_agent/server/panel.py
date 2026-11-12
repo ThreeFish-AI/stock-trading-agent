@@ -149,6 +149,8 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
     距线 = price/level − 1，≤0 标 breach、≤3% 标 near（与①信号卡同判据）。
     0.0.24：表前异常摘要 chips（零新 IO）；复核按钮带 ctx=mo（③页发起不写②#dg-session）；
     详情/复核注入带 show:top 滚动定位；mech_risk 分 sev-hi/sev-md 两档视觉。
+    0.0.40：③页三区 radio 分签后 #advice-detail 居签2隐藏面板，详情/复核按钮
+    before-request 自动切签，注入恒落可见面板。
     """
     events = (payload.get("events") or [])[-tail:]
     if not events:
@@ -191,16 +193,20 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         sev_cls = " sev-hi" if (mech and sev == "high") else (" sev-md" if mech else "")
         riskchip = f'<span class="riskchip{sev_cls}">mech_risk {_esc(sev)}</span>' if mech else ""
         action = ""
+        # 0.0.40 ③页三区分签：详情/复核注入 #advice-detail（签2隐藏面板）——before-request
+        # 先切签再注入，swap 的 show:top 才落在可见面板（htmx 2.x hx-on 简写）。
+        _mo_tab = "hx-on::before-request=\"document.getElementById('mo-st-2').checked=true\" "
         if code in advice_codes and day:
             action += (
                 f'<button class="mini" hx-get="/api/panel/advice-detail/{_esc(day)}/{_esc(code)}'
-                '?mount=mo" hx-target="#advice-detail" hx-swap="innerHTML show:top">详情</button> '
+                f'?mount=mo" hx-target="#advice-detail" hx-swap="innerHTML show:top" '
+                f"{_mo_tab}>详情</button> "
             )
         if review and not suppressed:
             action += (
                 f'<button class="mini" hx-post="/api/panel/submit" '
                 f'hx-vals=\'{{"kind": "monitor_review", "code": "{_esc(code)}", "ctx": "mo"}}\' '
-                f'hx-target="#advice-detail" hx-swap="innerHTML show:top" '
+                f'hx-target="#advice-detail" hx-swap="innerHTML show:top" {_mo_tab}'
                 f'hx-disabled-elt="this">盯盘复核 {_esc(code)}</button>'
             )
         elif suppressed:
