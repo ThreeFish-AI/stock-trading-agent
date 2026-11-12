@@ -118,6 +118,21 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
 /* 0.0.38 页滚位（issue #36 第八轮「每页至多一个滚动条」）：①③⑦ 主列容器滚承载全量数据，
    其余区域一律自然高 + 服务端 topN 收敛；thin 滚动条收窄视觉占比 */
 .scrollhost{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+/* 0.0.38.1 ①左列改模块级滚动（用户钉面：模块整体零滚动条，至多列表体一条——列滚位退役）：
+   事件流卡吃余 + 卡体单滚（:has 锚卡，min-height:0 为收缩许可）；信号卡定高退出末卡拉伸
+   （:has 特异性 (2,4,0) 压过上方末卡拉伸 (0,3,0)）+ 表列 200 帽列表体单滚（thead 相对帽
+   容器吸顶）；窄/矮档退位块补 basis:auto 防基数 0 塌缩（0.0.36 r2 坑） */
+#page-overview .grid-main>.col:first-child>.card:has(>#ov-events){flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+#ov-events{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#page-overview .grid-main>.col:first-child>.card:has(>#ov-signals){flex:0 0 auto}
+#ov-signals .tbl-wrap{max-height:152px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+/* 0.0.38.1 信息带模块化 + 高度预算：卡体 96 帽（thead+2 kchip 可视，超帽列表体滚）——
+   事件流主区归还（信息带 190→134；①信号 26 行极端态事件流卡体 67→184）；
+   空态紧凑（信息带内 .empty 呼吸减半，辅助面让位主区） */
+#page-overview .grid-2>.card>.card-b{max-height:96px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+#page-overview .grid-2 .empty{padding:8px 12px}
+/* 信息带空态只留主句（tip 两行折行会顶破 96 帽出 10px 假滚；触发时机说明属低频，②页可找回） */
+#page-overview .grid-2 .empty .empty-tip{display:none}
 /* ── 卡片 ── */
 .card-h{display:flex;align-items:center;gap:var(--sp-4);padding:10px 14px;border-bottom:1px solid var(--line)}
 .card-h .ct{font-size:var(--fs-13);font-weight:600;letter-spacing:.2px;color:var(--t1)}
@@ -453,6 +468,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
      ①③④⑥⑦ 五页窄档实测大面积不可见/叠印（1000px 复现：grid-main/#paper/#audit 全 0 高）。
      同媒体块内后置源序 + 更高特异性，桌面档零影响 */
   .screen .flex-fill,.screen .grow,#advice-detail,#page-stats #stats .grid-2{flex:none;min-height:0}
+  /* 0.0.38.1：①事件流吃余卡同链退位（basis:auto 自然高；:has 特异性压制下方 1181 桌面规则） */
+  #page-overview .grid-main>.col:first-child>.card:has(>#ov-events){flex:0 1 auto}
   .grid-main,.grid-rail{grid-template-columns:1fr}
   .grid-2{grid-template-columns:1fr}
   #page-diagnosis .grid-2{grid-template-columns:1fr}
@@ -467,10 +484,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 /* 0.0.38 极矮视口退位（≤760 高，桌面宽档）：右列 topN 收敛卡仍可能超出可用高——
    弹性链整体退位走自然流，body 滚动成为全页唯一滚动条（与 ≤1180 窄档同构；
-   页滚位容器高随内容自然高，overflow 不触发，无需显式退） */
+   页滚位容器高随内容自然高，overflow 不触发，无需显式退）；
+   0.0.38.1 ①事件流吃余卡同步退位（窄档块同款坑位） */
 @media (max-height:760px){
   .screen,#page-stats #stats{flex:none;min-height:0}
   .screen .flex-fill,#advice-detail,#page-stats #stats .grid-2{flex:none;min-height:0}
+  #page-overview .grid-main>.col:first-child>.card:has(>#ov-events){flex:0 1 auto}
 }
 
 
@@ -598,12 +617,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <section class="page" id="page-overview" data-page="overview">
 <div class="hero"><div><h1>今日总览</h1><div class="sub" id="ov-sub">加载中……</div></div>
 <div class="hero-r" id="ov-hero-r" hx-get="/api/panel/topbar" hx-trigger="load, every 180s, sse:status, sse:multi" hx-swap="innerHTML"></div></div>
-<div class="screen"><!-- 0.0.38：主列（事件流+信号卡）页滚位全量滚动 | 右列与信息带 topN 收敛自然高；弹性充满恒一屏 -->
+<div class="screen"><!-- 0.0.38.1：左列零列滚——事件流卡体吃余单滚 + 信号卡定帽列表体单滚（模块级滚动，模块整体零滚动条）| 右列与信息带 topN 收敛自然高；弹性充满恒一屏 -->
   <div class="grid-main flex-fill">
-  <div class="col scrollhost">
+  <div class="col">
     <div class="card"><div class="card-h"><span class="ct">今日事件流</span><span class="cm" id="ov-ev-count"></span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-events" hx-get="/api/panel/overview" hx-trigger="load, every 180s, sse:monitor, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
-    <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）">adjudicate 产出</span><span class="htmx-indicator spin"></span></div>
+    <div class="card"><div class="card-h"><span class="ct">在册信号卡</span><span class="cm" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）；距止损需现价源（paper last_price / 盘中 facts.price），无价显 —；排序 breach 置顶">adjudicate 产出 · 盘中结论以收盘复核为准</span><span class="htmx-indicator spin"></span></div>
       <div class="card-b" id="ov-signals" hx-get="/api/panel/signals" hx-trigger="load, every 180s, sse:signals, sse:multi" hx-swap="innerHTML"><div class="loadmsg">加载中……</div></div></div>
   </div>
   <div class="col"><!-- 序对齐原型右栏：净值/系统/待办——待办 topN 收敛，末卡拉伸吃余 -->

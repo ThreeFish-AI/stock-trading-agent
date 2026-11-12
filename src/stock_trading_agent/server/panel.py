@@ -1236,6 +1236,8 @@ def render_signals_table(payload: dict) -> str:
         )
     stop_col = "w-num|" if has_stop else ""
     stop_head = "距止损:num|" if has_stop else ""
+    # 0.0.38.1：说明行上移卡头（index.html 卡头 cm 承载，节约一行高度——issue #36 用户钉面）；
+    # 距止损无价口径与排序说明并入卡头 cm title
     return (
         '<div class="tbl-wrap">'
         + _table(
@@ -1244,9 +1246,6 @@ def render_signals_table(payload: dict) -> str:
             "".join(trs),
         )
         + "</div>"
-        + '<p class="tbl-note" title="adjudicate 产出 · 盘中结论以收盘复核为准（R9）；'
-        "距止损需现价源（paper last_price / 盘中 facts.price），无价显 —；"
-        '排序 breach 置顶">adjudicate 产出 · 盘中结论以收盘复核为准</p>'
     )
 
 
