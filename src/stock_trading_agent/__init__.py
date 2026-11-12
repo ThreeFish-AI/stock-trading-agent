@@ -4,4 +4,4 @@
 机制事实源（外仓）：https://github.com/ThreeFish-AI/vibe-stock（诊股 Skill 规约与 sim 口径）。
 """
 
-__version__ = "0.0.41"
+__version__ = "0.0.42"

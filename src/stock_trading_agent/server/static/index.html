@@ -117,12 +117,13 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
    0.0.38 页滚位列例外：滚动容器内是内容流（卡高随内容），末卡拉伸会在内容尾部造死区 */
 .grid-main .col>.card:last-child{flex:1 1 auto}
 .grid-main .col.scrollhost>.card:last-child{flex:0 1 auto}
-/* 0.0.38 页滚位（issue #36 第八轮「每页至多一个滚动条」）：①③⑦ 主列容器滚承载全量数据，
+/* 0.0.38 页滚位（issue #36 第八轮「每页至多一个滚动条」）：⑦主列容器滚承载全量数据
+   （①③ 曾用：① 0.0.38.1 改模块级滚动、③ 0.0.40 改 radio 分签，均退役），
    其余区域一律自然高 + 服务端 topN 收敛；thin 滚动条收窄视觉占比 */
 .scrollhost{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 /* 0.0.38.1 ①左列改模块级滚动（用户钉面：模块整体零滚动条，至多列表体一条——列滚位退役）：
    事件流卡吃余 + 卡体单滚（:has 锚卡，min-height:0 为收缩许可）；信号卡定高退出末卡拉伸
-   （:has 特异性 (2,4,0) 压过上方末卡拉伸 (0,3,0)）+ 表列 200 帽列表体单滚（thead 相对帽
+   （:has 特异性 (2,4,0) 压过上方末卡拉伸 (0,3,0)）+ 表列 152 帽列表体单滚（thead 相对帽
    容器吸顶）；窄/矮档退位块补 basis:auto 防基数 0 塌缩（0.0.36 r2 坑） */
 #page-overview .grid-main>.col:first-child>.card:has(>#ov-events){flex:1 1 0;min-height:0;display:flex;flex-direction:column}
 #ov-events{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
@@ -133,7 +134,7 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
 #page-overview .grid-main>.col:last-child>.card:has(>#ov-todos){display:flex;flex-direction:column;min-height:0}
 #ov-todos{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 /* 0.0.38.1 信息带模块化 + 高度预算：卡体 96 帽（thead+2 kchip 可视，超帽列表体滚）——
-   事件流主区归还（信息带 190→134；①信号 26 行极端态事件流卡体 67→184）；
+   事件流主区归还（信息带 190→138；①信号 26 行极端态事件流卡体 67→174）；
    空态紧凑（信息带内 .empty 呼吸减半，辅助面让位主区） */
 #page-overview .grid-2>.card>.card-b{max-height:96px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 #page-overview .grid-2 .empty{padding:8px 12px}
@@ -477,11 +478,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
   /* 0.0.31：窄屏解除一屏锁（单栏自然流页面滚动），一屏判据仅面向 ≥1180 桌面档；
      0.0.36 视口锁改弹性充满后，解锁形态由 height:auto 换 flex:none（自然高） */
   .screen,#page-stats #stats{flex:none;min-height:0}
-  /* 0.0.36 r2（review P0 修复）：充满链后代须一并退位——只解容器时 .flex-fill/.grow/
+  /* 0.0.36 r2（review P0 修复）：充满链后代须一并退位——只解容器时 .flex-fill/
      #advice-detail 等基数 0 项在 auto 高 flex 容器里只贡献 min-height（96px 下限甚至 0），
      ①③④⑥⑦ 五页窄档实测大面积不可见/叠印（1000px 复现：grid-main/#paper/#audit 全 0 高）。
-     同媒体块内后置源序 + 更高特异性，桌面档零影响 */
-  .screen .flex-fill,.screen .grow,#advice-detail,#page-stats #stats .grid-2{flex:none;min-height:0}
+     同媒体块内后置源序 + 更高特异性，桌面档零影响（.grow 族 0.0.38 退役、类零在场，
+     死选择器同步清除） */
+  .screen .flex-fill,#advice-detail,#page-stats #stats .grid-2{flex:none;min-height:0}
   /* 0.0.38.1：①事件流吃余卡同链退位（basis:auto 自然高；:has 特异性压制下方 1181 桌面规则） */
   #page-overview .grid-main>.col:first-child>.card:has(>#ov-events){flex:0 1 auto}
   .grid-main,.grid-rail{grid-template-columns:1fr}

@@ -4,6 +4,19 @@
 
 > 版本序列说明：项目未到稳定发布，版本号统一走 **0.0.x** patch 序列；minor（0.1.0）预留给语义级变更。
 
+## [0.0.42] - 2026-11-12
+
+### Fixed
+
+- **PR #45 review 第 1 轮（并行编排：4 镜头 finder + 3 轴 skeptic 多数决，16 项 Findings 全数修复）**：
+- **topN 切片方向双修（行为 bug）**：③通知预览 `groups[:5]` 改 `[-5:]`——rows 时间正序下 `[:5]` 保最旧 5 组、把最新告警组截掉（与 chip title「更早以本地日志为准」方向相反，title 同步改「显最新 5 组」）；①今日待办 `todos[-3:]` 改 `[:3]`——derive_todos 按 pending→mech→briefing 优先序聚合无时间语义，取尾会保住最低优先级 briefing、把人在环阻塞的逐笔确认截掉（title 同步「①页显最高优先级 3 项」）。
+- **0.0.39「计数/说明归卡头」收口补漏（P1）**：①净值/②报告档案两卡 fragment 的 tbl-note 说明行漏删（卡头 cm 与卡体行双显示，CHANGELOG「全并入」与 §⑫ 无条件规则出生即被违反；同 PR ③⑤ 三处同类已删独漏两处）——删除并补负钉。
+- **③页三签入站复位**：跨页链接（①事件流行 ev-link / ①待办 mech_risk 行 / ⑤空态引导）进③页一律回签1事件表——radio 纯 CSS 态 hash 路由不触及，曾切签2/3 的会话点链接落不到目标区（0.0.40 只配了出站按钮切签2）。
+- **counter 口径三收**：ov-ev-count 空态手写裸 span 归 `_cap_cm` SSOT（补 title 指引，文案「0 条」→「共 0 条」对齐家族）；au-arch-cm 空 dates 分支补 `unit="个"`（缺省「条」与非空分支漂移）；⑤库卡 count_txt 手写三元式抽 `_cap_text()` 与 `_cap_cm` 同源（文案规则第二份实现收口，spec 坑位同步）。
+- **陈旧引用族清理**：`.tbl-wrap.sm` 死类六处发射清零（CSS 规则 0.0.38 已删，spec「sm 档」与测试注释/断言同步）；spec §④ .tab 行四态更新为 0.0.41 胶囊形态（含 transition --dur-slow 例外注记）；§⑪ 长表句 tbl-note 子句对齐 §⑫ 归卡头口径；§⑫ ①页形态清单补待办卡单滚、topN 清单补事件流 10、#advice-detail 基数 0 引用改注历史；§⑬ grid-main 先例句改①页（③④已退役）；index.html 三处注释数字订正（152/138/174）+ scrollhost 注释收窄⑦ + ≤1180 媒体块 `.screen .grow` 死选择器清除；routes.py panel_overview docstring ov-todo-count 陈旧发射描述订正；test_design_tokens ⑤特例级联机制注释订正（id 特异性压胜非源序后置）。
+- **spec 14 后续收敛轮增补**（review 收敛门驱动）：§⑫「计数/说明归卡头」句增**存量豁免注记**（无条件规则面向新增/改写卡即刻生效；merge-base 存量 tbl-note 十处待迁移清单以 `grep class="tbl-note"` 为全集，迁移须连挂点设计——⑥ h3 节说明无节级 cm 挂点）；§⑪ subtabs 句增**跨页入站复位**规约句（适用条件限定静态壳层分签页②③、④ fragment 重渲态豁免；目标在非默认签时置目标签）。
+- 测试全部收严：通知/待办方向钉面（尾取保新/头取保优先级）、tbl-note 双负钉、入站复位正钉、空态 SSOT 钉面、单位口径钉面、sm 类断言迁移。全量 687 passed / selftest 52 / ruff 绿。
+
 ## [0.0.41] - 2026-11-12
 
 ### Changed

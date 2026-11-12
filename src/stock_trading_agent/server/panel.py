@@ -102,6 +102,15 @@ def _money_td(value) -> str:
     return f'<td class="num" title="{float(value):,.2f}">{float(value):,.2f}</td>'
 
 
+def _cap_text(
+    shown: int, total: int, *, unit: str = "条", uncapped: str = "", capped: str = ""
+) -> str:
+    """topN 收敛 counter 文案 SSOT（0.0.42 抽出）：截断「显示 X/Y unit」/未截断回落。"""
+    if shown < total:
+        return capped or f"显示 {shown}/{total} {unit}"
+    return uncapped or f"共 {total} {unit}"
+
+
 def _cap_cm(
     span_id: str,
     total: int,
@@ -120,11 +129,9 @@ def _cap_cm(
     恒发射 oob（outerHTML 整替换）——数据变少后未截断态须复位陈旧计数；去向指引并入
     title 悬浮。规约：计数/说明不落卡体独立行（独占一行浪费纵向空间，issue #36 用户钉面），
     一律归卡头 cm（.card-h 内 span.cm；index.html 静态头须预置同 id 占位）。
+    文案经 _cap_text SSOT（⑤库卡 fragment 自持 meta 同源复用，坑位：两处手写会漂移口径）。
     """
-    if shown < total:
-        text = capped or f"显示 {shown}/{total} {unit}"
-    else:
-        text = uncapped or f"共 {total} {unit}"
+    text = _cap_text(shown, total, unit=unit, uncapped=uncapped, capped=capped)
     t = f' title="{_esc(title)}"' if title else ""
     return f'<span id="{span_id}" class="cm" hx-swap-oob="true"{extra_attrs}{t}>{_esc(text)}</span>'
 
@@ -264,7 +271,7 @@ def render_events_table(payload: dict, *, tail: int = 50) -> str:
         ]
     )
     return (
-        summary + '<div class="tbl-wrap sm">' + _table(cols, heads, "".join(rows)) + "</div>"
+        summary + '<div class="tbl-wrap">' + _table(cols, heads, "".join(rows)) + "</div>"
         # 0.0.39：说明行退役，归③页卡头 cm title（零 LLM 轮询 · 收盘复核口径）
     )
 
@@ -273,7 +280,11 @@ def render_tasks_table(queue: dict) -> str:
     tasks = queue.get("tasks") or []
     if not tasks:
         return _empty("队列为空。", "②页表单或③页复核按钮提交后于此跟踪。") + _cap_cm(
-            "dg-task-meta", 0, 0, unit="项", title="②页显最近 6 项 · FIFO 全量见 queue.json"
+            "dg-task-meta",
+            0,
+            0,
+            unit="项",
+            title="②页显最近 6 项 · FIFO 队列全量见 queue.json",
         )
     rows = []
     for t in tasks[-6:]:
@@ -290,7 +301,7 @@ def render_tasks_table(queue: dict) -> str:
         )
     return (
         # 0.0.38：任务表 top6 收敛（20 行裸表 ~800px）；0.0.39 counter 归卡头 cm
-        '<div class="tbl-wrap sm">'
+        '<div class="tbl-wrap">'
         + _table("w-kind|w-code|w-st|w-ts|-", "类型|代码|状态|入队:num|错误", "".join(rows))
         + "</div>"
         + _cap_cm(
@@ -645,7 +656,7 @@ def render_stats_fragment(payload: dict) -> str:
             '<p class="tbl-note">近 14 日（全量走势见上方曲线）</p>' if len(curve) > 14 else ""
         )
         left.append(
-            '<div class="tbl-wrap sm">'
+            '<div class="tbl-wrap">'
             + _table("w-ts|w-num|w-tok|w-usd", "日:num|会话:num|token:num|等效 USD:num", crows)
             + "</div>"
             + cap_note
@@ -683,7 +694,7 @@ def render_stats_fragment(payload: dict) -> str:
         )
         right.append(
             '<h3 title="按 kind 归因（§15 指标族管线）">会话成本分布（按 kind 归因）</h3>'
-            + '<div class="tbl-wrap sm">'
+            + '<div class="tbl-wrap">'
             + _table("w-kind|w-num|w-tok|w-usd", "kind|会话:num|token:num|等效 USD:num", crows)
             + "</div>"
         )
@@ -887,13 +898,16 @@ def render_event_feed(payload: dict) -> str:
     all_events = payload.get("events") or []
     events = all_events[-10:]
     if not events:
-        return (
-            _empty(
-                "今日暂无盯盘事件。",
-                "开盘时段自动盯盘；持续为空见①页系统状态卡。",
-                title="watch.py 台账为空或未运行",
-            )
-            + '<span id="ov-ev-count" hx-swap-oob="true" class="cm">0 条</span>'
+        return _empty(
+            "今日暂无盯盘事件。",
+            "开盘时段自动盯盘；持续为空见①页系统状态卡。",
+            title="watch.py 台账为空或未运行",
+        ) + _cap_cm(
+            "ov-ev-count",
+            0,
+            0,
+            unit="条",
+            title="①页显最近 10 条 · ③页事件表看全量",
         )
     rows = []
     names = payload.get("names") or {}
@@ -913,7 +927,8 @@ def render_event_feed(payload: dict) -> str:
         code = str(ev.get("code", ""))
         name_tail = f" {_esc(names.get(code, ''))}" if names.get(code) else ""
         rows.append(
-            f'<a class="ev-link" href="#/monitor" title="在③页查看事件表与复核">'
+            f'<a class="ev-link" href="#/monitor" title="在③页查看事件表与复核" '
+            f'onclick="{_MO_TAB1_JS}">'
             f'<div class="ev{risk_cls}"><div class="ev-time num" title="{_esc(ts)}">'
             f"{_esc(_ts_hhmm(ts))}</div>"
             f'<div class="ev-rail"><div class="ev-dot"></div></div>'
@@ -1002,8 +1017,10 @@ def render_notifications(payload: dict) -> str:
             else:
                 index[key] = len(groups)
                 groups.append([row])
-        cards = "".join(_notification_group_html(group) for group in groups[:5])
+        cards = "".join(_notification_group_html(group) for group in groups[-5:])
         # 0.0.39：收敛 counter 与通道红线说明全归卡头 cm（title 悬浮），卡体零独立说明行
+        # 0.0.42：切片改尾取保最新告警组（rows 时间正序、groups[0] 最旧；[:5] 会把最新组
+        # 截掉，与 title「更早以本地日志为准」方向相反——topN 尾取惯例同 events[-10:]）
         shown_g = min(len(groups), 5)
         meta_oob = _cap_cm(
             "mo-notif-meta",
@@ -1014,7 +1031,7 @@ def render_notifications(payload: dict) -> str:
             capped=f"重放 {shown_g}/{len(groups)} 组 · 共 {len(rows)} 条",
             title="仅本地 osascript（terminal 通道）· 禁第三方推送（红线 7）· 告警主通道"
             "永久留服务端（后台标签页冻结，I-48）· 锁屏不保证送达——离机触达按面板常驻"
-            "拉取式主动查看（方案 §1）· 本卡为只读历史重放；显前 5 组，更早以本地日志为准",
+            "拉取式主动查看（方案 §1）· 本卡为只读历史重放；显最新 5 组，更早以本地日志为准",
             extra_attrs=' role="status" aria-live="polite"',
         )
     return meta_oob + f'<div role="region" aria-label="通知预览（历史重放）">{cards}</div>'
@@ -1286,24 +1303,35 @@ _TODO_HREF = {
     "briefing": "#/overview",
 }
 
+# 0.0.42 ③页三签入站复位：跨页链接进③一律回签1事件表（radio 纯 CSS 态、hash 路由不触及；
+# 坑位：只给出站按钮切签2而不复位入站，曾切签2/3 的会话点①事件流行/待办行会落空）
+_MO_TAB1_JS = "document.getElementById('mo-st-1').checked=true"
+
 
 def render_todos(payload: dict) -> str:
     """①今日待办卡：三源聚合（pending 优先）；行级 href 按 source 跳对应页（0.0.24）。
 
     假复选框 .cbx 已换只读圆点（三源派生只读投影，不支持勾选——§11 只读半边）。
+    0.0.42：top3 切片改头取——derive_todos 按优先级排序（pending→mech→briefing）无时间
+    语义，[-3:] 会把人在环阻塞的 pending 确认截掉、保住最低优先级 briefing 尾项。
     """
     todos = payload.get("todos") or []
     if not todos:
         return _empty("无待办。", "逐笔确认/降档复核/晨报确认产生时于此汇总。") + _cap_cm(
-            "ov-todo-count", 0, 0, unit="项", title="①页显最近 3 项 · 行级可点跳对应处置页"
+            "ov-todo-count",
+            0,
+            0,
+            unit="项",
+            title="①页显最高优先级 3 项 · 行级可点跳对应处置页",
         )
     rows = []
-    for item in todos[-3:]:
+    for item in todos[:3]:
         href = _TODO_HREF.get(str(item.get("source", "")), "#/overview")
+        tab_reset = f' onclick="{_MO_TAB1_JS}"' if href == "#/monitor" else ""
         rows.append(
             f'<div class="todo"><span class="sdot sdot-wait" '
             'title="待办 · 三源派生只读投影，不支持勾选"></span>'
-            f'<div class="td-tx"><a class="todo-link" href="{_esc(href)}">'
+            f'<div class="td-tx"><a class="todo-link" href="{_esc(href)}"{tab_reset}>'
             f'<span class="code num">{_esc(item["code"])}</span> {_esc(item["text"])}</a></div>'
             f'<span class="chip chip-warn">{_esc(item["chip"])}</span></div>'
         )
@@ -1314,7 +1342,7 @@ def render_todos(payload: dict) -> str:
         min(len(todos), 3),
         unit="项",
         uncapped=f"{len(todos)} 项",
-        title="①页显最近 3 项 · 行级可点跳对应处置页",
+        title="①页显最高优先级 3 项 · 行级可点跳对应处置页",
     )
 
 
@@ -1339,7 +1367,6 @@ def render_navcard(view: dict) -> str:
         f'<div class="nv-v num">{nav:.4f}</div>'
         f'<div class="nv-chips">{"".join(chips)}</div>'
         + _sparkline_svg(navs, aria_label=f"模拟盘净值走势，最新 NAV {nav:.4f}", fluid=True)
-        + '<p class="tbl-note">初始 1.0000 · 含费用与滑点（假设性推演）</p>'
     )
 
 
@@ -1426,8 +1453,6 @@ def render_reports_list(payload: dict) -> str:
         '<div class="tbl-wrap">'
         + _table("w-code|w-file", "标的|最新报告:num", "".join(trs))
         + "</div>"
-        + '<p class="tbl-note" title="vibe-stock reports 目录 · 04 规约结构 · 免责段必含">'
-        "报告按规约结构归档 · 免责段必含</p>"
     )
 
 
@@ -2024,7 +2049,7 @@ def render_advice_library(payload: dict) -> str:
                 "</tr>"
             )
         lib_body = (
-            '<div class="tbl-wrap sm">'
+            '<div class="tbl-wrap">'
             + _table(
                 "w-code|-|w-num|w-st|w-kind|w-ts|w-st",
                 "代码|候选动作|终判|上一裁决|T+1 可卖:num|落盘:num|复核",
@@ -2035,7 +2060,8 @@ def render_advice_library(payload: dict) -> str:
     else:
         lib_body = _empty(
             "当日无建议卡。",
-            'T2 复核未触发或被降级——可<a href="#/monitor">去③页对事件手动触发盯盘复核'
+            'T2 复核未触发或被降级——可<a href="#/monitor" '
+            f'onclick="{_MO_TAB1_JS}">去③页对事件手动触发盯盘复核'
             " →</a>；降级原因见下方通报表。",
         )
     if refused:
@@ -2068,9 +2094,7 @@ def render_advice_library(payload: dict) -> str:
         )
     # 0.0.39：counter 与脱敏口径并 _card meta（header 由本 fragment 自持，无 oob）
     shown_cards = min(len(cards), 10)
-    count_txt = (
-        f"显示 {shown_cards}/{len(cards)} 张" if shown_cards < len(cards) else f"共 {len(cards)} 张"
-    )
+    count_txt = _cap_text(shown_cards, len(cards), unit="张")
     return _card(
         f"建议卡 · {_esc(day)}",
         lib_body,
@@ -2096,7 +2120,7 @@ def render_audit_archive(payload: dict) -> str:
             "暂无会话转录归档。",
             "真实 CC 会话产物经断言器放行后归档，30 天自动清理。",
             title="真实通道断言器放行后落 agent/audit/（stream-json）",
-        ) + _cap_cm("au-arch-cm", 0, 0, title="agent/audit/ · 三件套互查")
+        ) + _cap_cm("au-arch-cm", 0, 0, unit="个", title="agent/audit/ · 三件套互查")
     day = payload.get("date") or dates[0]
     chips = "".join(
         f'<button class="mini{" on" if d == day else ""}" '
@@ -2195,7 +2219,7 @@ def render_sessions_table(sessions: dict) -> str:
             "</tr>"
         )
     return (
-        '<div class="tbl-wrap sm">'
+        '<div class="tbl-wrap">'
         + _table(
             "w-sess-ts|w-uuid|w-task|w-tok|w-usd|-",
             "时间:num|会话|任务|token:num|等效 USD:num|转录路径",

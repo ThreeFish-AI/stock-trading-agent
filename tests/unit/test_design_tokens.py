@@ -479,7 +479,8 @@ class TestSingleScroller038:
             ".subtabs .subpanel>*{flex:none}",
         ):
             assert sel in RULES, sel
-        # ⑤吃余项特例：吃余不收缩（1 0 auto 压过家族块 flex:none——同特异性源序后置）
+        # ⑤吃余项特例：吃余不收缩（id 特异性 (2,0,0) 压过家族块 (1,1,0)——源序在前亦胜，
+        # 0.0.42 订正：非「同特异性源序后置」，勿据旧注推级联）
         assert "#page-advice>#advice-detail-2{flex:1 0 auto" in RULES
 
     def test_old_scrollers_retired(self):
