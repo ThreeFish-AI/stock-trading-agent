@@ -347,6 +347,37 @@ class TestOneScreen031:
             assert pin in mo, pin
         assert mo.count('class="subpanel"') == 3
 
+    def test_topnav_pill_track(self):
+        """0.0.41 v2 柔和胶囊：七签收为内容宽分段槽，当前页蓝胶囊；旧填充芯片形态零回流。"""
+        # 分段槽：内容自宽承托轨道（bg2 底 + 发丝环 + 全圆角 + 右侧 auto 让位）
+        assert (
+            ".tabs{display:flex;align-items:center;gap:var(--sp-1);flex:none;min-width:0;margin-right:auto;"
+            in RULES
+        )
+        assert (
+            "padding:var(--sp-1) var(--sp-2);border-radius:var(--r-full);"
+            "background:var(--bg2)" in RULES
+        )
+        # 胶囊签四态：静息透明 / hover 4% 白 / 按压 8% 白 / 当前页蓝胶囊 + sh-2
+        assert "height:calc(var(--sp-7) + var(--sp-6))" in RULES
+        assert (
+            ".tab:not(.on):hover{color:var(--t1);"
+            "background:color-mix(in srgb,var(--t1) 4%,transparent)}" in RULES
+        )
+        assert (
+            ".tab:not(.on):active{color:var(--t1);"
+            "background:color-mix(in srgb,var(--t1) 8%,transparent)}" in RULES
+        )
+        assert ".tab.on{color:var(--acc2);background:var(--accbg);box-shadow:var(--sh-2)}" in RULES
+        assert ".tab:focus-visible{outline:none;box-shadow:var(--sh-3)}" in RULES
+        # bar 本体雾化 + 旧形态零回流（bg2 填充芯片 / flex:1 满宽铺开）
+        assert "background:color-mix(in srgb,var(--bg1) 86%,transparent)" in RULES
+        assert (
+            ".tab.on{color:var(--t1);background:var(--bg2);box-shadow:inset 0 0 0 1px var(--line)}"
+            not in RULES
+        )
+        assert ".tabs{display:flex;gap:var(--sp-4);flex:1;min-width:0}" not in RULES
+
     def test_narrow_unlock(self):
         assert "@media (max-width:1180px){" in RULES
         assert ".screen,#page-stats #stats{flex:none;min-height:0}" in RULES
