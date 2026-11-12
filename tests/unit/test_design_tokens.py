@@ -416,6 +416,20 @@ class TestSingleScroller038:
             in RULES
         )
 
+    def test_scroller_children_immune_to_flex_shrink(self):
+        """0.0.39 穿模家族修复：滚位/锁高容器内容子项 flex:none（flex 收缩先于容器滚动，
+        min-height:0 直子被压缩后表格 overflow visible 穿出叠印下层——③页用户生产钉面）。"""
+        for sel in (
+            "#page-monitor .screen>*{flex:none}",
+            "#page-stats #stats>*{flex:none}",
+            "#page-advice.on>*{flex:none}",
+            ".col.scrollhost>*{flex:none}",
+            ".subtabs .subpanel>*{flex:none}",
+        ):
+            assert sel in RULES, sel
+        # ⑤吃余项特例：吃余不收缩（1 0 auto 压过家族块 flex:none——同特异性源序后置）
+        assert "#page-advice>#advice-detail-2{flex:1 0 auto" in RULES
+
     def test_old_scrollers_retired(self):
         # ① 泄压阀 / .feed-cap 帽 / 转录 md-pre 帽 / ③⑤ 详情卡体滚 零回流
         assert "#page-overview .grid-main>.col:last-child{overflow:auto" not in RULES

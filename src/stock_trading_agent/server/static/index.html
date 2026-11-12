@@ -202,11 +202,10 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
 /* ⑦页转录槽 0.0.38 定帽退役：转录查看由⑦主列页滚位承载（自然高全展开） */
 /* ②页会话观测空态引导行随流水线居中（壳层 loadmsg 语义不变） */
 #dg-session .loadmsg{text-align:center}
-/* ⑤页 0.0.38：页容器即页滚位——列表 + 详情纵向自然流，整页滚动为⑤唯一滚动条
-   （.page.on flex:1 1 auto 拿到余高，内容超出即滚；内容少则零滚动条）；
-   详情区拉伸吃满余高（空态居中、间距与页脚 12px 节奏一致，无 overflow——滚动归页容器） */
+/* ⑤页 0.0.38：页容器即页滚位——列表 + 详情纵向自然流，整页滚动为⑤唯一滚动条；
+   0.0.39 穿模家族修复见上方家族块（直子 flex:none；本区吃余项特例 1 0 auto 吃余不收缩） */
 #page-advice.on{overflow:auto;overscroll-behavior:contain}
-#page-advice>#advice-detail-2{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+#page-advice>#advice-detail-2{flex:1 0 auto;min-height:0;display:flex;flex-direction:column}
 #advice-detail-2>.card{flex:1 1 auto;display:flex;flex-direction:column}
 #advice-detail-2>.card>.card-b{flex:1 1 auto}
 /* ③页 0.0.38：.screen 即页滚位（事件表在 grid 外的 screen 直子，全量表 + 复核报告
@@ -214,6 +213,16 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
    等高拉伸只会在通知列造大片卡内死区——issue #36 间距红框同源形态） */
 #page-monitor .screen{overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 #page-monitor .screen>.grid-main{flex:0 1 auto;align-items:start}
+/* 0.0.39 ③穿模修复 + 同构家族防御（用户生产核验钉面：事件表行叠印复核区/通知）——
+   .screen>*{min-height:0} 是 0.0.31 卡内滚时代的收缩许可，容器变滚位后反成病灶：
+   flex 收缩先于容器滚动，min-height:0 直子被压缩后表格 overflow visible 穿出叠印
+   下层模块。滚位/锁高 flex 容器的内容子项一律 flex:none（自然高，超高恒走容器滚动）；
+   ⑤吃余项特例 1 0 auto（吃余不收缩）；① flex-fill 直子不受影响（basis 0 无可缩） */
+#page-monitor .screen>*{flex:none}
+#page-stats #stats>*{flex:none}
+#page-advice.on>*{flex:none}
+.col.scrollhost>*{flex:none}
+.subtabs .subpanel>*{flex:none}
 /* ②页报告正文 0.0.38：卡自然高，滚动归 .subpanel 页滚位（详情全展开随签滚） */
 /* ── 0.0.31 一屏化 / 0.0.36 弹性充满 / 0.0.38 单滚动条 ──
    视口锁链 main(flex:1)→.page.on(flex:1)→.screen(flex:1) 恒恰满视口余高（页脚贴底零死带）；
@@ -228,7 +237,8 @@ main{width:100%;max-width:1400px;margin:0 auto;padding:18px 22px 0;flex:1;min-he
    特异性 (0,1,0)，本块 .screen 的 flex 源序晚于 .grid-main 的 grid 级联必胜，0.0.31–0.0.33
    期间 ①⑦ 两 .col 纵向堆叠、⑦ #audit 台账塌 0px 不可见；(0,2,0) 一行收口（§⑬ 无条件规则） */
 .grid-main.screen{display:grid}
-/* ⑥ 一屏化 0.0.38：#stats 容器即页滚位（双卡自然高，内容超出容器滚） */
+/* ⑥ 一屏化 0.0.38：#stats 容器即页滚位（双卡自然高，内容超出容器滚）；
+   直子 flex:none 归上方 0.0.39 穿模家族块 */
 #page-stats #stats{display:flex;flex-direction:column;flex:1 1 auto;min-height:460px;gap:var(--sp-6);overflow:auto;overscroll-behavior:contain}
 #page-stats #stats>*{min-height:0}
 .flex-fill{flex:1 1 0;min-height:0}
