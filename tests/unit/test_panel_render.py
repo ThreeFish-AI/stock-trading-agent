@@ -296,6 +296,8 @@ class TestDesignUpgrade024:
         assert "<colgroup>" in html and '<th scope="col">代码</th>' in html
         assert ">0.50</td>" in html  # 置信两位小数
         assert '<th scope="col" class="num">距止损</th>' in html
+        # 0.0.38.1：说明行上移卡头（index.html cm 承载），表下 tbl-note 零输出节约一行高度
+        assert "tbl-note" not in html
 
     def test_signals_table_stop_column_conditional(self):
         """全表无现价源时距止损列整列省去。"""

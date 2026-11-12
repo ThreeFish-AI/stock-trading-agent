@@ -258,9 +258,15 @@ class TestLayoutNorms029:
     """
 
     def test_long_table_scroll_container(self):
-        # 0.0.38：tbl-wrap 定帽退役（滚动统一归页滚位），thead 吸顶保留（相对页滚位吸附）
-        assert ".tbl-wrap{max-height" not in RULES
-        assert ".tbl-wrap.sm{max-height" not in RULES
+        # 0.0.38：tbl-wrap 全局定帽退役（滚动统一归页滚位/模块列表体），thead 吸顶保留；
+        # 0.0.38.1 ①信号卡 #ov-signals 作用域帽为显式白名单（模块级列表体单滚，用户钉面）
+        retired = RULES.replace(
+            "#ov-signals .tbl-wrap{max-height:152px;overflow:auto;"
+            "overscroll-behavior:contain;scrollbar-width:thin}",
+            "",
+        )
+        assert not re.search(r"\.tbl-wrap(\.sm)?\{[^}]*max-height", retired)
+        assert "#ov-signals .tbl-wrap{max-height:152px;overflow:auto" in RULES
         assert ".tbl-wrap .tbl thead th{position:sticky;top:0" in RULES  # thead 吸顶
 
     def test_sys_row_four_tracks(self):
@@ -328,12 +334,12 @@ class TestOneScreen031:
 
 
 class TestSingleScroller038:
-    """0.0.38 单滚动条治理（issue #36 第八轮）：每页至多一个滚动容器（页滚位）。
+    """0.0.38 单滚动条治理（issue #36 第八轮）+ 0.0.38.1 ①页改模块级滚动（用户钉面）。
 
-    判据只收严：页滚位外区域零 overflow、旧三套滚动机制（grow 卡体滚/定帽滚/①泄压阀）
-    零回流；间距全站 12px 节奏（footer 上方 token 化）；矮视口 ≤760 退位自然流。
-    页滚位清单：①左列 .scrollhost｜② .subpanel｜③ .screen｜④ 无（零滚）｜
-    ⑤ #page-advice.on｜⑥ #stats｜⑦主列 .scrollhost。
+    判据只收严：模块外（页/列）零滚动 + 每模块至多列表体一条滚动；旧三套滚动机制
+    （grow 卡体滚/定帽滚/①泄压阀）零回流；间距全站 12px 节奏；矮视口 ≤760 退位自然流。
+    页滚位清单（0.0.38.1）：② .subpanel｜③ .screen｜④ 无（零滚）｜⑤ #page-advice.on｜
+    ⑥ #stats｜⑦主列 .scrollhost；① 页为模块级滚动（事件流卡体单滚 + 信号卡表列帽单滚）。
     """
 
     def test_scrollhost_rule(self):
@@ -342,8 +348,8 @@ class TestSingleScroller038:
         )
 
     def test_scrollhost_mounted(self):
-        # ①⑦ 主列挂载（BODY 为 </style> 后正文）
-        assert BODY.count('class="col scrollhost"') == 2
+        # 0.0.38.1：仅⑦主列挂载（①列滚位退役改模块级滚动）
+        assert BODY.count('class="col scrollhost"') == 1
         # ③ 页 screen 滚 + grid 退拉伸顶对齐
         assert "#page-monitor .screen{overflow:auto;overscroll-behavior:contain" in RULES
         assert "#page-monitor .screen>.grid-main{flex:0 1 auto;align-items:start}" in RULES
@@ -352,6 +358,45 @@ class TestSingleScroller038:
         # ⑥ #stats 容器滚
         assert "#page-stats #stats{display:flex;flex-direction:column;flex:1 1 auto" in RULES
         assert "min-height:460px;gap:var(--sp-6);overflow:auto" in RULES
+
+    def test_overview_modular_scrollers(self):
+        """0.0.38.1 ①左列模块级滚动：列零滚 + 事件流卡体单滚 + 信号卡定帽列表体单滚
+        + 信息带 96 帽（高度预算：事件流主区归还，极端 26 行态卡体 67→174）。"""
+        # 事件流卡吃余（:has 锚卡）+ 卡体滚
+        assert (
+            "#page-overview .grid-main>.col:first-child>.card:has(>#ov-events)"
+            "{flex:1 1 0;min-height:0;display:flex;flex-direction:column}" in RULES
+        )
+        assert (
+            "#ov-events{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain"
+            in RULES
+        )
+        # 信号卡定高退出末卡拉伸 + 表列 152 帽列表体滚（thead 相对帽容器吸顶）
+        assert (
+            "#page-overview .grid-main>.col:first-child>.card:has(>#ov-signals){flex:0 0 auto}"
+            in RULES
+        )
+        assert (
+            "#ov-signals .tbl-wrap{max-height:152px;overflow:auto;overscroll-behavior:contain"
+            in RULES
+        )
+        # 信息带卡体 96 帽 + 空态紧凑（tip 隐藏防 10px 假滚）
+        assert (
+            "#page-overview .grid-2>.card>.card-b{max-height:96px;overflow:auto;"
+            "overscroll-behavior:contain;scrollbar-width:thin}" in RULES
+        )
+        assert "#page-overview .grid-2 .empty .empty-tip{display:none}" in RULES
+        # 窄/矮档退位（basis:auto 自然高防基数 0 塌缩——0.0.36 r2 坑位）
+        assert (
+            RULES.count(
+                "#page-overview .grid-main>.col:first-child>.card:has(>#ov-events){flex:0 1 auto}"
+            )
+            == 2
+        )
+
+    def test_signals_note_moved_to_card_head(self):
+        # 0.0.38.1：信号表说明行上移卡头（表下 tbl-note 零输出由 test_panel_render 钉）
+        assert "adjudicate 产出 · 盘中结论以收盘复核为准</span>" in BODY
 
     def test_old_scrollers_retired(self):
         # ① 泄压阀 / .feed-cap 帽 / 转录 md-pre 帽 / ③⑤ 详情卡体滚 零回流
